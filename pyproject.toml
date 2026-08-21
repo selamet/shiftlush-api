@@ -59,6 +59,13 @@ ignore = [
 # Django's Meta.constraints and Meta.indexes are lists by design; annotating
 # every one of them as ClassVar adds noise without adding safety.
 "**/models.py" = ["RUF012"]
+# Meta.fields, read_only_fields and permission_classes are lists by DRF's own
+# convention; annotating each as ClassVar adds noise without adding safety.
+"**/serializers.py" = ["RUF012"]
+"**/views.py" = ["RUF012"]
+# Test fixtures hold literal credentials by definition; flagging them is noise
+# that trains people to ignore the rule where it matters.
+"tests/**" = ["S105", "S106", "S107"]
 
 [tool.mypy]
 python_version = "3.13"
