@@ -1,0 +1,327 @@
+"""Contracts, their state transitions, and the constraint that matters most.
+
+An elevator under two open contracts would be billed twice and scheduled twice.
+The database refuses it; these tests prove the API surfaces that as an answer a
+user can act on rather than as an integrity error.
+"""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+import pytest
+from django.urls import reverse
+from rest_framework.test import APIClient
+
+from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType, Scope
+from apps.customers.models import Customer, CustomerType
+from apps.elevators.models import Elevator, ElevatorStatus
+from apps.elevators.services import assign_qr_token
+from apps.properties.models import Building, BuildingType
+from apps.users.models import Role, User
+from apps.users.services import issue_tokens, register_company
+from core.context import company_context, system_context
+
+PASSWORD = "correct-horse-battery"
+TODAY = date.today()
+
+
+def api_for(user: User) -> APIClient:
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}")
+    return client
+
+
+@pytest.fixture
+def firm(db):
+    company, owner = register_company(
+        legal_name="Firm Ltd",
+        display_name="Firm",
+        first_name="F",
+        last_name="Owner",
+        email="owner@example.com",
+        password=PASSWORD,
+    )
+    with company_context(company.id):
+        customer = Customer.objects.create(
+            company=company, type=CustomerType.COMPLEX_MANAGEMENT, legal_name="Site Management"
+        )
+        building = Building.objects.create(
+            company=company,
+            customer=customer,
+            name="A Blok",
+            type=BuildingType.RESIDENTIAL,
+            address_note="Behind the market",
+        )
+        elevators = []
+        for index in range(3):
+            elevator = Elevator(
+                company=company,
+                building=building,
+                registration_number=f"34-2020-00000{index}",
+                name=f"Elevator {index}",
+            )
+            assign_qr_token(elevator)
+            elevator.save()
+            elevators.append(elevator)
+    return company, owner, customer, building, elevators
+
+
+def make_contract(client: APIClient, customer_id, **overrides) -> dict:
+    payload = {
+        "customer": str(customer_id),
+        "scope": Scope.MAINTENANCE_AND_REPAIR,
+        "start_date": str(TODAY),
+        "end_date": str(TODAY + timedelta(days=365)),
+        "pricing_type": PricingType.PER_ELEVATOR,
+        "monthly_fee": "4750.00",
+        **overrides,
+    }
+    return client.post(reverse("contract-list"), payload, format="json").data
+
+
+class TestNumbering:
+    def test_number_is_assigned_per_company_and_year(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        first = make_contract(client, customer.id)
+        second = make_contract(client, customer.id)
+        assert first["contract_number"] == f"{TODAY.year}-0001"
+        assert second["contract_number"] == f"{TODAY.year}-0002"
+
+
+class TestOneOpenContractPerElevator:
+    def test_an_elevator_cannot_join_two_open_contracts(self, firm):
+        _, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        first = make_contract(client, customer.id)
+        second = make_contract(client, customer.id)
+
+        assert (
+            client.post(
+                reverse("contract-add-elevators", args=[first["id"]]),
+                {"elevator_ids": [str(elevators[0].pk)]},
+                format="json",
+            ).status_code
+            == 200
+        )
+
+        response = client.post(
+            reverse("contract-add-elevators", args=[second["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+        # Named, not an integrity error: the user has to be told which elevator
+        # is already covered so they can go and free it.
+        assert response.status_code == 422
+        assert response.data["error"]["code"] == "ELEVATOR_ALREADY_CONTRACTED"
+
+    def test_it_can_join_again_once_the_first_line_is_closed(self, firm):
+        _, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        first = make_contract(client, customer.id)
+        second = make_contract(client, customer.id)
+
+        client.post(
+            reverse("contract-add-elevators", args=[first["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+        client.delete(reverse("contract-remove-elevator", args=[first["id"], str(elevators[0].pk)]))
+        assert (
+            client.post(
+                reverse("contract-add-elevators", args=[second["id"]]),
+                {"elevator_ids": [str(elevators[0].pk)]},
+                format="json",
+            ).status_code
+            == 200
+        )
+
+    def test_removing_closes_the_line_rather_than_deleting_it(self, firm):
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+        client.delete(
+            reverse("contract-remove-elevator", args=[contract["id"], str(elevators[0].pk)])
+        )
+        with company_context(company.id):
+            # The billing history has to survive the elevator leaving.
+            line = ContractElevator.objects.get(elevator=elevators[0])
+            assert line.removed_at is not None
+
+    def test_status_follows_coverage(self, firm):
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+
+        with company_context(company.id):
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.UNCONTRACTED
+
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+        with company_context(company.id):
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.ACTIVE
+
+    def test_the_status_cannot_be_set_by_hand(self, firm):
+        _, owner, _, _, elevators = firm
+        response = api_for(owner).patch(
+            reverse("elevator-detail", args=[elevators[0].pk]),
+            {"status": ElevatorStatus.UNCONTRACTED},
+            format="json",
+        )
+        # Otherwise a client could detach an elevator from its contract by
+        # editing a dropdown, and the two records would disagree.
+        assert response.status_code == 400
+
+
+class TestTermination:
+    def test_it_closes_every_line_and_frees_the_elevators(self, firm):
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(e.pk) for e in elevators]},
+            format="json",
+        )
+
+        response = client.post(
+            reverse("contract-terminate", args=[contract["id"]]),
+            {"terminated_at": str(TODAY), "reason": "Customer moved to another firm"},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["status"] == ContractStatus.TERMINATED
+
+        with company_context(company.id):
+            assert not ContractElevator.objects.filter(
+                contract_id=contract["id"], removed_at__isnull=True
+            ).exists()
+            for elevator in elevators:
+                assert Elevator.objects.get(pk=elevator.pk).status == ElevatorStatus.UNCONTRACTED
+
+    def test_a_reason_is_required(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        response = client.post(
+            reverse("contract-terminate", args=[contract["id"]]),
+            {"terminated_at": str(TODAY), "reason": "   "},
+            format="json",
+        )
+        # A field-level answer, so the interface can mark the field rather than
+        # showing a banner. It is what the audit trail will be read for a year
+        # later, so it cannot be skipped.
+        assert response.status_code == 400
+        detail = response.data["error"]["details"][0]
+        assert detail["field"] == "reason"
+        assert detail["code"] == "TERMINATION_REASON_REQUIRED"
+
+    def test_it_cannot_be_done_through_a_patch(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        response = client.patch(
+            reverse("contract-detail", args=[contract["id"]]),
+            {"status": ContractStatus.TERMINATED},
+            format="json",
+        )
+        # A PATCH would push the side effects onto the client, and one that
+        # forgot a step would leave the data inconsistent with nothing saying so.
+        assert response.status_code == 400
+
+    def test_terminating_twice_is_refused(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        body = {"terminated_at": str(TODAY), "reason": "First"}
+        client.post(reverse("contract-terminate", args=[contract["id"]]), body, format="json")
+        again = client.post(
+            reverse("contract-terminate", args=[contract["id"]]), body, format="json"
+        )
+        assert again.status_code == 422
+
+
+class TestRenewal:
+    def test_it_produces_a_draft_and_carries_the_elevators(self, firm):
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+
+        response = client.post(
+            reverse("contract-renew", args=[contract["id"]]),
+            {
+                "start_date": str(TODAY + timedelta(days=366)),
+                "end_date": str(TODAY + timedelta(days=730)),
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        # A draft is what makes renewal reversible, and why it needs none of
+        # termination's ceremony: nothing is billed until it is activated.
+        assert response.data["status"] == ContractStatus.DRAFT
+        assert str(response.data["previous_contract_id"]) == str(contract["id"])
+
+        with company_context(company.id):
+            assert Contract.objects.get(pk=contract["id"]).status == ContractStatus.RENEWED
+            # Still exactly one open line for the elevator — the old one closed
+            # as the new one opened.
+            assert (
+                ContractElevator.objects.filter(
+                    elevator=elevators[0], removed_at__isnull=True
+                ).count()
+                == 1
+            )
+
+
+class TestFinancialVisibility:
+    def _contract_for(self, firm) -> str:
+        _, owner, customer, _, _ = firm
+        return make_contract(api_for(owner), customer.id)["id"]
+
+    def _user(self, company, role: str, email: str) -> User:
+        with system_context():
+            return User.objects.create_user(
+                email=email,
+                password=PASSWORD,
+                company=company,
+                first_name="X",
+                last_name="Y",
+                role=role,
+            )
+
+    def test_operations_does_not_receive_the_money(self, firm):
+        company, _, _, _, _ = firm
+        contract_id = self._contract_for(firm)
+        user = self._user(company, Role.OPERATIONS, "ops@example.com")
+        data = api_for(user).get(reverse("contract-detail", args=[contract_id])).data
+        # Removed from the payload rather than nulled: a null reads as "not set
+        # yet" and sends someone looking for a value that is not theirs.
+        for field in ("monthly_fee", "vat_rate", "pricing_type", "billing_period"):
+            assert field not in data
+
+    def test_accounting_does_receive_it(self, firm):
+        company, _, _, _, _ = firm
+        contract_id = self._contract_for(firm)
+        user = self._user(company, Role.ACCOUNTANT, "acc@example.com")
+        data = api_for(user).get(reverse("contract-detail", args=[contract_id])).data
+        assert data["monthly_fee"] == "4750.00"
+
+    def test_technician_has_no_access_at_all(self, firm):
+        company, _, _, _, _ = firm
+        contract_id = self._contract_for(firm)
+        user = self._user(company, Role.TECHNICIAN, "tech@example.com")
+        assert api_for(user).get(reverse("contract-detail", args=[contract_id])).status_code == 403

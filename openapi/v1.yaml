@@ -198,6 +198,717 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
           description: ''
+  /api/v1/buildings/:
+    get:
+      operationId: buildings_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: complex
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: type
+        schema:
+          type: string
+          enum:
+          - commercial
+          - hospital
+          - hotel
+          - industrial
+          - mall
+          - mixed_use
+          - public
+          - residential
+          - school
+        description: |-
+          * `residential` - Residential
+          * `commercial` - Commercial
+          * `mixed_use` - Mixed use
+          * `public` - Public
+          * `hospital` - Hospital
+          * `mall` - Mall
+          * `hotel` - Hotel
+          * `school` - School
+          * `industrial` - Industrial
+      tags:
+      - buildings
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBuildingReadList'
+          description: ''
+    post:
+      operationId: buildings_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - buildings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildingWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BuildingWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BuildingWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingWrite'
+          description: ''
+  /api/v1/buildings/{id}/:
+    get:
+      operationId: buildings_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir building öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - buildings
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingRead'
+          description: ''
+    patch:
+      operationId: buildings_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir building öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - buildings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBuildingWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBuildingWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBuildingWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildingWrite'
+          description: ''
+    delete:
+      operationId: buildings_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir building öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - buildings
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/complexes/:
+    get:
+      operationId: complexes_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      tags:
+      - complexes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedComplexReadList'
+          description: ''
+    post:
+      operationId: complexes_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - complexes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComplexWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ComplexWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ComplexWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplexWrite'
+          description: ''
+  /api/v1/complexes/{id}/:
+    get:
+      operationId: complexes_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir complex öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - complexes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplexRead'
+          description: ''
+    patch:
+      operationId: complexes_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir complex öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - complexes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedComplexWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedComplexWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedComplexWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplexWrite'
+          description: ''
+    delete:
+      operationId: complexes_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir complex öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - complexes
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/contracts/:
+    get:
+      operationId: contracts_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: scope
+        schema:
+          type: string
+          enum:
+          - full_coverage
+          - maintenance_and_repair
+          - maintenance_only
+        description: |-
+          * `maintenance_only` - Maintenance only
+          * `maintenance_and_repair` - Maintenance and repair
+          * `full_coverage` - Full coverage
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - draft
+          - expired
+          - renewed
+          - terminated
+        description: |-
+          * `draft` - Draft
+          * `active` - Active
+          * `expired` - Expired
+          * `terminated` - Terminated
+          * `renewed` - Renewed
+      tags:
+      - contracts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedContractReadList'
+          description: ''
+    post:
+      operationId: contracts_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ContractWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ContractWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractWrite'
+          description: ''
+  /api/v1/contracts/{id}/:
+    get:
+      operationId: contracts_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractRead'
+          description: ''
+    patch:
+      operationId: contracts_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedContractWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedContractWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedContractWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractWrite'
+          description: ''
+    delete:
+      operationId: contracts_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/contracts/{id}/elevators/:
+    post:
+      operationId: contracts_elevators_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddElevatorsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddElevatorsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AddElevatorsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractRead'
+          description: ''
+  /api/v1/contracts/{id}/elevators/{elevator_id}/:
+    delete:
+      operationId: contracts_elevators_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: elevator_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/contracts/{id}/renew/:
+    post:
+      operationId: contracts_renew_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RenewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RenewRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractRead'
+          description: ''
+  /api/v1/contracts/{id}/terminate/:
+    post:
+      operationId: contracts_terminate_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir contract öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TerminateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TerminateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractRead'
+          description: ''
   /api/v1/customer-contacts/:
     get:
       operationId: customer_contacts_list
@@ -595,6 +1306,284 @@ paths:
                 items:
                   $ref: '#/components/schemas/District'
           description: ''
+  /api/v1/elevators/:
+    get:
+      operationId: elevators_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: building
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: category
+        schema:
+          type: string
+          enum:
+          - accessibility_platform
+          - dumbwaiter
+          - freight
+          - passenger
+          - passenger_freight
+          - vehicle
+        description: |-
+          * `passenger` - Passenger
+          * `freight` - Freight
+          * `passenger_freight` - Passenger and freight
+          * `dumbwaiter` - Dumbwaiter
+          * `accessibility_platform` - Accessibility platform
+          * `vehicle` - Vehicle
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: inspection_label
+        schema:
+          type: string
+          enum:
+          - blue
+          - green
+          - none
+          - red
+          - yellow
+        description: |-
+          * `green` - Green
+          * `blue` - Blue
+          * `yellow` - Yellow
+          * `red` - Red
+          * `none` - None
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - out_of_service
+          - sealed
+          - suspended
+          - uncontracted
+        description: |-
+          * `active` - Active
+          * `suspended` - Suspended
+          * `sealed` - Sealed
+          * `out_of_service` - Out of service
+          * `uncontracted` - Uncontracted
+      tags:
+      - elevators
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedElevatorListList'
+          description: ''
+    post:
+      operationId: elevators_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - elevators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElevatorWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ElevatorWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ElevatorWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElevatorWrite'
+          description: ''
+  /api/v1/elevators/{id}/:
+    get:
+      operationId: elevators_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir elevator öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - elevators
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElevatorDetail'
+          description: ''
+    patch:
+      operationId: elevators_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir elevator öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - elevators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedElevatorWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedElevatorWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedElevatorWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElevatorWrite'
+          description: ''
+    delete:
+      operationId: elevators_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir elevator öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - elevators
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/elevators/{id}/regenerate-qr/:
+    post:
+      operationId: elevators_regenerate_qr_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir elevator öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - elevators
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElevatorDetail'
+          description: ''
+  /api/v1/elevators/by-qr/{token}/:
+    get:
+      operationId: elevators_by_qr_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: token
+        schema:
+          type: string
+        description: The twelve-character token printed on the label.
+        required: true
+      tags:
+      - elevators
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElevatorByQr'
+          description: ''
   /api/v1/neighborhoods/:
     get:
       operationId: neighborhoods_list
@@ -661,6 +1650,451 @@ paths:
           description: ''
 components:
   schemas:
+    AddElevatorsRequest:
+      type: object
+      properties:
+        elevator_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - elevator_ids
+    BillingPeriodEnum:
+      enum:
+      - monthly
+      - quarterly
+      - semiannual
+      - annual
+      type: string
+      description: |-
+        * `monthly` - Monthly
+        * `quarterly` - Quarterly
+        * `semiannual` - Semiannual
+        * `annual` - Annual
+    BlankEnum:
+      enum:
+      - ''
+    BuildingRead:
+      type: object
+      description: The address fields every property-like record shares.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        type:
+          allOf:
+          - $ref: '#/components/schemas/BuildingType'
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        complex_id:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+        complex_name:
+          type: string
+          readOnly: true
+        neighborhood_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+          readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+        district_name:
+          type: string
+          readOnly: true
+        province_name:
+          type: string
+          readOnly: true
+        street:
+          type: string
+          readOnly: true
+        building_number:
+          type: string
+          readOnly: true
+        address_note:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        floor_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        unit_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        is_active:
+          type: boolean
+          readOnly: true
+        elevator_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - address_note
+      - building_number
+      - complex_id
+      - complex_name
+      - created_at
+      - customer_id
+      - customer_name
+      - district_name
+      - elevator_count
+      - floor_count
+      - id
+      - is_active
+      - latitude
+      - longitude
+      - name
+      - neighborhood_id
+      - neighborhood_name
+      - province_name
+      - street
+      - type
+      - unit_count
+      - updated_at
+    BuildingType:
+      enum:
+      - residential
+      - commercial
+      - mixed_use
+      - public
+      - hospital
+      - mall
+      - hotel
+      - school
+      - industrial
+      type: string
+      description: |-
+        * `residential` - Residential
+        * `commercial` - Commercial
+        * `mixed_use` - Mixed use
+        * `public` - Public
+        * `hospital` - Hospital
+        * `mall` - Mall
+        * `hotel` - Hotel
+        * `school` - School
+        * `industrial` - Industrial
+    BuildingWrite:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        complex:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          maxLength: 150
+        type:
+          $ref: '#/components/schemas/BuildingType'
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        floor_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        unit_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        is_active:
+          type: boolean
+      required:
+      - address_note
+      - customer
+      - name
+      - type
+    BuildingWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        complex:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        type:
+          $ref: '#/components/schemas/BuildingType'
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+          minLength: 1
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        floor_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        unit_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        is_active:
+          type: boolean
+      required:
+      - address_note
+      - customer
+      - name
+      - type
+    ComplexRead:
+      type: object
+      description: The address fields every property-like record shares.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        neighborhood_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+          readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+        district_name:
+          type: string
+          readOnly: true
+        province_name:
+          type: string
+          readOnly: true
+        street:
+          type: string
+          readOnly: true
+        building_number:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        notes:
+          type: string
+          readOnly: true
+        building_count:
+          type: integer
+          readOnly: true
+          default: 0
+        elevator_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - building_count
+      - building_number
+      - created_at
+      - customer_id
+      - customer_name
+      - district_name
+      - elevator_count
+      - id
+      - latitude
+      - longitude
+      - name
+      - neighborhood_id
+      - neighborhood_name
+      - notes
+      - province_name
+      - street
+      - updated_at
+    ComplexWrite:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        notes:
+          type: string
+      required:
+      - customer
+      - name
+    ComplexWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        notes:
+          type: string
+      required:
+      - customer
+      - name
     ContactRole:
       enum:
       - manager
@@ -677,6 +2111,309 @@ components:
         * `technical_lead` - Technical lead
         * `accounting` - Accounting
         * `other` - Other
+    ContractLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_id:
+          type: string
+          format: uuid
+          readOnly: true
+        registration_number:
+          type: string
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        added_at:
+          type: string
+          format: date
+          readOnly: true
+        removed_at:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+      required:
+      - added_at
+      - building_name
+      - elevator_id
+      - elevator_name
+      - id
+      - registration_number
+      - removed_at
+      - unit_price
+    ContractRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        contract_number:
+          type: string
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ContractStatus'
+          readOnly: true
+        scope:
+          allOf:
+          - $ref: '#/components/schemas/ContractScope'
+          readOnly: true
+        start_date:
+          type: string
+          format: date
+          readOnly: true
+        end_date:
+          type: string
+          format: date
+          readOnly: true
+        pricing_type:
+          allOf:
+          - $ref: '#/components/schemas/PricingTypeEnum'
+          readOnly: true
+        monthly_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        currency:
+          type: string
+          readOnly: true
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        billing_period:
+          allOf:
+          - $ref: '#/components/schemas/BillingPeriodEnum'
+          readOnly: true
+        auto_renew:
+          type: boolean
+          readOnly: true
+        renewal_notice_days:
+          type: integer
+          readOnly: true
+        previous_contract_id:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+        terminated_at:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        termination_reason:
+          type: string
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        elevator_count:
+          type: integer
+          readOnly: true
+          default: 0
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContractLine'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - auto_renew
+      - billing_period
+      - contract_number
+      - created_at
+      - currency
+      - customer_id
+      - customer_name
+      - elevator_count
+      - end_date
+      - id
+      - lines
+      - monthly_fee
+      - notes
+      - previous_contract_id
+      - pricing_type
+      - renewal_notice_days
+      - scope
+      - start_date
+      - status
+      - terminated_at
+      - termination_reason
+      - updated_at
+      - vat_rate
+    ContractScope:
+      enum:
+      - maintenance_only
+      - maintenance_and_repair
+      - full_coverage
+      type: string
+      description: |-
+        * `maintenance_only` - Maintenance only
+        * `maintenance_and_repair` - Maintenance and repair
+        * `full_coverage` - Full coverage
+    ContractStatus:
+      enum:
+      - draft
+      - active
+      - expired
+      - terminated
+      - renewed
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `active` - Active
+        * `expired` - Expired
+        * `terminated` - Terminated
+        * `renewed` - Renewed
+    ContractWrite:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        contract_number:
+          type: string
+          maxLength: 30
+        status:
+          $ref: '#/components/schemas/ContractStatus'
+        scope:
+          $ref: '#/components/schemas/ContractScope'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        pricing_type:
+          $ref: '#/components/schemas/PricingTypeEnum'
+        monthly_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+        currency:
+          type: string
+          maxLength: 3
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        billing_period:
+          $ref: '#/components/schemas/BillingPeriodEnum'
+        auto_renew:
+          type: boolean
+        renewal_notice_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
+      required:
+      - customer
+      - end_date
+      - pricing_type
+      - scope
+      - start_date
+    ContractWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        contract_number:
+          type: string
+          minLength: 1
+          maxLength: 30
+        status:
+          $ref: '#/components/schemas/ContractStatus'
+        scope:
+          $ref: '#/components/schemas/ContractScope'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        pricing_type:
+          $ref: '#/components/schemas/PricingTypeEnum'
+        monthly_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        billing_period:
+          $ref: '#/components/schemas/BillingPeriodEnum'
+        auto_renew:
+          type: boolean
+        renewal_notice_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
+      required:
+      - customer
+      - end_date
+      - pricing_type
+      - scope
+      - start_date
+    ControlTypeEnum:
+      enum:
+      - simple_collective
+      - down_collective
+      - full_collective
+      - group_control
+      type: string
+      description: |-
+        * `simple_collective` - Simple collective
+        * `down_collective` - Down collective
+        * `full_collective` - Full collective
+        * `group_control` - Group control
     CurrentUser:
       type: object
       description: |-
@@ -1100,6 +2837,735 @@ components:
       - id
       - name
       - province_id
+    DoorTypeEnum:
+      enum:
+      - automatic_center
+      - automatic_side
+      - semi_automatic
+      - manual
+      type: string
+      description: |-
+        * `automatic_center` - Automatic centre opening
+        * `automatic_side` - Automatic side opening
+        * `semi_automatic` - Semi automatic
+        * `manual` - Manual
+    DriveTypeEnum:
+      enum:
+      - geared_electric
+      - gearless_electric
+      - hydraulic
+      type: string
+      description: |-
+        * `geared_electric` - Geared electric
+        * `gearless_electric` - Gearless electric
+        * `hydraulic` - Hydraulic
+    ElevatorByQr:
+      type: object
+      description: |-
+        The six values that decide what happens next on site.
+
+        Deliberately narrow: this is what a technician sees after scanning, on a
+        phone, in a machine room. The full record is one tap away.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        registration_number:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorStatus'
+          readOnly: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          readOnly: true
+        has_car_door:
+          type: boolean
+          readOnly: true
+          nullable: true
+        brand:
+          type: string
+          readOnly: true
+        model:
+          type: string
+          readOnly: true
+        capacity_kg:
+          type: integer
+          readOnly: true
+          nullable: true
+        capacity_persons:
+          type: integer
+          readOnly: true
+          nullable: true
+        stop_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        speed_mps:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        last_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        next_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+      required:
+      - brand
+      - building_name
+      - capacity_kg
+      - capacity_persons
+      - customer_name
+      - has_car_door
+      - id
+      - inspection_label
+      - last_inspection_date
+      - model
+      - name
+      - next_inspection_date
+      - registration_number
+      - speed_mps
+      - status
+      - stop_count
+    ElevatorCategory:
+      enum:
+      - passenger
+      - freight
+      - passenger_freight
+      - dumbwaiter
+      - accessibility_platform
+      - vehicle
+      type: string
+      description: |-
+        * `passenger` - Passenger
+        * `freight` - Freight
+        * `passenger_freight` - Passenger and freight
+        * `dumbwaiter` - Dumbwaiter
+        * `accessibility_platform` - Accessibility platform
+        * `vehicle` - Vehicle
+    ElevatorDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        building_id:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        complex_name:
+          type: string
+          readOnly: true
+        registration_number:
+          type: string
+          readOnly: true
+        internal_code:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        qr_token:
+          type: string
+          readOnly: true
+        qr_token_generated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorCategory'
+          readOnly: true
+        drive_type:
+          allOf:
+          - $ref: '#/components/schemas/DriveTypeEnum'
+          readOnly: true
+        control_type:
+          allOf:
+          - $ref: '#/components/schemas/ControlTypeEnum'
+          readOnly: true
+        door_type:
+          allOf:
+          - $ref: '#/components/schemas/DoorTypeEnum'
+          readOnly: true
+        has_car_door:
+          type: boolean
+          readOnly: true
+          nullable: true
+        machine_room:
+          allOf:
+          - $ref: '#/components/schemas/MachineRoomEnum'
+          readOnly: true
+        capacity_kg:
+          type: integer
+          readOnly: true
+          nullable: true
+        capacity_persons:
+          type: integer
+          readOnly: true
+          nullable: true
+        stop_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        entrance_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        speed_mps:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        pit_depth_mm:
+          type: integer
+          readOnly: true
+          nullable: true
+        headroom_mm:
+          type: integer
+          readOnly: true
+          nullable: true
+        car_weight_kg:
+          type: integer
+          readOnly: true
+          nullable: true
+        brand:
+          type: string
+          readOnly: true
+        model:
+          type: string
+          readOnly: true
+        serial_number:
+          type: string
+          readOnly: true
+        manufacturer:
+          type: string
+          readOnly: true
+        installer:
+          type: string
+          readOnly: true
+        installation_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        commissioning_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        ce_certificate_number:
+          type: string
+          readOnly: true
+        warranty_end_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        last_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          readOnly: true
+        next_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        inspection_body:
+          type: string
+          readOnly: true
+        inspection_report_number:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorStatus'
+          readOnly: true
+        maintenance_interval_days:
+          type: integer
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - brand
+      - building_id
+      - building_name
+      - capacity_kg
+      - capacity_persons
+      - car_weight_kg
+      - category
+      - ce_certificate_number
+      - commissioning_date
+      - complex_name
+      - control_type
+      - created_at
+      - customer_id
+      - customer_name
+      - door_type
+      - drive_type
+      - entrance_count
+      - has_car_door
+      - headroom_mm
+      - id
+      - inspection_body
+      - inspection_label
+      - inspection_report_number
+      - installation_date
+      - installer
+      - internal_code
+      - last_inspection_date
+      - machine_room
+      - maintenance_interval_days
+      - manufacturer
+      - model
+      - name
+      - next_inspection_date
+      - notes
+      - pit_depth_mm
+      - qr_token
+      - qr_token_generated_at
+      - registration_number
+      - serial_number
+      - speed_mps
+      - status
+      - stop_count
+      - updated_at
+      - warranty_end_date
+    ElevatorList:
+      type: object
+      description: |-
+        What the list screen needs — seven columns' worth, not all 31 fields.
+
+        The rest are record fields rather than search criteria and live on the
+        detail response; sending them all would make the heaviest screen in the
+        product heavier for nothing.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        registration_number:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorCategory'
+          readOnly: true
+        stop_count:
+          type: integer
+          readOnly: true
+          nullable: true
+        has_car_door:
+          type: boolean
+          readOnly: true
+          nullable: true
+        building_id:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorStatus'
+          readOnly: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          readOnly: true
+        next_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        brand:
+          type: string
+          readOnly: true
+        model:
+          type: string
+          readOnly: true
+      required:
+      - brand
+      - building_id
+      - building_name
+      - category
+      - customer_name
+      - has_car_door
+      - id
+      - inspection_label
+      - model
+      - name
+      - next_inspection_date
+      - registration_number
+      - status
+      - stop_count
+    ElevatorStatus:
+      enum:
+      - active
+      - suspended
+      - sealed
+      - out_of_service
+      - uncontracted
+      type: string
+      description: |-
+        * `active` - Active
+        * `suspended` - Suspended
+        * `sealed` - Sealed
+        * `out_of_service` - Out of service
+        * `uncontracted` - Uncontracted
+    ElevatorWrite:
+      type: object
+      properties:
+        building:
+          type: string
+          format: uuid
+        registration_number:
+          type: string
+          maxLength: 30
+        internal_code:
+          type: string
+          maxLength: 30
+        name:
+          type: string
+          maxLength: 100
+        category:
+          oneOf:
+          - $ref: '#/components/schemas/ElevatorCategory'
+          - $ref: '#/components/schemas/BlankEnum'
+        drive_type:
+          oneOf:
+          - $ref: '#/components/schemas/DriveTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        control_type:
+          oneOf:
+          - $ref: '#/components/schemas/ControlTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        door_type:
+          oneOf:
+          - $ref: '#/components/schemas/DoorTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        has_car_door:
+          type: boolean
+          nullable: true
+        machine_room:
+          oneOf:
+          - $ref: '#/components/schemas/MachineRoomEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        capacity_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        capacity_persons:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        stop_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        entrance_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        speed_mps:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        pit_depth_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        headroom_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        car_weight_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        brand:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        serial_number:
+          type: string
+          maxLength: 100
+        manufacturer:
+          type: string
+          maxLength: 150
+        installer:
+          type: string
+          maxLength: 150
+        installation_date:
+          type: string
+          format: date
+          nullable: true
+        commissioning_date:
+          type: string
+          format: date
+          nullable: true
+        ce_certificate_number:
+          type: string
+          maxLength: 60
+        warranty_end_date:
+          type: string
+          format: date
+          nullable: true
+        last_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          default: none
+        next_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_body:
+          type: string
+          maxLength: 150
+        inspection_report_number:
+          type: string
+          maxLength: 60
+        status:
+          $ref: '#/components/schemas/ElevatorWriteStatusEnum'
+        maintenance_interval_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
+      required:
+      - building
+    ElevatorWriteRequest:
+      type: object
+      properties:
+        building:
+          type: string
+          format: uuid
+        registration_number:
+          type: string
+          maxLength: 30
+        internal_code:
+          type: string
+          maxLength: 30
+        name:
+          type: string
+          maxLength: 100
+        category:
+          oneOf:
+          - $ref: '#/components/schemas/ElevatorCategory'
+          - $ref: '#/components/schemas/BlankEnum'
+        drive_type:
+          oneOf:
+          - $ref: '#/components/schemas/DriveTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        control_type:
+          oneOf:
+          - $ref: '#/components/schemas/ControlTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        door_type:
+          oneOf:
+          - $ref: '#/components/schemas/DoorTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        has_car_door:
+          type: boolean
+          nullable: true
+        machine_room:
+          oneOf:
+          - $ref: '#/components/schemas/MachineRoomEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        capacity_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        capacity_persons:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        stop_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        entrance_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        speed_mps:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        pit_depth_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        headroom_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        car_weight_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        brand:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        serial_number:
+          type: string
+          maxLength: 100
+        manufacturer:
+          type: string
+          maxLength: 150
+        installer:
+          type: string
+          maxLength: 150
+        installation_date:
+          type: string
+          format: date
+          nullable: true
+        commissioning_date:
+          type: string
+          format: date
+          nullable: true
+        ce_certificate_number:
+          type: string
+          maxLength: 60
+        warranty_end_date:
+          type: string
+          format: date
+          nullable: true
+        last_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          default: none
+        next_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_body:
+          type: string
+          maxLength: 150
+        inspection_report_number:
+          type: string
+          maxLength: 60
+        status:
+          $ref: '#/components/schemas/ElevatorWriteStatusEnum'
+        maintenance_interval_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
+      required:
+      - building
+    ElevatorWriteStatusEnum:
+      enum:
+      - active
+      - suspended
+      - sealed
+      - out_of_service
+      type: string
+      description: |-
+        * `active` - active
+        * `suspended` - suspended
+        * `sealed` - sealed
+        * `out_of_service` - out_of_service
     EmailVerifyRequest:
       type: object
       description: |-
@@ -1115,6 +3581,20 @@ components:
           maxLength: 128
       required:
       - token
+    InspectionLabelEnum:
+      enum:
+      - green
+      - blue
+      - yellow
+      - red
+      - none
+      type: string
+      description: |-
+        * `green` - Green
+        * `blue` - Blue
+        * `yellow` - Yellow
+        * `red` - Red
+        * `none` - None
     InvitationAcceptRequest:
       type: object
       description: |-
@@ -1156,6 +3636,16 @@ components:
       required:
       - email
       - password
+    MachineRoomEnum:
+      enum:
+      - present
+      - absent
+      - partial
+      type: string
+      description: |-
+        * `present` - Present
+        * `absent` - Absent
+        * `partial` - Partial
     Neighborhood:
       type: object
       properties:
@@ -1200,6 +3690,75 @@ components:
         * `neighborhood` - Neighborhood
         * `village` - Village
         * `town` - Town
+    PaginatedBuildingReadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuildingRead'
+    PaginatedComplexReadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComplexRead'
+    PaginatedContractReadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContractRead'
     PaginatedCustomerContactReadList:
       type: object
       required:
@@ -1246,6 +3805,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerRead'
+    PaginatedElevatorListList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ElevatorList'
     PasswordResetConfirmRequest:
       type: object
       description: |-
@@ -1282,6 +3864,142 @@ components:
           maxLength: 150
       required:
       - email
+    PatchedBuildingWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        complex:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        type:
+          $ref: '#/components/schemas/BuildingType'
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+          minLength: 1
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        floor_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        unit_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        is_active:
+          type: boolean
+    PatchedComplexWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        notes:
+          type: string
+    PatchedContractWriteRequest:
+      type: object
+      properties:
+        customer:
+          type: string
+          format: uuid
+        contract_number:
+          type: string
+          minLength: 1
+          maxLength: 30
+        status:
+          $ref: '#/components/schemas/ContractStatus'
+        scope:
+          $ref: '#/components/schemas/ContractScope'
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        pricing_type:
+          $ref: '#/components/schemas/PricingTypeEnum'
+        monthly_fee:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        billing_period:
+          $ref: '#/components/schemas/BillingPeriodEnum'
+        auto_renew:
+          type: boolean
+        renewal_notice_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
     PatchedCustomerContactWriteRequest:
       type: object
       description: |-
@@ -1368,6 +4086,156 @@ components:
           type: string
         is_active:
           type: boolean
+    PatchedElevatorWriteRequest:
+      type: object
+      properties:
+        building:
+          type: string
+          format: uuid
+        registration_number:
+          type: string
+          maxLength: 30
+        internal_code:
+          type: string
+          maxLength: 30
+        name:
+          type: string
+          maxLength: 100
+        category:
+          oneOf:
+          - $ref: '#/components/schemas/ElevatorCategory'
+          - $ref: '#/components/schemas/BlankEnum'
+        drive_type:
+          oneOf:
+          - $ref: '#/components/schemas/DriveTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        control_type:
+          oneOf:
+          - $ref: '#/components/schemas/ControlTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        door_type:
+          oneOf:
+          - $ref: '#/components/schemas/DoorTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        has_car_door:
+          type: boolean
+          nullable: true
+        machine_room:
+          oneOf:
+          - $ref: '#/components/schemas/MachineRoomEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        capacity_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        capacity_persons:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        stop_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        entrance_count:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        speed_mps:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
+          nullable: true
+        pit_depth_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        headroom_mm:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        car_weight_kg:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        brand:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        serial_number:
+          type: string
+          maxLength: 100
+        manufacturer:
+          type: string
+          maxLength: 150
+        installer:
+          type: string
+          maxLength: 150
+        installation_date:
+          type: string
+          format: date
+          nullable: true
+        commissioning_date:
+          type: string
+          format: date
+          nullable: true
+        ce_certificate_number:
+          type: string
+          maxLength: 60
+        warranty_end_date:
+          type: string
+          format: date
+          nullable: true
+        last_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          default: none
+        next_inspection_date:
+          type: string
+          format: date
+          nullable: true
+        inspection_body:
+          type: string
+          maxLength: 150
+        inspection_report_number:
+          type: string
+          maxLength: 60
+        status:
+          $ref: '#/components/schemas/ElevatorWriteStatusEnum'
+        maintenance_interval_days:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        notes:
+          type: string
+    PricingTypeEnum:
+      enum:
+      - per_elevator
+      - flat
+      type: string
+      description: |-
+        * `per_elevator` - Per elevator
+        * `flat` - Flat
     Province:
       type: object
       properties:
@@ -1423,6 +4291,36 @@ components:
       - last_name
       - legal_name
       - password
+    RenewRequest:
+      type: object
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        carry_elevators:
+          type: boolean
+          default: true
+        copy_terms:
+          type: boolean
+          default: true
+      required:
+      - end_date
+      - start_date
+    TerminateRequest:
+      type: object
+      properties:
+        terminated_at:
+          type: string
+          format: date
+        reason:
+          type: string
+          maxLength: 2000
+      required:
+      - reason
+      - terminated_at
     TokenResponse:
       type: object
       description: |-
