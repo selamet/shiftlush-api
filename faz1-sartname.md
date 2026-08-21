@@ -41,6 +41,29 @@
 - Bölüm 12.1'deki app dizin yapısı, 8.2'deki sürümleme yapısıyla çelişiyordu; birleştirildi.
 - İki depodaki `openapi/v1.yaml` kopyalarının senkron kalma mekanizması yoktu (14.1).
 
+**Uygulama sırasında ortaya çıkan sapmalar**
+
+Aşağıdakiler şartnameden bilinçli olarak ayrılan noktalardır. Şartname eski hâlinde
+okunduğunda kod yanlış görünür, o yüzden gerekçesiyle birlikte buraya yazıldı.
+
+| Konu | Şartname | Uygulanan | Gerekçe |
+|---|---|---|---|
+| `POST /users` | 8.6 endpoint envanterinde var | **Yok** — hesap yalnızca davetle açılır | 7.2 "yönetici şifre belirlemez" kuralıyla çelişiyordu. Şifre belirleyebilen yönetici şifreyi okuyabilir. İki yol olması, güvenli olmayanın kullanılması demekti |
+| `/invitations/accept` | 8.6'da `/invitations` altında | `/auth/` altından **`/invitations/accept`'e taşındı** | Envanterle uyum. İki yol bırakmak yerine tek yol |
+| Hata kodları | `openapi/v1.yaml` içinde **elle** listelenir (8.11) | Enum'dan **üretilir** | Elle liste sürüklenen listedir. Üretilince kayma imkânsız; senkron testi hâlâ var ve üretimin çalıştığını doğruluyor. Asıl kayma riski (backend kodu ↔ frontend çevirisi) frontend CI'ına taşındı |
+| Etiket metinleri | `{% trans %}` + `locale/tr` (12.4) | Şablonda **doğrudan Türkçe** | Faz 1'de tek dil var. gettext derlemesini CI'a sokmak bugün sıfır fayda, sürekli bakım demekti. İkinci dil geldiğinde şablon `{% trans %}`'e çevrilir — tek dosya |
+| OpenAPI dili | Belirtilmemiş | **İngilizce üretilir** | `LANGUAGE_CODE = "tr"` yönetim komutlarında da etkin; DRF'in kendi çevrilmiş yardım metinleri şemaya ve oradan frontend'in üretilen client'ına sızıyordu. Sözleşme dilden bağımsızdır |
+| Rol matrisi | Kaynak başına tek satır (6.2) | **Eylem bazlı istisna** eklendi | QR etiket basma `elevator` ucunda yaşıyor ama teknisyene açık (6.2 satır "QR etiket üretimi"), asansör düzenleme değil. `resource_by_action` bu ikisini ayırıyor |
+| `storage_key` biçimi | "üretilir" (5.13) | `{company}/{object_type}/{object_id}/{category}/{uuid7}{ext}` | Onaylama çağrısının ihtiyaç duyduğu her şey anahtarın içinde. İki çağrı neyin nereye yüklendiği konusunda birbiriyle çelişemiyor |
+| Ek boyut/tür doğrulaması | "yükleme öncesi" (5.13) | Yükleme **öncesi ve sonrası** | Öncesi istemcinin beyanı, sonrası deponun ölçümü. Sadece beyana güvenmek 40 MB'lık bir nesnenin kalıcı olarak sahipsiz kalması demekti |
+| `/ready` | Veritabanı + S3 (8.6) | Aynı; depo erişilemezse **503** | Bucket'a ulaşamayan sunucu, onay adımında patlayan yükleme URL'leri dağıtır. Kullanıcı bunu "dosyam kayboldu" diye okur |
+
+**Uygulama sırasında bulunan güvenlik açıkları**
+
+- `User` yöneticisi bilinçli olarak tenant-scoped değil (kimlik doğrulama firmayı kullanıcıdan öğrenir). Yeni `/users` ucu bunu miras aldı ve **başka firmanın personel listesini döndürdü**. Filtre artık açıkça uygulanıyor, testi var.
+- Ek listesi firma sınırını koruyordu ama **atama sınırını korumuyordu**: teknisyen, hiç gitmediği müşterilerin sözleşme belgelerini görebiliyordu. Polimorfik çift join'lenemediği için her tür kendi alt sorgusuyla daraltıldı.
+- `confirm_upload` kategoriyi istemciden yeniden alıyordu; yükleme URL'i kategoriye göre imzalandığı için istemci iki çağrıda farklı kategori göndererek sunucuyu yanlış bucket'a baktırabiliyordu. Kategori artık anahtardan okunuyor.
+
 ---
 
 ## 0. İki temel kural
