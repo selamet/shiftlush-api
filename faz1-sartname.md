@@ -1,8 +1,45 @@
-# Elevator Maintenance Tracking — Faz 1 Teknik Şartnamesi
+# ShiftLush — Elevator Maintenance Tracking | Faz 1 Teknik Şartnamesi
 
 > Claude Code'a girdi olarak verilmek üzere yazılmıştır.
 > **Kapsam:** Firma kaydı, kullanıcı/rol, adres verisi + harita, müşteri/bina/asansör kaydı, sözleşme, QR üretimi.
 > Bakım planı, bakım formu, arıza takibi, faturalama ve mobil uygulama bu fazın dışındadır — ancak veri modeli bunları engellemeyecek şekilde kurulmalıdır.
+>
+> **Depolar:** `shiftlush-api` (backend), `shiftlush-web` (frontend).
+
+---
+
+## Revizyon notu
+
+İlk taslaktan sonra alınan kararlar ve düzeltilen hatalar. Eski sürüme göre çalışan varsa bu listeye baksın.
+
+**Değişen kararlar**
+
+| Konu | Önce | Şimdi | Bölüm |
+|---|---|---|---|
+| API sözleşmesi | Elle yazılan spec-first | **drf-spectacular ile kod-önce** | 2.6, 14.1 |
+| Frontend çatısı | Next.js 15 App Router | **Vite + React 19 + TanStack Router** | 2.2, 2.3, 13 |
+| i18n kütüphanesi | next-intl | **i18next + react-i18next** | 10.1 |
+| Python | 3.14 | **3.13** (bağımlılık wheel'leri hazır) | 2.1 |
+| Dosya depolama | Karar verilmemişti | **Tek R2 bucket, bölge AB** | 2.7, 16 |
+| Alan adı | `example.com` | Henüz belirlenmedi, dağıtımdan önce karara bağlanacak | 14.4 |
+
+**Şemadan eksik olup eklenen tablolar** (bölüm 5.15) — bunlar olmadan ilgili akışlar hiç yazılamıyordu:
+`user_customer` (teknisyen kısıtı), `one_time_token` (şifre sıfırlama + e-posta doğrulama), `idempotency_key`.
+
+**Düzeltilen hatalar**
+
+- Tüm unique kısıtlara `is_deleted = false` koşulu eklendi — silinen kayıt iş anahtarını rehin alıyordu (3.3).
+- `contract_elevator` partial index'i soft delete'i hesaba katmıyordu; asansör kalıcı olarak sözleşmesiz kalabiliyordu (5.12).
+- `on_delete=PROTECT`'in soft delete'te tetiklenmediği, servis katmanı kontrolünün zorunlu olduğu belirtildi (3.3).
+- Şifreli `national_id` alanları `char(11)` idi; şifreli metin sığmıyor → `varchar(255)` (5.3, 5.6).
+- Firma kaydı ve davet kabulünde tenant context'i boş olduğu için `save()` koruması akışı kırıyordu; `system_context()` tanımlandı (3.1).
+- `uncontracted` ve `none` enum değerleri domain sözlüğünde eksikti (4.3).
+- `qr_token` uzunluğu şema ile bölüm 11 arasında çelişiyordu; netleştirildi (5.10, 11.1).
+- `company.logo` ve `contract.signed_document` FK'larının bütünlük kuralı yazılmamıştı; tenant sızıntısı riski (5.13).
+- Aynı `Idempotency-Key` farklı gövdeyle geldiğinde davranış tanımsızdı (8.10).
+- Soft delete edilen ekin depodaki dosyasının akıbeti tanımsızdı; 30 günlük temizleme kuralı eklendi (3.3).
+- Bölüm 12.1'deki app dizin yapısı, 8.2'deki sürümleme yapısıyla çelişiyordu; birleştirildi.
+- İki depodaki `openapi/v1.yaml` kopyalarının senkron kalma mekanizması yoktu (14.1).
 
 ---
 
@@ -34,8 +71,8 @@ Türkçe metinlerin tek yaşadığı yer **çeviri dosyalarıdır**. Bir `.py`, 
 
 İki **ayrı depo**, iki ayrı derleme, iki ayrı dağıtım:
 
-- `elevator-api` — Python/Django, yalnızca JSON API. HTML üretmez, şablon kullanmaz.
-- `elevator-web` — Next.js, yalnızca istemci. Veritabanına erişmez.
+- `shiftlush-api` — Python/Django, yalnızca JSON API. HTML üretmez, şablon kullanmaz.
+- `shiftlush-web` — Vite + React SPA, yalnızca istemci. Veritabanına erişmez.
 
 Aralarındaki tek bağ **OpenAPI sözleşmesidir**. Detay: bölüm 14.
 
@@ -64,15 +101,15 @@ Bakım planı üretimi, bakım formu/kaydı, arıza yönetimi, periyodik kontrol
 
 ## 2. Teknoloji kararları
 
-### 2.1 Backend — `elevator-api`
+### 2.1 Backend — `shiftlush-api`
 
 | Katman | Seçim | Gerekçe |
 |---|---|---|
 | Veritabanı | PostgreSQL 16+ | JSONB (audit log), pg_trgm (mahalle arama), ileride PostGIS |
-| Dil | **Python 3.14** | Ağustos 2026 itibarıyla en güncel kararlı sürüm. `.python-version` dosyasıyla sabitlenir |
+| Dil | **Python 3.13** | Tüm C uzantılı bağımlılıkların (WeasyPrint, argon2-cffi, psycopg) wheel'i hazır. `.python-version` ile sabitlenir; 3.14'e geçiş ileride tek satırlık değişiklik |
 | Framework | **Django 6.1** + Django REST Framework | Django 6.x, Python 3.12–3.14 destekler. Sürüm politikası için bkz. 2.5 |
 | ORM / migration | Django ORM + Django migrations | Ayrı migration aracı gerekmez |
-| API sözleşmesi | **Elle yazılan OpenAPI 3.1 spesifikasyonu** | drf-spectacular kullanılmıyor — bkz. 2.6 |
+| API sözleşmesi | **drf-spectacular** ile üretilen OpenAPI 3.1 | Kod-önce; spec koddan üretilir, CI kırıcı değişikliği denetler — bkz. 2.6 |
 | Filtreleme | django-filter | Liste endpoint'lerindeki filtre/sıralama tekrarını önler |
 | Auth | djangorestframework-simplejwt + Argon2 hasher | Access/refresh, rotation, blacklist hazır |
 | CORS | django-cors-headers | Ayrık frontend zorunlu kılıyor |
@@ -83,21 +120,43 @@ Bakım planı üretimi, bakım formu/kaydı, arıza yönetimi, periyodik kontrol
 | Kod kalitesi | ruff (lint + format) + mypy | Black/isort/flake8 yerine tek araç |
 | Paket yönetimi | uv | Deterministik kilit dosyası |
 
-### 2.2 Frontend — `elevator-web`
+### 2.2 Frontend — `shiftlush-web`
 
 | Katman | Seçim |
 |---|---|
-| Framework | Next.js 15 (App Router) + TypeScript |
+| Derleme | **Vite 6** |
+| Framework | **React 19 + TypeScript** — istemci tarafı SPA, sunucu tarafı render yok |
+| Router | **TanStack Router** — tip güvenli rota ve arama parametreleri |
 | UI | TailwindCSS + shadcn/ui |
 | Form | React Hook Form + Zod |
 | Veri çekme | TanStack Query |
-| i18n | next-intl |
-| API tipleri | openapi-typescript — elle yazılan spec'ten üretilir, elle düzenlenmez |
+| i18n | **i18next + react-i18next** |
+| API tipleri | openapi-typescript — backend'in ürettiği spec'ten türetilir, elle düzenlenmez |
 | Harita | Leaflet + OpenStreetMap + Nominatim |
 | Tablo | TanStack Table |
 | Test | Vitest + Testing Library + Playwright (kritik akışlar) |
 
-### 2.3 Neden FastAPI değil?
+### 2.3 Neden Next.js değil?
+
+Bu bir SPA'dır ve öyle kalmalıdır. Next.js değerlendirildi, reddedildi.
+
+Belirleyici sebep **kimlik doğrulama modelidir.** Bölüm 7.4 erişim jetonunun bellekte tutulmasına karar veriyor — localStorage'a yazılmıyor, cookie'de taşınmıyor. Bu, sunucu bileşenlerinin jetona **erişemeyeceği** anlamına gelir; dolayısıyla kimlik doğrulamalı her veri çekme işlemi zorunlu olarak istemci tarafında olur. Next.js'in tüm değer önerisi (RSC, Server Actions, SSR) bu modelde kullanılamaz. Geriye boş kabuk render eden bir Node sunucusu kalır.
+
+| Next.js'in getirisi | Bu projedeki karşılığı |
+|---|---|
+| Sunucu tarafı veri çekme | **Kullanılamaz** — jeton bellekte, sunucu göremez |
+| SEO / SSR | **Gereksiz** — tüm ekranlar giriş duvarının arkasında |
+| `next/image` optimizasyonu | **İşe yaramaz** — görseller R2'den 5 dk ömürlü imzalı URL; URL her seferinde değiştiği için önbelleğe alınamaz |
+| Middleware ile yetki kontrolü | **Eksik** — middleware yalnızca refresh cookie'sini görür, yönlendirme yine istemcide olur |
+| Dosya bazlı yönlendirme | TanStack Router aynısını, üstelik tip güvenli arama parametreleriyle veriyor |
+
+**TanStack Router neden:** Bu uygulamanın liste ekranları filtre yüklüdür — durum, bina, müşteri, etiket rengi, sayfa, sayfa boyutu, sıralama; hepsi URL'de taşınır (paylaşılabilir ve geri tuşuyla gezilebilir olmalı). TanStack Router bu parametreleri Zod şemasıyla tipler ve doğrular. Alternatiflerde `string | null` alır, her filtre için elle ayrıştırma ve varsayılan değer mantığı yazarsınız. Ayrıca TanStack Query ve TanStack Table zaten kullanılıyor; üçü aynı ekosistem.
+
+**Dağıtımda kazanç:** `vite build` statik dosya üretir. Çalıştırılacak Node süreci yoktur; CDN veya nginx konteyneri yeterli. Bkz. 14.4.
+
+**Ne zaman Next.js gerekir:** İleride halka açık bir müşteri portalı veya pazarlama sitesi yapılırsa. O **ayrı bir uygulama** olur; bu paneli taşımanın gerekçesi değildir.
+
+### 2.3.1 Neden FastAPI değil?
 
 | | Django + DRF | FastAPI |
 |---|---|---|
@@ -145,28 +204,28 @@ Alternatif olarak Django 5.2 LTS (Nisan 2028'e kadar destekli) ile başlanabilir
 - `django.core.mail` fonksiyonlarında konumsal argümanlar kullanımdan kaldırıldı — anahtar kelimeli argüman kullanın.
 - Özel ORM ifadeleri parametreleri liste yerine **tuple** olarak döndürmeli.
 
-### 2.6 API sözleşmesi — drf-spectacular olmadan
+### 2.6 API sözleşmesi — drf-spectacular ile kod-önce
 
-drf-spectacular kaldırıldı. Ancak **sözleşme ihtiyacı kalkmadı** — iki ayrı depo arasındaki tek bağ oydu. Yerine geçen yaklaşım:
+**Karar:** Sözleşme koddan üretilir. `drf-spectacular`, serializer ve view tanımlarından `openapi/v1.yaml` dosyasını üretir. Dosya **elle düzenlenmez**, ama depoya **commit edilir** — frontend'in derlenmesi çalışan bir backend'e bağımlı olamaz (bkz. 14.1).
 
-**Spec-first (sözleşme önce):** `openapi/v1.yaml` dosyası **elle yazılır** ve tek doğruluk kaynağıdır. Kod ondan türetilmez, ama koda karşı **doğrulanır.**
+Elle yazılan spec-first yaklaşımı değerlendirildi ve **reddedildi**: ~60 endpoint'lik bir spesifikasyonu elle yazıp koda karşı senkron tutmanın maliyeti, bu ekip büyüklüğünde sağladığı disiplinden fazla. Kod-önce yaklaşımda kayma riski yapısal olarak yoktur; spec kodun kendisinden türer.
 
-| | Kod-önce (drf-spectacular) | Spec-önce (seçilen) |
+| | Kod-önce (seçilen) | Spec-önce (reddedildi) |
 |---|---|---|
-| Bakım | Otomatik, sıfır emek | Elle — her endpoint değişikliğinde spec güncellenir |
-| Kayma riski | Düşük | **Yüksek** — CI ile kontrol edilmezse kaçınılmaz |
-| Tasarım disiplini | Zayıf; API kodun yan ürünü olur | Güçlü; iki depo kod yazılmadan sözleşmede anlaşır |
-| Frontend paralel çalışma | Backend bitene kadar bekler | Spec yazılınca hemen başlar |
+| Bakım | Otomatik, sıfır emek | Her endpoint değişikliğinde elle güncelleme |
+| Kayma riski | **Yapısal olarak yok** | Yüksek — CI ile kapatılmazsa kaçınılmaz |
+| Tasarım disiplini | Zayıf; API kodun yan ürünü olur | Güçlü ama pahalı |
+| Frontend paralel çalışma | Serializer iskeleti yazılınca başlar | Spec yazılınca başlar |
 
-**Kayma riskini CI kapatır — bu zorunludur, opsiyonel değil:**
+**Kod-önce yaklaşımın gerçek riski disiplin kaybıdır:** API, düşünülmüş bir sözleşme değil, serializer'ların yan ürünü haline gelir. Bunu üç kural kapatır:
 
-1. `schemathesis` (veya eşdeğeri) backend test paketinde çalışır: `openapi/v1.yaml` içindeki her endpoint gerçek API'ye karşı çağrılır, yanıt şemaya uymuyorsa **test kırılır.**
-2. Spec'te olmayan bir URL route'u varsa veya route'u olmayan bir spec girdisi varsa **test kırılır.** Bu kontrol basit bir test olarak yazılır, Django'nun URL çözümleyicisi ile spec yolları karşılaştırılır.
-3. `openapi/v1.yaml` değişmiş ama `CHANGELOG-API.md` güncellenmemişse uyarı üretilir.
+1. **Endpoint yazılmadan önce serializer'ın alan listesi gözden geçirilir.** Bölüm 8.12'deki kurallar (ayrı okuma/yazma serializer'ı, `fields = "__all__"` yasağı) bunun için var — spec'in kalitesi doğrudan serializer'ın kalitesidir.
+2. **CI'da `oasdiff` çalışır.** Üretilen yeni spec, depodaki bir önceki sürümle karşılaştırılır. Kırıcı fark bulunur ve API sürümü artmamışsa **build kırılır** (kırıcı değişiklik tanımı: bölüm 8.3).
+3. **Üretilen spec ile commit edilen spec ayrışamaz.** CI, `manage.py spectacular --file openapi/v1.yaml` komutunu çalıştırıp `git diff --exit-code` ile kontrol eder. Geliştirici spec'i yeniden üretmeden endpoint değiştirmişse **build kırılır.**
 
-Bu üç kontrol olmadan spec-first yaklaşımı üç ay içinde çöker ve elinizde yalan söyleyen bir doküman kalır.
+Ek olarak `drf-spectacular` uyarılarına sıfır tolerans: `--fail-on-warn` ile çalıştırılır. Şema üretiminde uyarı çıkması, serializer'ın tipinin belirsiz olduğu anlamına gelir ve bu doğrudan frontend'e bozuk tip olarak yansır.
 
-**Eğer bu bakım yükünü istemiyorsanız tek gerçek alternatif DRF'i bırakmaktır.** Django Ninja, Pydantic tabanlıdır ve OpenAPI üretimi çerçevenin içindedir — ek paket gerekmez. Karşılığında DRF'in ViewSet, permission ve django-filter ekosistemini kaybedersiniz; bölüm 6'daki yetki matrisi ve bölüm 8'deki serializer kuralları yeniden yazılır. Bu bir tercihtir, ama **karar bugün verilmeli** — 12 endpoint yazıldıktan sonra geçiş yapmak istemezsiniz.
+**Hata kodları spec'e elle girer.** `core/error_codes.py` içindeki enum, drf-spectacular'ın otomatik çıkaramayacağı tek şeydir; `extend_schema` ile yanıt örneklerine bağlanır. Enum ile spec'in senkron kaldığını doğrulayan test bölüm 8.11'de zorunlu kılındı.
 
 ### 2.7 Cloudflare R2
 
@@ -185,17 +244,19 @@ Dosya depolama olarak Cloudflare R2 kullanılacak.
 - Fiyatlandırma depolama + işlem sayısı üzerinden; okuma/yazma işlemlerini gereksiz tekrarlamayın (örneğin liste ekranında her satır için imzalı URL üretmeyin, yalnızca görüntülenen küçük resimler için üretin).
 - **Yerel geliştirmede R2 kullanılmaz** — MinIO ile devam edin. R2'nin yerel öykünücüsü yok ve geliştirici makinelerinden gerçek bucket'a yazmak test verisi kirliliği yaratır.
 
-**KVKK uyarısı — bu ciddi bir konu:**
+**KVKK kararı — verildi:**
 
-R2 varsayılan olarak verinizi Türkiye dışında saklar. Yükleyeceğiniz dosyalar arasında **kişisel veri içerenler var**: imzalı sözleşme PDF'leri (TC kimlik numarası, imza), kimlik fotokopisi ekleri, bina yöneticisi bilgileri.
+R2 varsayılan olarak veriyi Türkiye dışında saklar. Yüklenecek dosyalar arasında **kişisel veri içerenler var**: imzalı sözleşme PDF'leri (TC kimlik numarası, imza), kimlik fotokopisi ekleri, bina yöneticisi bilgileri. KVKK kapsamında kişisel verinin yurt dışına aktarımı serbest değildir, belirli koşullara bağlıdır.
 
-KVKK kapsamında kişisel verinin yurt dışına aktarımı serbest değildir; belirli koşullara bağlıdır. Bu yüzden:
+**Karar: tek R2 bucket, yargı bölgesi AB'ye sabitlenir.**
 
-- R2'nin **yargı bölgesi kısıtlaması** özelliğini kullanarak bucket'ı AB'ye sabitleyin — belirsiz bir "otomatik" konumdan iyidir.
-- **İki ayrı bucket kurmayı değerlendirin:** kişisel veri içermeyen dosyalar (asansör fotoğrafı, CE belgesi, firma logosu) R2'de; kişisel veri içerenler (imzalı sözleşme, kimlik belgesi) Türkiye'de barındırılan bir sağlayıcıda. `attachment.category` alanı bu ayrımı zaten yapabiliyor.
-- Hangi kararı verirseniz verin, **aydınlatma metninde açıkça belirtin** ve bir hukukçuya danıştırın. Bu bir mühendislik kararı değil, uyum kararıdır.
+- R2'nin **jurisdictional restriction** özelliği ile bucket `eu` bölgesine sabitlenir. Belirsiz bir "otomatik" konum kabul edilmez; bu ayar bucket oluşturulurken verilir, **sonradan değiştirilemez.**
+- Bucket private kalır, erişim yalnızca süreli imzalı URL ile (yukarıdaki yapılandırma notları).
+- **Aydınlatma metninde yurt dışına aktarım açıkça belirtilir** ve açık rıza akışına bağlanır (bkz. bölüm 16). Bu bir mühendislik kararı değil uyum kararıdır; **bir hukukçuya doğrulatın.**
 
-`attachment` modeline `storage_backend` alanı ekleyin (`r2`, `local`, `tr_provider`). Bugün tek değer kullanılsa bile, sonradan ayrıştırmak istediğinizde migration + dosya taşıma yapmadan geçiş yapabilirsiniz.
+**İki bucket'lı ayrım (kişisel veri Türkiye'de) reddedildi** — iki sağlayıcı entegrasyonu, iki imzalı URL yolu ve iki CORS yapılandırması, Faz 1'de sağladığı uyum konforundan pahalı. Ancak karar geri alınabilir bırakılıyor:
+
+`attachment` modelinde `storage_backend` alanı bulunur (`r2`, `local`, `tr_provider`). Faz 1'de yalnızca `r2` ve yerel geliştirmede `local` kullanılır. Kişisel veri içeren kategorilerin (`signed_contract`, `permit`) ileride Türkiye'de barındırılan bir sağlayıcıya taşınması gerekirse, **migration gerekmez** — yeni dosyalar `tr_provider` ile yazılır, eskiler arka plan işiyle taşınır. Bu yüzden bugün tek değer kullanılsa bile alan şemada durur ve imzalı URL üretimi `storage_backend` değerine göre dallanacak şekilde yazılır.
 
 ---
 
@@ -214,6 +275,21 @@ KVKK kapsamında kişisel verinin yurt dışına aktarımı serbest değildir; b
 - `save()` sırasında nesnenin `company_id`'si aktif context ile eşleşmiyorsa istisna fırlatılır.
 - Ek katman olarak PostgreSQL RLS önerilir, Faz 1'de opsiyonel.
 
+**Bootstrap problemi — atlanırsa kayıt akışı ilk denemede kırılır:** Firma kaydı (7.1) ve davet kabulü (7.2) sırasında henüz kimlik doğrulanmış bir kullanıcı yoktur, dolayısıyla tenant context'i **boştur**. Yukarıdaki `save()` koruması bu iki akışta istisna fırlatır ve kayıt hiç çalışmaz. Kimliksiz çalışan diğer uçlar (`/auth/login`, `/invitations/verify/{token}`, `/elevators/by-qr/{token}`) da aynı durumdadır.
+
+Çözüm, korumayı gevşetmek **değil**, açıkça kapsamlandırılmış bir context yöneticisi eklemektir:
+
+```python
+with company_context(company):   # veya bootstrap için: with system_context():
+    ...
+```
+
+Kurallar:
+- `system_context()` yalnızca `services.py` içinden ve yalnızca dört yerden çağrılır: firma kaydı, davet kabulü, şifre sıfırlama, QR token çözümleme. Başka hiçbir yerde kullanılmaz.
+- View katmanından **asla** çağrılmaz.
+- Her çağrının yanına neden gerektiğini açıklayan bir yorum yazılır.
+- Testte: `system_context()` kullanan her akış için çapraz firma erişim testi ayrıca yazılır — bu, tenant korumasının bilinçli olarak devre dışı bırakıldığı tek yerdir ve en riskli noktadır.
+
 ### 3.2 Birincil anahtar
 - **UUID v7** (zamana göre sıralanabilir, index parçalamaz).
 - Python stdlib'de `uuid7` yok — `uuid-utils` paketini kullanın. `uuid.uuid4()` **kullanmayın**, rastgele UUID büyük tablolarda B-tree index'i parçalar.
@@ -227,6 +303,33 @@ KVKK kapsamında kişisel verinin yurt dışına aktarımı serbest değildir; b
 - **Django tuzağı:** `QuerySet.delete()` model `delete()`'ini çağırmaz, doğrudan SQL üretir. Manager'da `delete()`'i de override edin, yoksa toplu silmede kayıtlar gerçekten kaybolur.
 - İşten ayrılan kullanıcı silinmez → `is_active = False`.
 - `on_delete=models.PROTECT`. **`CASCADE` kullanmayın** — tek bir yanlış silme zinciri tüm asansör geçmişini götürür.
+
+**Soft delete'in üç yan etkisi — üçü de açıkça ele alınmalı:**
+
+1. **Her unique kısıt `is_deleted = false` koşulu taşımalıdır.** Aksi halde silinen bir kayıt kendi iş anahtarını sonsuza kadar rehin alır: bir asansör silinince aynı `registration_number` bir daha kullanılamaz ve kullanıcı sebebini anlamaz. Tüm unique kısıtlar **partial unique index** olarak yazılır:
+
+   ```python
+   UniqueConstraint(
+       fields=["company", "registration_number"],
+       condition=Q(is_deleted=False),
+       name="uq_elevator_registration_number_active",
+   )
+   ```
+
+   Bu kural istisnasızdır: `elevator.registration_number`, `contract.contract_number`, `customer_contact.is_primary`, `contract_elevator.elevator` ve `user.email` dahil **tüm** unique kısıtlar bu koşulu alır.
+
+2. **`on_delete=PROTECT` soft delete'te tetiklenmez.** `ProtectedError` yalnızca gerçek `DELETE` sorgusunda oluşur; soft delete sadece bir `UPDATE`'tir. Yani "asansörü olan bina silinemez" kuralı veritabanından **gelmez**, servis katmanında açıkça yazılmalıdır:
+
+   ```python
+   if building.elevators.exists():          # tenant + is_deleted filtreli manager
+       raise RecordInUse("RECORD_IN_USE")
+   ```
+
+   `PROTECT` yine de tanımlanır — `hard_delete()` ve yönetim komutları için son savunma hattıdır. Ama bölüm 19'daki "asansörü olan bina 409 döner" kabul kriterini karşılayan şey servis kontrolüdür. Bu kontrol her silme uçunda tekrarlanacağı için tek bir yardımcıda toplanır.
+
+3. **Silinen ekin dosyası ortada kalır.** `attachment` soft delete edildiğinde R2'deki nesne silinmez. Saklama politikası: soft delete'ten **30 gün** sonra bir yönetim komutu nesneyi depodan siler ve `storage_key` alanını boşaltır; kayıt satırı denetim izi için kalır. Bu komut Faz 1'de yazılır, zamanlanması Faz 2'ye kalabilir.
+
+**Soft delete uygulanmayan tablolar:** `audit_log` (append-only, hiç değiştirilmez), `refresh_session` (`revoked_at` zaten aynı işi yapıyor), `password_reset_token` ve `email_verification_token` (tek kullanımlık, `used_at` ile işaretlenir), `idempotency_key` (süre dolunca gerçekten silinir) ve referans tabloları.
 
 ### 3.4 Zaman ve para
 - Tüm zaman damgaları `timestamptz`, **UTC** saklanır. `TIME_ZONE = "UTC"`, `USE_TZ = True`.
@@ -320,9 +423,11 @@ Türkçe domain terimi ile İngilizce kod karşılığı arasındaki eşleme. **
 | Operasyon | `operations` |
 | Teknisyen | `technician` |
 | Muhasebe | `accountant` |
-| Aktif / askıya alınmış / mühürlü / hizmet dışı | `active` / `suspended` / `sealed` / `out_of_service` |
-| Taslak / aktif / süresi dolmuş / feshedilmiş / yenilenmiş | `draft` / `active` / `expired` / `terminated` / `renewed` |
-| Yeşil / mavi / sarı / kırmızı etiket | `green` / `blue` / `yellow` / `red` |
+| **Asansör durumu:** aktif / askıya alınmış / mühürlü / hizmet dışı / sözleşmesiz | `active` / `suspended` / `sealed` / `out_of_service` / `uncontracted` |
+| **Sözleşme durumu:** taslak / aktif / süresi dolmuş / feshedilmiş / yenilenmiş | `draft` / `active` / `expired` / `terminated` / `renewed` |
+| **Etiket rengi:** yeşil / mavi / sarı / kırmızı / etiketsiz | `green` / `blue` / `yellow` / `red` / `none` |
+
+Bu tablo **eksiksiz** olmalıdır — bölüm 5'teki şema ile birebir aynı değerleri içerir. Yeni bir enum değeri eklenirse önce buraya, sonra modele, sonra `messages/tr.json` içine yazılır. Bu üçünün senkron kaldığını doğrulayan bir test yazın (bkz. 10.5).
 
 ---
 
@@ -387,7 +492,7 @@ Tüm tablolarda ortak alanlar (soyut modellerden gelir):
 | company | FK | |
 | first_name | varchar(60) | |
 | last_name | varchar(60) | |
-| email | varchar(150) | **Global unique**, küçük harfe normalize |
+| email | varchar(150) | **Global unique** (`is_deleted = false` koşullu), küçük harfe normalize. Bilinen kısıt: aynı kişi iki firmada çalışamaz — bkz. aşağıdaki not |
 | phone | varchar(20) | |
 | password | varchar(255) | Davet kabul edilene kadar boş |
 | role | choices | Bkz. 6.1 |
@@ -396,11 +501,13 @@ Tüm tablolarda ortak alanlar (soyut modellerden gelir):
 | last_login_at | timestamptz | |
 | failed_login_count | smallint | |
 | locked_until | timestamptz | Brute-force koruması |
-| national_id | char(11) | **Şifreli saklanır**, teknisyen için gerekli |
+| national_id | varchar(255) | **AES-256-GCM ile şifreli saklanır** — şifreli metin 11 haneye sığmaz, kolon `char(11)` **olamaz**. Teknisyen için gerekli |
 | certificate_number | varchar(50) | Mesleki yeterlilik belgesi |
 | certificate_valid_until | date | Süre dolmadan uyarı için |
 
 Django'nun varsayılan `User` modeli kullanılmaz. Bkz. 12.3.
+
+**E-postanın global unique olmasının bilinçli sonucu:** `USERNAME_FIELD = "email"` olduğu için bir e-posta adresi sistemde yalnızca bir firmaya ait olabilir. Aynı kişi iki asansör firmasında çalışıyorsa ikinci firmada farklı bir e-posta kullanmak zorundadır ve davet akışı "bu e-posta zaten kayıtlı" hatası verir. Bu, giriş akışını basit tutmak için kabul edilen bir kısıttır. Hata mesajı bunu anlaşılır biçimde söylemelidir (`EMAIL_ALREADY_REGISTERED`) — "geçersiz e-posta" gibi yanıltıcı bir kod dönülmez. Firma bazlı kimliğe geçilmesi gerekirse bu bir v2 kırıcı değişikliğidir.
 
 ### 5.4 `invitation`
 
@@ -435,7 +542,7 @@ Django'nun varsayılan `User` modeli kullanılmaz. Bkz. 12.3.
 | legal_name | varchar(200) | |
 | tax_office | varchar(100) | |
 | tax_number | varchar(11) | |
-| national_id | char(11) | Şahıs müşterilerde, şifreli |
+| national_id | varchar(255) | Şahıs müşterilerde. **AES-256-GCM ile şifreli** — kolon `char(11)` olamaz, bkz. 5.3 |
 | phone, email | | |
 | neighborhood | FK | Fatura adresi |
 | street, building_number, unit_number | | |
@@ -452,7 +559,7 @@ Django'nun varsayılan `User` modeli kullanılmaz. Bkz. 12.3.
 | full_name | varchar(120) | |
 | role | choices | `manager`, `auditor`, `caretaker`, `technical_lead`, `accounting`, `other` |
 | phone, email | | |
-| is_primary | boolean | Müşteri başına en fazla bir tane (partial unique index) |
+| is_primary | boolean | Müşteri başına en fazla bir tane: `UniqueConstraint(fields=["customer"], condition=Q(is_primary=True, is_deleted=False))` — `is_deleted` koşulu şart, bkz. 3.3 |
 | notes | text | |
 
 ### 5.8 `complex`
@@ -497,10 +604,10 @@ En kritik tablo. Alanların çoğu opsiyoneldir ama **şemada bulunmalıdır** �
 | Alan | Tip | Not |
 |---|---|---|
 | company, building | FK | |
-| registration_number | varchar(30) | Resmi kimlik no. `unique(company, registration_number)` |
+| registration_number | varchar(30) | Resmi kimlik no. `unique(company, registration_number)` **+ `is_deleted = false` koşulu** (3.3) |
 | internal_code | varchar(30) | Firmanın kendi kodu |
 | name | varchar(100) | "Sol asansör", "Yük asansörü" |
-| qr_token | varchar(24) | **Global unique**, rastgele. Bkz. bölüm 11 |
+| qr_token | varchar(24) | **Global unique** (koşulsuz — silinen asansörün token'ı asla geri dönüşüme girmez). 12 karakter üretilir; kolon 24 hane, ileride uzunluk artırılabilsin diye. Bkz. bölüm 11 |
 | qr_token_generated_at | timestamptz | |
 
 **Sınıflandırma**
@@ -535,12 +642,14 @@ En kritik tablo. Alanların çoğu opsiyoneldir ama **şemada bulunmalıdır** �
 | maintenance_interval_days | smallint, varsayılan 30, mevzuat gereği en fazla 30 |
 | notes | text |
 
+**`uncontracted` hakkında uyarı:** Bu değer aslında türetilebilir bir bilgidir (asansörün açık bir `contract_elevator` kaydı var mı?) ama alan olarak saklanıyor. Denormalizasyon kaçınılmaz olarak kayar. Kural: `status` alanına `uncontracted` **yalnızca** sözleşme servisi yazar — asansör sözleşmeye eklendiğinde `active`'e, sözleşmeden çıkarıldığında veya sözleşme feshedildiğinde `uncontracted`'a geçer. Doğrudan `PATCH /elevators/{id}` ile bu değere geçilemez; serializer reddeder. Kullanıcının elle seçebileceği değerler: `active`, `suspended`, `sealed`, `out_of_service`.
+
 ### 5.11 `contract`
 
 | Alan | Tip | Not |
 |---|---|---|
 | company, customer | FK | |
-| contract_number | varchar(30) | `unique(company, contract_number)`. Otomatik: `2026-0001` |
+| contract_number | varchar(30) | `unique(company, contract_number)` **+ `is_deleted = false` koşulu** (3.3). Otomatik: `2026-0001` |
 | status | choices | `draft`, `active`, `expired`, `terminated`, `renewed` |
 | scope | choices | `maintenance_only`, `maintenance_and_repair`, `full_coverage` |
 | start_date, end_date | date | |
@@ -573,10 +682,12 @@ En kritik tablo. Alanların çoğu opsiyoneldir ama **şemada bulunmalıdır** �
 ```sql
 CREATE UNIQUE INDEX uq_elevator_active_contract
 ON contract_elevator (elevator_id)
-WHERE removed_at IS NULL;
+WHERE removed_at IS NULL AND is_deleted = false;
 ```
 
-Django tarafında `UniqueConstraint(fields=["elevator"], condition=Q(removed_at__isnull=True))`.
+Django tarafında `UniqueConstraint(fields=["elevator"], condition=Q(removed_at__isnull=True, is_deleted=False))`.
+
+**`is_deleted = false` koşulu atlanamaz.** Atlanırsa şu sessiz hata çıkar: soft delete edilmiş bir `contract_elevator` kaydının `removed_at` alanı NULL kaldığı için index hâlâ o asansörü rehin tutar; asansör bir daha **hiçbir** sözleşmeye eklenemez ve hata mesajı "zaten aktif bir sözleşmede" der — ama kullanıcı böyle bir sözleşme göremez.
 
 Sözleşme bitince ilişki silinmez — `removed_at` doldurulur, geçmiş korunur.
 
@@ -595,7 +706,15 @@ Sözleşme bitince ilişki silinmez — `removed_at` doldurulur, geçmiş korunu
 | storage_backend | choices | `r2`, `local`, `tr_provider` — bkz. 2.7 KVKK notu |
 | uploaded_by | FK → user | |
 
-**Kurallar:** İçerik veritabanında saklanmaz. Yükleme öncesi MIME ve boyut doğrulaması (maks. 10 MB; jpeg, png, webp, pdf). Kullanıcının dosya adı sunucuda kullanılmaz — `storage_key` üretilir. İndirme her zaman imzalı geçici URL ile; bucket public olmaz.
+**Kurallar:** İçerik veritabanında saklanmaz. Yükleme öncesi MIME ve boyut doğrulaması (maks. 10 MB; jpeg, png, webp, pdf). Kullanıcının dosya adı sunucuda kullanılmaz — `storage_key` üretilir. İndirme her zaman imzalı geçici URL ile; bucket public olmaz. Soft delete edilen ekin depodaki nesnesinin ne olacağı 3.3'te tanımlı.
+
+**`company.logo` ve `contract.signed_document` FK'ları hakkında:** Bu iki alan polimorfik ilişkiyle çakışıyor gibi görünür ama çakışmaz — polimorfik ilişki "bu ek şu kayda aittir" der, FK ise "bu kaydın **güncel** logosu/imzalı belgesi budur" der. Bir sözleşmenin birden fazla imzalı PDF'i olabilir (asıl + zeyilname); FK hangisinin geçerli olduğunu işaretler.
+
+Bu ikili modelleme bir bütünlük kuralı gerektirir; **servis katmanında zorunlu olarak doğrulanır**:
+
+- FK ile işaret edilen `attachment` kaydının `company_id`'si, işaret eden kaydın `company_id`'si ile aynı olmalıdır. Aksi halde bir firma başka firmanın dosyasını gösterebilir — bu bir tenant sızıntısıdır.
+- İşaret edilen ekin `object_type` / `object_id` alanları geri, işaret eden kayda dönmelidir.
+- `company.logo` alanı `attachment`'a bakar, `attachment.company` da `company`'ye — bu **döngüsel bir FK'dir.** Django bunu tolere eder ama `company.logo` **nullable** olmalı ve migration'da alan ayrı bir `AddField` adımına düşer. İlk migration üretildikten sonra bunu elle doğrulayın (bkz. 17, adım 4).
 
 **Django `GenericForeignKey` kullanmayın** — `content_type` tablosu üzerinden ekstra join getirir ve tenant filtresini karmaşıklaştırır. Basit `object_type` + `object_id` yeterli, doğrulama servis katmanında yapılır.
 
@@ -614,6 +733,67 @@ Sözleşme bitince ilişki silinmez — `removed_at` doldurulur, geçmiş korunu
 | ip_address | inet |
 | user_agent | varchar(255) |
 | created_at | timestamptz |
+
+`bigserial` birincil anahtar, 3.2'deki "sıralı integer ID dışarı açılmaz" kuralının **bilinçli istisnasıdır**: bu tablo append-only ve yüksek hacimlidir, UUID index maliyeti gereksizdir. Karşılığında `GET /audit-logs` yanıtında `id` alanı **döndürülmez**; sayfalama `created_at` üzerinden yapılır.
+
+`company_id` ve `user_id` alanları FK **değildir**, düz UUID'dir. Sebep: denetim kaydı, işaret ettiği kayıt hard delete edilse bile ayakta kalmalıdır ve join gerektirmez.
+
+### 5.15 Kimlik ve yetki yardımcı tabloları
+
+Bu dört tablo bölüm 6, 7 ve 8.10'daki kuralların çalışması için zorunludur; şemadan atlanırsa ilgili akışlar hiç yazılamaz.
+
+#### `user_customer` — teknisyen müşteri ataması
+
+Bölüm 6.2'deki "kısıtlı¹" yetkisinin ve `PUT /users/{id}/customers` uçunun dayandığı tablo.
+
+| Alan | Tip | Not |
+|---|---|---|
+| company | FK | |
+| user | FK → user | |
+| customer | FK → customer | |
+| assigned_at | timestamptz | |
+| assigned_by | FK → user | |
+
+**Kısıt:** `unique(user, customer)` — partial, `WHERE is_deleted = false` (bkz. 3.3).
+
+**Kurallar:** Yalnızca `technician` rolündeki kullanıcılar için doldurulur. Diğer roller firmanın tüm müşterilerini görür, bu tabloya bakılmaz. Ataması olmayan bir teknisyen **hiçbir** müşteri kaydı görmez — boş liste döner, hata değil.
+
+#### `one_time_token` — şifre sıfırlama ve e-posta doğrulama
+
+Bölüm 7.1 ve 7.3'teki akışlar bu tabloya yazar. `invitation` ayrı kalır (rol ve ad/soyad taşır).
+
+| Alan | Tip | Not |
+|---|---|---|
+| user | FK → user | |
+| purpose | choices | `password_reset`, `email_verification` |
+| token_hash | varchar(255) | **Token düz metin saklanmaz** |
+| expires_at | timestamptz | `password_reset` 1 saat, `email_verification` 24 saat |
+| used_at | timestamptz | Tek kullanımlık |
+| requested_ip | inet | |
+
+**Kurallar:** Yeni token üretildiğinde aynı `user` + `purpose` için kullanılmamış eski token'lar geçersizleşir. `password_reset` kullanıldıktan sonra o kullanıcının **tüm** `refresh_session` kayıtları iptal edilir (7.3).
+
+#### `idempotency_key`
+
+Bölüm 8.10'daki `Idempotency-Key` başlığının dayandığı tablo.
+
+| Alan | Tip | Not |
+|---|---|---|
+| company | FK | |
+| user | FK → user | |
+| key | varchar(255) | İstemcinin gönderdiği başlık değeri |
+| endpoint | varchar(200) | Metot + yol |
+| request_hash | varchar(64) | İstek gövdesinin SHA-256'sı |
+| response_status | smallint | |
+| response_body | jsonb | |
+| created_at | timestamptz | |
+| expires_at | timestamptz | 24 saat |
+
+**Kısıt:** `unique(company, user, key)`.
+
+**Kritik kural:** Aynı anahtar **farklı** bir istek gövdesiyle gelirse (`request_hash` tutmuyorsa) saklanan yanıt döndürülmez — **409** + `IDEMPOTENCY_KEY_REUSED` döner. Aksi halde istemcinin anahtarı yeniden kullanması sessizce yanlış yanıt üretir ve bu, teşhisi en zor hata sınıflarından biridir.
+
+Süresi dolan kayıtlar gerçekten silinir (soft delete yok); bir yönetim komutu günlük temizler.
 
 ---
 
@@ -884,7 +1064,7 @@ Dosya baytları Django üzerinden **geçmez.** İstemci imzalı URL ile doğruda
 | Metot | Yol | Not |
 |---|---|---|
 | GET | `/audit-logs` | Filtreli, sayfalı |
-| GET | `/schema/` | `openapi/v1.yaml` statik olarak sunulur (üretilmez) |
+| GET | `/schema/` | drf-spectacular ile üretilir; depodaki `openapi/v1.yaml` ile aynı olmalı (bkz. 2.6) |
 | GET | `/docs/` | Redoc/Swagger UI statik sayfası — **üretimde kapalı veya IP kısıtlı** |
 | GET | `/health` | **Sürümsüz**, `/api` öneki yok |
 | GET | `/ready` | **Sürümsüz** — veritabanı ve S3 bağlantısını kontrol eder |
@@ -939,7 +1119,9 @@ GET /api/v1/elevators?page=1&page_size=25&ordering=name&search=yildiz&building=<
 
 ### 8.10 Idempotency
 
-POST istekleri için opsiyonel `Idempotency-Key` başlığı desteklenir. Aynı anahtarla gelen ikinci istek, ilkinin yanıtını **yeniden döndürür**, yeni kayıt oluşturmaz. Anahtarlar 24 saat saklanır.
+POST istekleri için opsiyonel `Idempotency-Key` başlığı desteklenir. Aynı anahtarla gelen ikinci istek, ilkinin yanıtını **yeniden döndürür**, yeni kayıt oluşturmaz. Anahtarlar 24 saat saklanır. Saklama tablosu: `idempotency_key` (bkz. 5.15).
+
+**Aynı anahtar + farklı gövde = 409.** İstemci bir anahtarı farklı bir istek gövdesiyle yeniden kullanırsa saklanan yanıt döndürülmez; `IDEMPOTENCY_KEY_REUSED` kodu ile 409 döner. Gövde karşılaştırması `request_hash` alanı üzerinden yapılır. Bu kural olmadan idempotency, hatayı gizleyen bir mekanizmaya dönüşür.
 
 Faz 1'de kritik değil ama `/contracts` ve `/elevators` oluşturma uçlarında uygulayın — mobil ve zayıf bağlantıda çift kayıt en sık şikayet konusudur. Faz 2'de bakım kaydı için zaten zorunlu olacak.
 
@@ -1077,7 +1259,9 @@ Frontend'de **hiçbir JSX/TS dosyasında Türkçe dize bulunmaz.** Tüm metinler
 <Button>{t("common.save")}</Button>
 ```
 
-`next-intl` kullanılır. Varsayılan ve tek dil `tr`; yapı çok dilli olacak şekilde kurulur ama Faz 1'de ikinci dil eklenmez.
+`i18next` + `react-i18next` kullanılır. Varsayılan ve tek dil `tr`; yapı çok dilli olacak şekilde kurulur ama Faz 1'de ikinci dil eklenmez.
+
+Çeviri dosyası `src/` **dışında**, depo kökündeki `messages/` dizininde durur. Sebep: bölüm 10.5'teki "src altında Türkçe karakter yasak" lint kuralı böylece istisnasız çalışır.
 
 ### 10.2 Çeviri dosyası yapısı
 
@@ -1136,9 +1320,11 @@ Tarih, sayı ve para biçimlendirmesi **yalnızca frontend'de**, `Intl` API ile:
 ## 11. QR kod
 
 ### 11.1 Token
-- Her asansör oluşturulduğunda `qr_token` üretilir: **nanoid, 12 karakter, URL-safe alfabe.**
+- Her asansör oluşturulduğunda `qr_token` üretilir: **nanoid, 12 karakter, URL-safe alfabe.** Kolon `varchar(24)`, ileride uzunluk artırılabilsin diye pay bırakır (bkz. 5.10).
 - Token asansörün `id`'si veya `registration_number`'ı **olmaz** — tahmin edilebilir olur, rakip firma sıralı deneyerek veri kazır.
-- Global unique. Değiştirilebilir olmalı (etiket kopyalandığında iptal için) — `qr_token_generated_at` tutulur.
+- Global unique, **koşulsuz** — silinen asansörün token'ı geri dönüşüme girmez, eski etiketin yeni bir asansöre gitmesi kabul edilemez.
+- Üretim sırasında çakışma olasılığı ihmal edilebilir düzeydedir ama sıfır değildir; `IntegrityError` yakalanıp **en fazla 3 kez** yeniden üretilir, sonra hata yükseltilir. Sessizce aynı token'la devam edilmez.
+- Değiştirilebilir olmalı (etiket kopyalandığında iptal için) — `qr_token_generated_at` tutulur. Token yenilendiğinde **eski etiketler geçersizleşir**; arayüz bunu kullanıcıya açıkça söylemelidir.
 
 ### 11.2 URL
 ```
@@ -1161,9 +1347,11 @@ https://app.example.com/q/{qr_token}
 ### 12.1 Dizin
 
 ```
-elevator-api/
+shiftlush-api/
 ├── pyproject.toml
+├── Makefile               # sync-spec, dev, test
 ├── manage.py
+├── docker-compose.yml     # Postgres + MinIO
 ├── config/
 │   ├── settings/
 │   │   ├── base.py
@@ -1175,15 +1363,19 @@ elevator-api/
 ├── core/
 │   ├── models.py          # abstract models
 │   ├── managers.py        # tenant-aware manager
-│   ├── middleware.py      # company context
+│   ├── middleware.py      # company context, request id
+│   ├── context.py         # contextvar + company_context/system_context
 │   ├── permissions.py
 │   ├── validators.py      # tax number, national id, phone
 │   ├── text.py            # Turkish normalization
-│   ├── exceptions.py      # error codes + handler
+│   ├── crypto.py          # AES-256-GCM field encryption
+│   ├── error_codes.py     # error code enum
+│   ├── exceptions.py      # exception handler
+│   ├── idempotency.py
 │   └── pagination.py
 ├── apps/
 │   ├── companies/
-│   ├── users/             # custom user, auth, invitations
+│   ├── users/             # custom user, auth, invitations, user_customer
 │   ├── address/           # province/district/neighborhood + loader
 │   ├── customers/
 │   ├── properties/        # complex + building
@@ -1194,12 +1386,29 @@ elevator-api/
 ├── locale/tr/LC_MESSAGES/
 ├── templates/labels/
 ├── openapi/
-│   └── v1.yaml            # elle yazılan API sözleşmesi
-├── .python-version        # 3.14
+│   └── v1.yaml            # ÜRETİLEN — drf-spectacular çıktısı, elle düzenlenmez
+├── .python-version        # 3.13
 └── tests/
 ```
 
-Her app içinde: `models.py`, `serializers.py`, `views.py`, `urls.py`, `filters.py`, `services.py`, `admin.py`, `tests/`.
+**Her app'in içi** — bölüm 8.2'deki sürümleme yapısıyla birebir aynı olmalıdır:
+
+```
+apps/elevators/
+├── models.py              # sürümlenmez
+├── services.py            # sürümlenmez — iş mantığı
+├── selectors.py           # sürümlenmez — okuma sorguları
+├── admin.py
+├── api/
+│   └── v1/
+│       ├── serializers.py
+│       ├── views.py
+│       ├── filters.py
+│       └── urls.py
+└── tests/
+```
+
+`serializers.py`, `views.py`, `filters.py` ve `urls.py` **app kökünde bulunmaz**, `api/v1/` altındadır. v2 açıldığında yalnızca bu dizin çoğaltılır; `models.py` ve `services.py` tektir ve asla çatallanmaz.
 
 **`services.py` kuralı:** Birden fazla modele dokunan veya transaction gerektiren iş mantığı (sözleşme oluşturma + asansör ilişkilendirme, davet kabulü + kullanıcı aktifleştirme) view'a değil servis fonksiyonuna yazılır. View sadece serileştirme ve yetki ile ilgilenir. Faz 2'de aynı mantık mobil API'den de çağrılacak.
 
@@ -1248,34 +1457,57 @@ Admin **ürün arayüzü değildir**, iç operasyon aracıdır. Tamamen İngiliz
 ## 13. Frontend proje yapısı
 
 ```
-elevator-web/
+shiftlush-web/
 ├── package.json
-├── messages/tr.json
+├── vite.config.ts
+├── index.html
+├── messages/
+│   └── tr.json                 # src DIŞINDA — bkz. 10.1
 ├── src/
-│   ├── app/
-│   │   ├── (auth)/login, register, invite/[token]
-│   │   ├── (dashboard)/customers, buildings, elevators, contracts, users, settings
-│   │   └── q/[token]/          # QR yönlendirme
+│   ├── main.tsx
+│   ├── routes/                 # TanStack Router dosya bazlı yönlendirme
+│   │   ├── __root.tsx
+│   │   ├── _auth/              # giriş duvarı öncesi yerleşim
+│   │   │   ├── login.tsx
+│   │   │   ├── register.tsx
+│   │   │   ├── invite.$token.tsx
+│   │   │   └── password-reset.tsx
+│   │   ├── _app/               # kimlik doğrulamalı yerleşim
+│   │   │   ├── customers/
+│   │   │   ├── buildings/
+│   │   │   ├── complexes/
+│   │   │   ├── elevators/
+│   │   │   ├── contracts/
+│   │   │   ├── users/
+│   │   │   └── settings/
+│   │   └── q.$token.tsx        # QR yönlendirme
 │   ├── components/
 │   │   ├── ui/                 # shadcn
 │   │   ├── forms/
+│   │   ├── table/              # TanStack Table sarmalayıcıları
 │   │   └── map/
 │   ├── lib/
 │   │   ├── api/
-│   │   │   ├── client.ts       # fetch wrapper, token refresh
+│   │   │   ├── client.ts       # fetch sarmalayıcı, jeton tazeleme
 │   │   │   ├── generated.ts    # ÜRETİLEN — elle düzenlenmez
 │   │   │   └── endpoints/
 │   │   ├── auth/
+│   │   ├── i18n.ts             # i18next kurulumu + enumLabel()
 │   │   └── format.ts           # Intl sarmalayıcıları
+│   ├── routeTree.gen.ts        # ÜRETİLEN — TanStack Router
 │   └── types/
-└── openapi/v1.yaml             # backend deposundan kopyalanır
+└── openapi/v1.yaml             # backend deposundan senkronlanır — bkz. 14.1
 ```
 
 **Kurallar:**
-- `generated.ts` elle düzenlenmez, `.gitignore`'a **konmaz** (derleme backend'e bağımlı olmasın diye commit edilir).
+- `generated.ts` ve `routeTree.gen.ts` elle düzenlenmez, `.gitignore`'a **konmaz** (derleme backend'e bağımlı olmasın diye commit edilir).
 - API çağrıları doğrudan bileşenden yapılmaz; `lib/api/endpoints/` altındaki fonksiyonlar üzerinden geçer.
 - Access token React state/context'te tutulur, **localStorage'a yazılmaz** (XSS riski).
 - Her liste sayfası sunucu tarafı sayfalama kullanır — 500 asansörlü firma var, istemcide filtreleme yapmayın.
+- **Liste ekranlarının tüm filtre/sayfalama/sıralama durumu URL'de taşınır.** TanStack Router'ın `validateSearch` kancasına bir Zod şeması bağlanır; arama parametreleri tipli ve doğrulanmış gelir. Elle `URLSearchParams` ayrıştırma yazılmaz.
+- **Rota bazlı yetki:** `_app` yerleşiminin `beforeLoad` kancası oturumu doğrular, yoksa `login`'e yönlendirir ve hedef rotayı saklar. Rol bazlı rota kısıtı da burada uygulanır — ama bu yalnızca gezinme kolaylığıdır, **yetki sunucuda kontrol edilir** (bkz. 6.3).
+- **Uygulama açılış durumu:** Erişim jetonu bellekte olduğu için her sayfa yenilemesinde `/auth/refresh` çağrılır. Bu süre boyunca uygulama iskeleti gösterilir; boş beyaz ekran veya tam sayfa spinner kullanılmaz.
+- `vite build` statik çıktı üretir. Hiçbir sunucu tarafı render, API rotası veya Node çalışma zamanı bağımlılığı eklenmez.
 
 ---
 
@@ -1283,29 +1515,39 @@ elevator-web/
 
 ### 14.1 OpenAPI akışı
 
-Spec elle yazıldığı için akış kod-önce yaklaşımın **tersidir**: spec önce gelir, iki taraf da ona uyar.
+Spec koddan üretilir (bkz. 2.6). Tek doğruluk kaynağı backend'in serializer ve view tanımlarıdır; `openapi/v1.yaml` bunun **derlenmiş çıktısıdır**.
 
 ```
-                openapi/v1.yaml
-                (elle yazılır — tek doğruluk kaynağı)
+  shiftlush-api serializer + view tanımları
                        │
-        ┌──────────────┴──────────────┐
-        ▼                             ▼
-  elevator-api                   elevator-web
-  schemathesis ile               openapi-typescript ile
-  yanıtlar doğrulanır            generated.ts üretilir
+       manage.py spectacular --file openapi/v1.yaml --fail-on-warn
+                       │
+        shiftlush-api/openapi/v1.yaml  (commit edilir)
+                       │
+              make sync-spec  (kopyalar + sağlama toplamı yazar)
+                       ▼
+        shiftlush-web/openapi/v1.yaml  (commit edilir)
+                       │
+              npm run generate:api  (openapi-typescript)
+                       ▼
+        shiftlush-web/src/lib/api/generated.ts  (commit edilir)
 ```
 
 **Sıra:**
-1. Yeni bir endpoint yazılmadan **önce** `openapi/v1.yaml` güncellenir ve gözden geçirilir. İki taraf sözleşmede anlaşır.
-2. Backend endpoint'i yazar. CI'da `schemathesis` spec'teki her uç için gerçek yanıtı doğrular; uyumsuzsa **build kırılır**.
-3. Frontend `npm run generate:api` ile `generated.ts` üretir ve paralel olarak ekranı yazar — backend'in bitmesini beklemez.
+1. Backend endpoint'i ve serializer'ını yazar. Serializer'ın alan listesi gözden geçirilir — spec'in kalitesi doğrudan serializer'ın kalitesidir.
+2. `manage.py spectacular` ile spec yeniden üretilir ve commit edilir. CI, spec'in koda göre güncel olduğunu `git diff --exit-code` ile doğrular; ayrıca `oasdiff` ile kırıcı değişiklik denetler (2.6).
+3. Spec frontend deposuna senkronlanır, `generated.ts` üretilir, ekran yazılır.
 
-**Spec nerede yaşar?** Backend deposunda (`elevator-api/openapi/v1.yaml`) tutulur ve sürüm çıktığında frontend deposuna kopyalanır. Ayrı bir "contract" deposu açmayın — üç depo, iki depodan daha zor yönetilir.
+**Spec nerede yaşar?** Backend deposunda üretilir (`shiftlush-api/openapi/v1.yaml`), frontend deposuna kopyalanır. Ayrı bir "contract" deposu açmayın — üç depo, iki depodan daha zor yönetilir.
 
-**Kritik:** Frontend derlemesi **asla çalışan bir backend'e bağımlı olmamalı.** `v1.yaml` ve `generated.ts` her ikisi de frontend deposunda commit edilir. Aksi halde backend kapalıyken frontend derlenemez ve CI kırılganlaşır.
+**Senkron kayması nasıl engellenir?** İki depoda aynı dosyanın iki kopyası var; kopyalama elle yapılırsa er geç ayrışır. Bunu iki mekanizma kapatır:
 
-**Uyarı:** Elle yazılan spec, güncellenmediği anda yalan söylemeye başlar ve hiçbir uyarı vermez. 2.6'daki üç CI kontrolü bu yaklaşımın maliyeti değil, **ön koşuludur.** Kurulmayacaksa spec-first yapmayın.
+- Backend deposunda `make sync-spec` komutu: spec'i üretir, frontend deposuna kopyalar ve `openapi/v1.sha256` dosyasına sağlama toplamını yazar. İki depo yan yana klonlanmış olmalı.
+- Frontend CI'ı, `openapi/v1.yaml` dosyasının sağlama toplamını `v1.sha256` ile karşılaştırır; tutmuyorsa **build kırılır.** Ayrıca `generated.ts`'in commit edilmiş spec'ten üretildiğini `npm run generate:api && git diff --exit-code` ile doğrular.
+
+**Kritik:** Frontend derlemesi **asla çalışan bir backend'e bağımlı olmamalı.** `v1.yaml` ve `generated.ts` ikisi de frontend deposunda commit edilir. Aksi halde backend kapalıyken frontend derlenemez ve CI kırılganlaşır.
+
+**Frontend backend'i beklemek zorunda mı?** Hayır. Serializer iskeletleri (alanlar ve tipler, iş mantığı olmadan) endpoint'lerden önce yazılabilir; spec o noktada üretilip senkronlanır. Frontend gerçek uçlar bitmeden ekranı yazmaya başlar.
 
 ### 14.2 Sürümleme
 
@@ -1317,16 +1559,17 @@ Politikanın tamamı bölüm 8.1–8.5'tedir. Depolar arası akışı ilgilendir
 - Frontend'in kullandığı sürüm `deprecated` işaretlendiğinde CI uyarı üretir; `sunset` tarihine 30 gün kalınca build kırılır.
 
 ### 14.3 Yerel geliştirme
-- Backend `localhost:8000`, frontend `localhost:3000`.
-- `CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]`
-- Frontend `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
+- Backend `localhost:8000`, frontend `localhost:5173` (Vite varsayılanı).
+- `CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]`, `CORS_ALLOW_CREDENTIALS = True` (refresh cookie için).
+- Frontend `VITE_API_URL=http://localhost:8000/api/v1` (`.env.local`).
 - Backend deposunda `docker-compose.yml` — Postgres + MinIO. Frontend'in Docker'a ihtiyacı yok.
-- İki depo yan yana klonlanır; ortak bir `Makefile` veya `README` her ikisini de başlatan komutu belgeler.
+- İki depo **yan yana** klonlanır (`make sync-spec` buna bağlı); ortak bir `Makefile` veya `README` her ikisini de başlatan komutu belgeler.
 
 ### 14.4 Dağıtım
 - Backend: konteyner (Docker), `gunicorn` + `whitenoise` (yalnızca admin statikleri için).
-- Frontend: Node veya edge; `output: "standalone"`.
-- **Aynı kayıtlı üst alan adı zorunlu:** `api.example.com` + `app.example.com`. Gerekçe bölüm 7.4'te.
+- Frontend: `vite build` → statik dosyalar. CDN veya nginx konteyneri. **Çalıştırılacak Node süreci yoktur.**
+- SPA yönlendirmesi için sunucuda tek kural gerekir: bilinmeyen yollar `index.html`'e düşer (nginx `try_files $uri /index.html`). Bu unutulursa `/elevators/<id>` adresine doğrudan girmek veya sayfayı yenilemek 404 verir — QR yönlendirmesi de kırılır.
+- **Aynı kayıtlı üst alan adı zorunlu:** `api.<alan-adı>` + `app.<alan-adı>`. Gerekçe bölüm 7.4'te. *(Alan adı henüz belirlenmedi; dağıtım fazından önce karara bağlanacak.)*
 - İki ayrı CI hattı, iki ayrı sürüm etiketi. Backend her zaman önce dağıtılır (geriye dönük uyumlu değişiklikte sorun olmaz).
 
 ---
@@ -1357,7 +1600,7 @@ Algoritmik kontroller `core/validators.py` içinde tek yerde. Frontend'deki Zod 
 - **Aydınlatma metni ve açık rıza** akışı Faz 1'de kurulmalı — sonradan geriye dönük rıza toplamak çok zordur.
 - Kişisel veri barındıran alanlar: `user.national_id`, `customer.national_id`, `customer_contact` tablosunun tamamı.
 - TC kimlik numaraları uygulama katmanında **şifrelenerek** saklanır (AES-256-GCM, anahtar secret manager'da).
-- **Yurt dışına veri aktarımı:** Cloudflare R2 verileri Türkiye dışında saklar. Kişisel veri içeren dosyalar (imzalı sözleşme PDF'i, kimlik belgesi) için bölüm 2.7'deki uyarıyı okuyun ve bir hukukçuya danışın. Bu karar Faz 1'de verilmeli — sonradan dosya taşımak istemezsiniz.
+- **Yurt dışına veri aktarımı — karar verildi:** Tek Cloudflare R2 bucket, yargı bölgesi AB'ye sabitlenmiş (bkz. 2.7). Aydınlatma metninde yurt dışına aktarım açıkça belirtilir. Kişisel veri içeren kategorilerin ileride Türkiye'ye taşınması `attachment.storage_backend` alanı sayesinde migration gerektirmez. **Bu kararı bir hukukçuya doğrulatın.**
 - Veri saklama süresi politikası tanımlanır; soft delete'ten sonra kalıcı anonimleştirme süresi belirlenir (öneri: 5 yıl).
 - Üretimde HTTPS zorunlu, HSTS açık.
 - Veritabanı yedeği günlük otomatik, geri yükleme testi yapılmış.
@@ -1370,38 +1613,46 @@ Tek bir dev prompt yerine **sıralı, doğrulanabilir adımlar**. Her adımdan s
 
 ### Backend deposu
 
-0. **API sözleşmesi taslağı** — `openapi/v1.yaml`, bölüm 8.6'daki uçların yol/metot/şema iskeleti. Kod yazılmadan önce. Frontend bu dosyayla paralel başlayabilir.
-1. **İskelet** — bölüm 12.1'deki dizin yapısı, Python 3.14 (`.python-version`), Django 6.1, `uv` bağımlılıkları, ortama göre bölünmüş ayarlar, ruff + mypy + pytest, Docker Compose (Postgres + MinIO), `.env.example`.
+*Not: Eski "adım 0 — API sözleşmesi taslağı" kaldırıldı. Spec artık koddan üretiliyor (2.6), elle yazılmıyor.*
+
+1. **İskelet** — bölüm 12.1'deki dizin yapısı, Python 3.13 (`.python-version`), Django 6.1, `uv` bağımlılıkları, ortama göre bölünmüş ayarlar, ruff + mypy + pytest, Docker Compose (Postgres + MinIO), `.env.example`, `Makefile`.
+   **İlk iş bağımlılıkları gerçekten kurmaktır** — `uv sync` çalışmadan sonraki adıma geçmeyin.
 2. **Özel kullanıcı modeli + `AUTH_USER_MODEL`** — ilk migration'dan önce. Bu adımı atlamak sonradan tüm veritabanını taşımak demek.
-3. **Ortak soyut modeller** — `TimeStampedModel`, `SoftDeleteModel`, `CompanyOwnedModel`, tenant manager, contextvar middleware.
-4. **Tüm modeller** — bölüm 5, `TextChoices` enum'ları, index'ler, `CheckConstraint`, partial unique index'ler. İlk migration üretilir ve **elle gözden geçirilir**.
-5. **Auth** — kayıt, giriş, refresh, çıkış, şifre sıfırlama, e-posta doğrulama, cookie ayarları.
-6. **Yetki katmanı** — permission sınıfları, yetki matrisi, çapraz firma erişim testleri. **Bu adım tamamlanmadan iş modüllerine geçmeyin.**
-7. **Hata formatı + exception handler + hata kodu enum'u** — `core/error_codes.py`, `X-Request-ID` middleware, standart yanıt başlıkları.
-7b. **Sürümleme iskeleti** — `URLPathVersioning`, `apps/<app>/api/v1/` dizin düzeni, `/health` ve `/ready` (sürümsüz), `/schema/` ve `/docs/` (üretimde kısıtlı).
-8. **Adres app'i** — yükleme komutu, normalize fonksiyonu, trigram index, arama endpoint'leri.
-9. **Companies + users + invitations** endpoint'leri, e-posta şablonları, `locale/tr`.
-10. **Customers + customer contacts.**
-11. **Properties** (complex + building).
-12. **Elevators** — tam künye, QR token üretimi.
-13. **Contracts** — CRUD + asansör ilişkilendirme + aktif sözleşme kısıtı.
-14. **Attachments** — Cloudflare R2 (dev: MinIO), imzalı yükleme/indirme URL'i, bucket CORS ayarı, MIME/boyut doğrulaması, `storage_backend` alanı.
-15. **QR etiket PDF üretimi.**
-16. **Audit log** — sinyaller, hassas alan maskeleme.
-17. **Sözleşme doğrulama CI'ı** — `schemathesis` ile yanıt doğrulama, route ↔ spec eşleşme testi, hata kodu enum ↔ spec eşleşme testi, `oasdiff` ile kırıcı değişiklik tespiti, `CHANGELOG-API.md`.
-18. **Örnek veri komutu** — 1 firma, 5 kullanıcı, 10 müşteri, 25 bina, 60 asansör, 8 sözleşme.
+3. **Ortak soyut modeller** — `TimeStampedModel`, `SoftDeleteModel`, `CompanyOwnedModel`, tenant manager, contextvar middleware, `company_context` / `system_context` (3.1).
+4. **Tüm modeller** — bölüm 5, `TextChoices` enum'ları, index'ler, `CheckConstraint`, partial unique index'ler (**hepsi `is_deleted = false` koşullu**, bkz. 3.3). 5.15'teki dört yardımcı tablo dahil. İlk migration üretilir ve **elle gözden geçirilir** — özellikle `company.logo` döngüsel FK'sının ayrı `AddField` adımına düştüğü doğrulanır (5.13).
+5. **Alan şifreleme** — `core/crypto.py`, AES-256-GCM, anahtar ortam değişkeninden. `user.national_id` ve `customer.national_id` bu katmandan geçer.
+6. **Auth** — kayıt, giriş, refresh, çıkış, şifre sıfırlama, e-posta doğrulama, cookie ayarları, `one_time_token` akışları.
+7. **Yetki katmanı** — permission sınıfları, yetki matrisi, `user_customer` üzerinden teknisyen kısıtı, çapraz firma erişim testleri. **Bu adım tamamlanmadan iş modüllerine geçmeyin.**
+8. **Hata formatı + exception handler + hata kodu enum'u** — `core/error_codes.py`, `X-Request-ID` middleware, standart yanıt başlıkları.
+9. **Sürümleme iskeleti** — `URLPathVersioning`, `apps/<app>/api/v1/` dizin düzeni, `/health` ve `/ready` (sürümsüz), `/schema/` ve `/docs/` (üretimde kısıtlı), drf-spectacular yapılandırması.
+10. **Adres app'i** — yükleme komutu, normalize fonksiyonu, trigram index, arama endpoint'leri.
+11. **Companies + users + invitations + user_customer** endpoint'leri, e-posta şablonları, `locale/tr`.
+12. **Customers + customer contacts.**
+13. **Properties** (complex + building) — silme öncesi bağlı kayıt kontrolü dahil (3.3).
+14. **Elevators** — tam künye, QR token üretimi.
+15. **Contracts** — CRUD + asansör ilişkilendirme + aktif sözleşme kısıtı + `terminate` / `renew` durum geçişleri.
+16. **Attachments** — Cloudflare R2 (bucket bölgesi AB, dev: MinIO), imzalı yükleme/indirme URL'i, bucket CORS ayarı, MIME/boyut doğrulaması, `storage_backend` dallanması, 30 günlük nesne temizleme komutu.
+17. **Idempotency katmanı** — `core/idempotency.py`, `/contracts` ve `/elevators` POST uçlarında (8.10).
+18. **QR etiket PDF üretimi.**
+19. **Audit log** — sinyaller, hassas alan maskeleme.
+20. **Sözleşme CI'ı** — `manage.py spectacular --fail-on-warn` + `git diff --exit-code`, `oasdiff` ile kırıcı değişiklik tespiti, hata kodu enum ↔ spec eşleşme testi, `CHANGELOG-API.md`, `make sync-spec`.
+21. **Örnek veri komutu** (`seed_demo_data`) — 1 firma, 5 kullanıcı (her rolden), 10 müşteri, 25 bina, 60 asansör, 8 sözleşme.
+
+### Tasarım fazı
+
+Bu faz **frontend kodundan önce** yapılır (bölüm 20). Çıktısı üç şeydir ve adım 22'nin girdisidir:
+`globals.css` içine token'lar (açık + koyu tema), `tailwind.config.ts` eşlemesi, `messages/tr.json` iskeleti.
 
 ### Frontend deposu
 
-19. **İskelet** — Next.js, Tailwind, shadcn, next-intl, `tr.json` iskeleti, Türkçe-dize lint kuralı.
-20. **API katmanı** — `openapi.json` → `generated.ts`, fetch sarmalayıcı, token refresh, hata kodu → çeviri eşlemesi.
-21. **Auth ekranları** — giriş, kayıt, davet kabul, şifre sıfırlama.
-22. **Ana yerleşim** — kenar çubuğu, rol bazlı menü, boş durum bileşenleri.
-23. **Adres seçici bileşeni** — il/ilçe dropdown + mahalle typeahead + harita, iki yönlü.
-24. **Her modül için liste + form ekranları** — müşteri, bina, asansör, sözleşme, kullanıcı.
-25. **QR etiket yazdırma akışı.**
-
-Frontend'de bu aşamada işlevsellik hedeflenir; **görsel tasarım ayrı fazda yapılacak.**
+22. **İskelet** — Vite + React 19 + TypeScript, TanStack Router (dosya bazlı), Tailwind, shadcn/ui, i18next, tasarım fazından gelen token'lar, `messages/tr.json`, Türkçe-dize lint kuralı.
+23. **API katmanı** — `openapi/v1.yaml` → `generated.ts` (openapi-typescript), fetch sarmalayıcı, jeton tazeleme, hata kodu → çeviri eşlemesi, `enumLabel()` yardımcısı (10.2).
+24. **Auth ekranları** — giriş, kayıt, davet kabul, şifre sıfırlama, uygulama açılış iskeleti.
+25. **Ana yerleşim** — kenar çubuğu, rol bazlı menü, `beforeLoad` oturum koruması, boş durum bileşenleri.
+26. **Liste altyapısı** — TanStack Table + sunucu tarafı sayfalama + `validateSearch` ile tipli filtre parametreleri. Bir kez yazılır, beş listede kullanılır.
+27. **Adres seçici bileşeni** — il/ilçe dropdown + mahalle typeahead + harita, iki yönlü.
+28. **Her modül için liste + form ekranları** — müşteri, bina, asansör, sözleşme, kullanıcı.
+29. **QR etiket yazdırma akışı.**
 
 ---
 
@@ -1423,8 +1674,11 @@ Frontend'de bu aşamada işlevsellik hedeflenir; **görsel tasarım ayrı fazda 
 - ❌ Reverse geocoding'i frontend'den doğrudan sağlayıcıya çağırmak
 - ❌ Dosya baytlarını uygulama sunucusundan geçirmek
 - ❌ Üretimde `/docs/` uçunu açık bırakmak
-- ❌ `openapi/v1.yaml` güncellemeden endpoint değiştirmek
-- ❌ Sözleşme doğrulama CI'ını kurmadan spec-first çalışmak
+- ❌ Endpoint değiştirip `openapi/v1.yaml` dosyasını yeniden üretmeden commit etmek
+- ❌ Üretilen `openapi/v1.yaml` dosyasını elle düzenlemek
+- ❌ drf-spectacular uyarılarını görmezden gelmek (`--fail-on-warn` kapalı çalıştırmak)
+- ❌ Frontend'e sunucu tarafı render, API rotası veya Node çalışma zamanı bağımlılığı eklemek
+- ❌ SPA fallback kuralını (`try_files $uri /index.html`) unutmak — QR yönlendirmesi kırılır
 - ❌ R2 bucket'ını public yapmak veya public custom domain bağlamak
 - ❌ Yerel geliştirmede gerçek R2 bucket'ına yazmak
 - ❌ Kişisel veri içeren belgeleri yurt dışı depolamaya KVKK değerlendirmesi yapmadan koymak
@@ -1444,6 +1698,12 @@ Frontend'de bu aşamada işlevsellik hedeflenir; **görsel tasarım ayrı fazda 
 - ❌ QR token'ı asansör ID'sinden türetmek
 - ❌ Dosyaları veritabanında BLOB olarak saklamak
 - ❌ Zorunlu alan sayısını abartmak — saha ekibi eksik bilgiyle kayıt açmak zorunda kalır
+- ❌ Unique kısıtı `is_deleted = false` koşulu olmadan yazmak (silinen kayıt iş anahtarını rehin alır)
+- ❌ Soft delete'te `on_delete=PROTECT`'in tetikleneceğini varsaymak — tetiklenmez, servis kontrolü şart
+- ❌ Şifrelenerek saklanan bir alanı `char(11)` gibi düz metin uzunluğuyla tanımlamak
+- ❌ `system_context()`'i `services.py` dışından veya dört bootstrap akışı dışında çağırmak
+- ❌ `status = uncontracted` değerini doğrudan `PATCH /elevators/{id}` ile yazdırmak
+- ❌ Aynı `Idempotency-Key` farklı gövdeyle geldiğinde eski yanıtı döndürmek
 
 ### Django'ya özgü
 - ❌ `ModelSerializer`'da `fields = "__all__"`
@@ -1480,17 +1740,26 @@ Frontend'de bu aşamada işlevsellik hedeflenir; **görsel tasarım ayrı fazda 
 - [ ] Silinen hiçbir kayıt veritabanından fiziksel olarak kaybolmuyor
 - [ ] Backend `.py` dosyalarında Türkçe karakter yok (lint geçiyor)
 - [ ] Frontend `src/` altında Türkçe dize yok (lint geçiyor)
-- [ ] `openapi.json` güncel; `generated.ts` ondan üretilmiş; ikisi de commit edilmiş
+- [ ] `openapi/v1.yaml` koddan üretilmiş ve güncel; `generated.ts` ondan üretilmiş; ikisi de her iki depoda commit edilmiş
 - [ ] `/api/v2/elevators` isteği 404 dönüyor (tanımsız sürüme sessizce v1 servis edilmiyor)
 - [ ] Her yanıtta `X-Request-ID` ve `X-API-Version` başlıkları var; 500 yanıtının gövdesinde `request_id` görünüyor
-- [ ] `schemathesis` spec'teki tüm uçları gerçek API'ye karşı doğruluyor ve geçiyor
-- [ ] Spec'te olmayan bir route veya route'u olmayan bir spec girdisi CI'ı kırıyor
-- [ ] `core/error_codes.py` içindeki her kod `openapi/v1.yaml` içinde de tanımlı
+- [ ] `manage.py spectacular --fail-on-warn` uyarısız geçiyor; sonrası `git diff --exit-code` temiz
+- [ ] `oasdiff` kırıcı bir fark bulup sürüm artmamışsa CI kırılıyor
+- [ ] İki depodaki `openapi/v1.yaml` dosyalarının sağlama toplamı tutuyor; tutmazsa frontend CI'ı kırılıyor
+- [ ] `core/error_codes.py` içindeki her kod üretilen spec'te de tanımlı
 - [ ] Çeviri dosyasında olmayan bir enum değeri geldiğinde arayüz çökmüyor, ham değeri gösteriyor
 - [ ] Aynı `Idempotency-Key` ile iki kez sözleşme oluşturma isteği tek kayıt üretiyor
 - [ ] Dosya baytları Django üzerinden geçmiyor — yükleme imzalı URL ile doğrudan R2'ye yapılıyor
 - [ ] R2 bucket private; imzalı URL süresi dolduktan sonra erişim reddediliyor
-- [ ] Backend Python 3.14 ve Django 6.1 üzerinde çalışıyor; `python -Wd manage.py check` uyarısız
+- [ ] Backend Python 3.13 ve Django 6.1 üzerinde çalışıyor; `python -Wd manage.py check` uyarısız
+- [ ] Silinen bir asansörün `registration_number`'ı yeni bir asansöre verilebiliyor (partial unique index çalışıyor)
+- [ ] Sözleşmeden çıkarılıp sonra soft delete edilmiş bir `contract_elevator` kaydı, asansörün yeni sözleşmeye eklenmesini engellemiyor
+- [ ] Firma kaydı ve davet kabulü tenant context'i boşken çalışıyor (`system_context` bootstrap'i doğru)
+- [ ] Ataması olmayan teknisyen boş liste görüyor, hata almıyor
+- [ ] Aynı `Idempotency-Key` farklı gövdeyle geldiğinde 409 + `IDEMPOTENCY_KEY_REUSED` dönüyor
+- [ ] `national_id` veritabanında düz metin olarak okunamıyor
+- [ ] Frontend `vite build` çıktısı statik; dağıtımda çalışan Node süreci yok
+- [ ] `/elevators/<uuid>` adresine doğrudan girildiğinde sayfa açılıyor (SPA fallback kuralı var)
 - [ ] `ruff check`, `mypy`, `pytest` hatasız geçiyor
 - [ ] Temiz veritabanında: `migrate` → `load_address_data` → `seed_demo_data` baştan sona çalışıyor
 
@@ -1498,9 +1767,18 @@ Frontend'de bu aşamada işlevsellik hedeflenir; **görsel tasarım ayrı fazda 
 
 ## 20. Tasarım fazına devir notları
 
+**Tasarım fazı frontend kodundan önce yapılır.** Ekranlar bir kez yazılsın diye token'lar ve bileşen kütüphanesi baştan kurulur. Fazın tam prompt'u `shiftlush-web/docs/design-brief.md` dosyasındadır; aşağıdakiler o brief'in dayandığı kararlardır.
+
 - **Mobil öncelikli düşünün** — Faz 2'de teknisyen bu ekranları telefonda kullanacak.
-- **Liste ekranları yoğun veri gösterecek** — 500+ asansörlü firmalar olacak. Tablo tasarımı sıkışık ve taranabilir olmalı; kart yerleşimi uygun değil.
-- **Asansör formu uzun** — sekmeli veya adım adım (kimlik / teknik / üretim / kontrol) yapı gerekli. Tek uzun form kullanılabilir değil.
+- **Liste ekranları yoğun veri gösterecek** — 500+ asansörlü firmalar olacak. Tablo tasarımı sıkışık ve taranabilir olmalı; kart yerleşimi uygun değil. Mobilde de kart ızgarasına dönüştürülmez, başka bir çözüm bulunur.
+- **Asansör formu uzun** — sekmeli veya adım adım (kimlik / sınıflandırma / teknik / üretim / kontrol / ekler) yapı gerekli. Tek uzun form kullanılabilir değil.
 - **Etiket rengi renk kodlu gösterilmeli** ama sadece renge güvenmeyin — metin etiketi de olsun (erişilebilirlik).
-- **Boş durum ekranları** önemli: yeni firma sisteme girdiğinde 5 boş liste görecek. Her boş liste bir sonraki adımı önermeli.
+- **Etiket renkleri ile sistem durum renkleri çakışıyor.** Periyodik kontrol etiketi `yeşil / mavi / sarı / kırmızı` bir **veri** alanıdır; sistem de aynı dört rengi başarı/bilgi/uyarı/hata için kullanmak ister. İkisi aynı tabloda yan yana görünür. Bunlar ayrı bir görsel dille ayrıştırılmalı — bu, tasarım fazının çözmesi gereken asıl problemdir.
+- **Boş durum ekranları** önemli: yeni firma sisteme girdiğinde 5 boş liste görecek. Her boş liste bir sonraki adımı önermeli ve zincir kurmalı (müşteri yoksa bina, bina yoksa asansör eklenemez). "Filtre sonucu boş" ile "hiç kayıt yok" farklı görünmeli.
 - **Türkçe metinler İngilizce'den ortalama %20 uzundur** — buton ve etiket genişliklerini buna göre tasarlayın. "Save" 4 karakter, "Kaydet" 6; "Delete" 6, "Sil" 3 ama "Kalıcı olarak sil" 17.
+- **Uygulama açılış durumu tasarlanmalı.** Erişim jetonu bellekte tutulduğu için her sayfa yenilemesinde oturum arka planda tazelenir. Bu süre için bir uygulama iskeleti gerekir; boş beyaz ekran veya tam sayfa spinner kabul edilmez.
+- **Rol bazlı alan gizleme tasarlanmalı.** `operations` sözleşmenin mali alanlarını, `accountant` asansörün teknik künyesini görmez. Gizlenen alanın yerinde ne olacağına (boşluk / kilit ikonu / hiç görünmemek) karar verilmeli.
+- **Eksik bilgiyle kayıt normaldir, hata değildir.** Saha ekibi asansörü yarım künyeyle açar. "Eksik ama geçerli" durumu görsel olarak hatadan ayrılmalı.
+- **Açık ve koyu tema ikisi de gerekli.** Ofis kullanıcısı gün boyu açık temada, teknisyen loş makine dairesinde.
+- **Bilinmeyen enum değeri çökmemeli** (10.2). Backend yeni bir değer eklediğinde ham değer gösterilir; bunun görsel hali tasarlanmalı ki kullanıcı "bozuk" sanmasın.
+- **Baskı tasarımı ayrı bir iştir.** QR etiketi A4'te 3×4 grid, makine dairesinde loş ışıkta ve kirli yüzeyde okunacak: yüksek kontrast, kalın tipografi, ince çizgi yok.
