@@ -1,0 +1,10 @@
+Merhaba {{ first_name }},
+
+{{ company_name }} sizi ShiftLush'ta hesap açmaya davet etti.
+
+Aşağıdaki bağlantıdan şifrenizi belirleyerek hesabınızı oluşturabilirsiniz:
+{{ url }}
+
+Bu bağlantı {{ valid_for_hours }} saat geçerlidir ve yalnızca bir kez kullanılabilir.
+
+Bu daveti beklemiyorsanız bu e-postayı yok sayabilirsiniz; hesabınız oluşturulmaz.

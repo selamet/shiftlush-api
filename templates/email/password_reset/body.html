@@ -1,0 +1,10 @@
+{% extends "email/base.html" %}
+{% block content %}
+  <p style="margin:0 0 16px 0;">Merhaba {{ first_name }},</p>
+  <p style="margin:0 0 20px 0;">Hesabınız için şifre sıfırlama talebi aldık.</p>
+  <p style="margin:0 0 24px 0;">{% include "email/_button.html" with label="Yeni şifre belirle" %}</p>
+  <p style="margin:0;color:#52525b;font-size:13px;">Bağlantı {{ valid_for_hours }} saat geçerlidir ve yalnızca bir kez kullanılabilir.</p>
+{% endblock %}
+{% block footer %}
+  Bu talebi siz yapmadıysanız bir şey yapmanıza gerek yok; şifreniz değişmez.
+{% endblock %}

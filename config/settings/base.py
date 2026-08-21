@@ -186,6 +186,16 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # --------------------------------------------------------------------------
+# E-mail
+# --------------------------------------------------------------------------
+
+# Every e-mail this system sends carries a single-use link into the frontend, so
+# the frontend's public address is part of the mail configuration rather than a
+# CORS detail.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173").rstrip("/")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ShiftLush <noreply@shiftlush.local>")
+
+# --------------------------------------------------------------------------
 # Internationalisation
 # --------------------------------------------------------------------------
 

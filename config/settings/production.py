@@ -33,6 +33,14 @@ STORAGE_BACKENDS = {
     },
 }
 
+# Invitations and password resets are the only way anyone but the founder gets
+# into the system, so a deployment without a working mail route is not a
+# deployment. No default: it fails at boot rather than at the first invitation.
+EMAIL_CONFIG = env.email_url("EMAIL_URL")
+vars().update(EMAIL_CONFIG)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+FRONTEND_URL = env("FRONTEND_URL").rstrip("/")
+
 SECURE_SSL_REDIRECT = True
 SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True

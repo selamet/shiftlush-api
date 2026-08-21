@@ -42,6 +42,13 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN},
         WRITE: {Role.OWNER, Role.ADMIN},
     },
+    # Separate from "user" although the roles match today: inviting somebody is
+    # not the same act as editing a colleague's record, and the day they need
+    # to be granted separately this table is where it happens.
+    "invitation": {
+        READ: {Role.OWNER, Role.ADMIN},
+        WRITE: {Role.OWNER, Role.ADMIN},
+    },
     "customer": {
         # The technician is here but sees only assigned customers; that
         # narrowing happens in the queryset, not in this table.

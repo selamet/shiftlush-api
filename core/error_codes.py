@@ -63,6 +63,14 @@ class ErrorCode(models.TextChoices):
         "LAST_OWNER_CANNOT_BE_DEACTIVATED",
         "A company must keep at least one active owner",
     )
+    ONLY_TECHNICIANS_ARE_ASSIGNED = (
+        "ONLY_TECHNICIANS_ARE_ASSIGNED",
+        "Customer assignments apply to technicians only",
+    )
+    CANNOT_DEACTIVATE_SELF = (
+        "CANNOT_DEACTIVATE_SELF",
+        "A user cannot deactivate their own account",
+    )
     BUILDING_CUSTOMER_MISMATCH = (
         "BUILDING_CUSTOMER_MISMATCH",
         "A building in a complex must share the complex's customer",

@@ -1,0 +1,6 @@
+Merhaba {{ first_name }},
+
+E-posta adresinizi doğrulamak için:
+{{ url }}
+
+Bu bağlantı {{ valid_for_hours }} saat geçerlidir.

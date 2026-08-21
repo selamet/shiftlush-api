@@ -325,33 +325,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/v1/auth/invitations/accept:
-    post:
-      operationId: auth_invitations_accept_create
-      tags:
-      - auth
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InvitationAcceptRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/InvitationAcceptRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/InvitationAcceptRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenResponse'
-          description: ''
   /api/v1/auth/login:
     post:
       operationId: auth_login_create
@@ -698,6 +671,44 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/company:
+    get:
+      operationId: company_retrieve
+      tags:
+      - company
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+          description: ''
+    patch:
+      operationId: company_partial_update
+      tags:
+      - company
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanyRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+          description: ''
   /api/v1/complexes/:
     get:
       operationId: complexes_list
@@ -1883,6 +1894,181 @@ paths:
               schema:
                 $ref: '#/components/schemas/ElevatorByQr'
           description: ''
+  /api/v1/invitations/:
+    get:
+      operationId: invitations_list
+      description: |-
+        Pending and past invitations.
+
+        Deleting one is how an invitation is revoked: the row is soft-deleted, and
+        the token stops resolving because the lookup is scoped to live rows. A
+        mistyped address should stop working the moment it is noticed.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - invitations
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvitationList'
+          description: ''
+    post:
+      operationId: invitations_create
+      description: |-
+        Pending and past invitations.
+
+        Deleting one is how an invitation is revoked: the row is soft-deleted, and
+        the token stops resolving because the lookup is scoped to live rows. A
+        mistyped address should stop working the moment it is noticed.
+      tags:
+      - invitations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvitationCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvitationCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+          description: ''
+  /api/v1/invitations/{id}/:
+    delete:
+      operationId: invitations_destroy
+      description: |-
+        Pending and past invitations.
+
+        Deleting one is how an invitation is revoked: the row is soft-deleted, and
+        the token stops resolving because the lookup is scoped to live rows. A
+        mistyped address should stop working the moment it is noticed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invitation.
+        required: true
+      tags:
+      - invitations
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/invitations/{id}/resend/:
+    post:
+      operationId: invitations_resend_create
+      description: |-
+        Pending and past invitations.
+
+        Deleting one is how an invitation is revoked: the row is soft-deleted, and
+        the token stops resolving because the lookup is scoped to live rows. A
+        mistyped address should stop working the moment it is noticed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invitation.
+        required: true
+      tags:
+      - invitations
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+          description: ''
+  /api/v1/invitations/accept:
+    post:
+      operationId: invitations_accept_create
+      tags:
+      - invitations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+          description: ''
+  /api/v1/invitations/verify/{token}:
+    get:
+      operationId: invitations_verify_retrieve
+      description: |-
+        What the sign-up screen reads before anyone has an account.
+
+        Public by necessity: the invitee cannot authenticate yet. It answers only
+        for a valid, unexpired, unaccepted token, and returns only what the e-mail
+        they are holding already told them.
+      parameters:
+      - in: path
+        name: token
+        schema:
+          type: string
+        required: true
+      tags:
+      - invitations
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+          description: ''
   /api/v1/neighborhoods/:
     get:
       operationId: neighborhoods_list
@@ -1947,6 +2133,243 @@ paths:
                 items:
                   $ref: '#/components/schemas/Province'
           description: ''
+  /api/v1/users/:
+    get:
+      operationId: users_list
+      description: |-
+        Colleagues.
+
+        There is no create: accounts come from invitations, because an
+        administrator who can set a password can read one, and the specification
+        rules that out for both security and data-protection reasons. There is no
+        delete either — a leaver is deactivated, since their audit trail has to
+        outlive their employment.
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: role
+        schema:
+          type: string
+          enum:
+          - accountant
+          - admin
+          - operations
+          - owner
+          - technician
+        description: |-
+          * `owner` - Owner
+          * `admin` - Admin
+          * `operations` - Operations
+          * `technician` - Technician
+          * `accountant` - Accountant
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUserList'
+          description: ''
+  /api/v1/users/{id}/:
+    get:
+      operationId: users_retrieve
+      description: |-
+        Colleagues.
+
+        There is no create: accounts come from invitations, because an
+        administrator who can set a password can read one, and the specification
+        rules that out for both security and data-protection reasons. There is no
+        delete either — a leaver is deactivated, since their audit trail has to
+        outlive their employment.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this user.
+        required: true
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+    put:
+      operationId: users_update
+      description: |-
+        Colleagues.
+
+        There is no create: accounts come from invitations, because an
+        administrator who can set a password can read one, and the specification
+        rules that out for both security and data-protection reasons. There is no
+        delete either — a leaver is deactivated, since their audit trail has to
+        outlive their employment.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this user.
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserUpdate'
+          description: ''
+    patch:
+      operationId: users_partial_update
+      description: |-
+        Colleagues.
+
+        There is no create: accounts come from invitations, because an
+        administrator who can set a password can read one, and the specification
+        rules that out for both security and data-protection reasons. There is no
+        delete either — a leaver is deactivated, since their audit trail has to
+        outlive their employment.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this user.
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserUpdate'
+          description: ''
+  /api/v1/users/{id}/customers/:
+    put:
+      operationId: users_customers_update
+      description: Replace the set of customers this technician may see.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this user.
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignedCustomersRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignedCustomersRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignedCustomersRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/users/{id}/deactivate/:
+    post:
+      operationId: users_deactivate_create
+      description: |-
+        Colleagues.
+
+        There is no create: accounts come from invitations, because an
+        administrator who can set a password can read one, and the specification
+        rules that out for both security and data-protection reasons. There is no
+        delete either — a leaver is deactivated, since their audit trail has to
+        outlive their employment.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this user.
+        required: true
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
 components:
   schemas:
     ActionEnum:
@@ -1974,6 +2397,16 @@ components:
           nullable: true
       required:
       - elevator_ids
+    AssignedCustomersRequest:
+      type: object
+      properties:
+        customer_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - customer_ids
     Attachment:
       type: object
       description: |-
@@ -2403,6 +2836,80 @@ components:
       - customer
       - name
       - type
+    Company:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        legal_name:
+          type: string
+          maxLength: 200
+        display_name:
+          type: string
+          maxLength: 80
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        mersis_number:
+          type: string
+          maxLength: 16
+        trade_registry_number:
+          type: string
+          maxLength: 30
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        website:
+          type: string
+          maxLength: 150
+        logo:
+          type: string
+          format: uuid
+          nullable: true
+        logo_url:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - display_name
+      - id
+      - is_active
+      - legal_name
+      - logo_url
     ComplexRead:
       type: object
       description: The address fields every property-like record shares.
@@ -4076,6 +4583,63 @@ components:
         * `yellow` - Yellow
         * `red` - Red
         * `none` - None
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/UserRole'
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+        accepted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        is_expired:
+          type: boolean
+          readOnly: true
+        invited_by:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        invited_by_name:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - accepted_at
+      - created_at
+      - email
+      - expires_at
+      - first_name
+      - id
+      - invited_by
+      - invited_by_name
+      - is_expired
+      - last_name
+      - role
     InvitationAcceptRequest:
       type: object
       description: |-
@@ -4096,6 +4660,59 @@ components:
       required:
       - password
       - token
+    InvitationCreateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 150
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        role:
+          $ref: '#/components/schemas/UserRole'
+      required:
+      - email
+      - first_name
+      - last_name
+      - role
+    InvitationPreview:
+      type: object
+      description: |-
+        What the sign-up screen may show before anyone has authenticated.
+
+        Only what is already in the e-mail the invitee is holding: who invited them
+        and under what name. Anything more would make a leaked link a way to read
+        the company's data without accepting.
+      properties:
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+        company_name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - company_name
+      - email
+      - expires_at
+      - first_name
+      - last_name
+      - role
     LoginRequest:
       type: object
       description: |-
@@ -4367,6 +4984,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ElevatorList'
+    PaginatedInvitationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+    PaginatedUserList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
     PasswordResetConfirmRequest:
       type: object
       description: |-
@@ -4458,6 +5121,61 @@ components:
           nullable: true
         is_active:
           type: boolean
+    PatchedCompanyRequest:
+      type: object
+      properties:
+        legal_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        mersis_number:
+          type: string
+          maxLength: 16
+        trade_registry_number:
+          type: string
+          maxLength: 30
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        website:
+          type: string
+          maxLength: 150
+        logo:
+          type: string
+          format: uuid
+          nullable: true
     PatchedComplexWriteRequest:
       type: object
       properties:
@@ -4767,6 +5485,29 @@ components:
           format: int64
         notes:
           type: string
+    PatchedUserUpdateRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        phone:
+          type: string
+          maxLength: 20
+        role:
+          $ref: '#/components/schemas/UserRole'
+        certificate_number:
+          type: string
+          maxLength: 50
+        certificate_valid_until:
+          type: string
+          format: date
+          nullable: true
     PricingTypeEnum:
       enum:
       - per_elevator
@@ -4918,6 +5659,76 @@ components:
       - expires_in
       - storage_key
       - upload_url
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/UserRole'
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        is_email_verified:
+          type: boolean
+          readOnly: true
+        certificate_number:
+          type: string
+          readOnly: true
+        certificate_valid_until:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        assigned_customer_ids:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - assigned_customer_ids
+      - certificate_number
+      - certificate_valid_until
+      - created_at
+      - email
+      - first_name
+      - full_name
+      - id
+      - is_active
+      - is_email_verified
+      - last_login_at
+      - last_name
+      - phone
+      - role
     UserRole:
       enum:
       - owner
@@ -4932,6 +5743,56 @@ components:
         * `operations` - Operations
         * `technician` - Technician
         * `accountant` - Accountant
+    UserUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 60
+        last_name:
+          type: string
+          maxLength: 60
+        phone:
+          type: string
+          maxLength: 20
+        role:
+          $ref: '#/components/schemas/UserRole'
+        certificate_number:
+          type: string
+          maxLength: 50
+        certificate_valid_until:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - first_name
+      - last_name
+    UserUpdateRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        phone:
+          type: string
+          maxLength: 20
+        role:
+          $ref: '#/components/schemas/UserRole'
+        certificate_number:
+          type: string
+          maxLength: 50
+        certificate_valid_until:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - first_name
+      - last_name
   securitySchemes:
     jwtAuth:
       type: http

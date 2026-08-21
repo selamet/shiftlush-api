@@ -61,8 +61,10 @@ ignore = [
 "**/models.py" = ["RUF012"]
 # Meta.fields, read_only_fields and permission_classes are lists by DRF's own
 # convention; annotating each as ClassVar adds noise without adding safety.
-"**/serializers.py" = ["RUF012"]
-"**/views.py" = ["RUF012"]
+# Globbed rather than exact so that an app splitting its API across more than
+# one module (auth versus team management, say) does not need a new entry here.
+"**/*serializers.py" = ["RUF012"]
+"**/*views.py" = ["RUF012"]
 "core/viewsets.py" = ["RUF012"]
 # Test fixtures hold literal credentials by definition; flagging them is noise
 # that trains people to ignore the rule where it matters.

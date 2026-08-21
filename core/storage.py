@@ -106,9 +106,9 @@ def upload_url(backend: str, key: str, content_type: str, ttl: int | None = None
 def _content_disposition(filename: str) -> str:
     """RFC 5987, because these filenames are Turkish.
 
-    A bare `filename="Asansör Raporu.pdf"` either mangles the characters or is
-    dropped entirely depending on the browser, so the ASCII form is a fallback
-    and the real name travels percent-encoded in `filename*`.
+    A bare `filename="..."` holding non-ASCII characters is either mangled or
+    dropped entirely depending on the browser, so the ASCII form is only a
+    fallback and the real name travels percent-encoded in `filename*`.
     """
     ascii_fallback = filename.encode("ascii", "replace").decode("ascii").replace('"', "")
     return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"

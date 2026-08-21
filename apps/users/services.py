@@ -25,7 +25,9 @@ from apps.users.models import (
     Role,
     TokenPurpose,
     User,
+    UserCustomer,
 )
+from core import mail
 from core.context import system_context
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
@@ -260,7 +262,13 @@ def request_password_reset(email: str) -> str | None:
         user = User.objects.filter(email=email.lower(), is_active=True).first()
     if user is None:
         return None
-    return _issue_one_time_token(user, TokenPurpose.PASSWORD_RESET, PASSWORD_RESET_LIFETIME)
+
+    token = _issue_one_time_token(user, TokenPurpose.PASSWORD_RESET, PASSWORD_RESET_LIFETIME)
+    # Sent from here rather than from the view so the plaintext never leaves
+    # this module. The return value exists for tests and for the console
+    # backend; nothing in the request path reads it.
+    mail.send_password_reset(to=user.email, first_name=user.first_name, token=token)
+    return token
 
 
 @transaction.atomic
@@ -277,7 +285,11 @@ def confirm_password_reset(*, token: str, new_password: str) -> User:
 
 
 def request_email_verification(user: User) -> str:
-    return _issue_one_time_token(user, TokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME)
+    token = _issue_one_time_token(
+        user, TokenPurpose.EMAIL_VERIFICATION, EMAIL_VERIFICATION_LIFETIME
+    )
+    mail.send_email_verification(to=user.email, first_name=user.first_name, token=token)
+    return token
 
 
 @transaction.atomic
@@ -318,7 +330,55 @@ def create_invitation(
         expires_at=timezone.now() + INVITATION_LIFETIME,
         invited_by=invited_by,
     )
+    mail.send_invitation(
+        to=invitation.email,
+        first_name=invitation.first_name,
+        company_name=company.display_name,
+        token=token,
+    )
     return invitation, token
+
+
+@transaction.atomic
+def resend_invitation(invitation: Invitation) -> str:
+    """Issue a fresh token for an invitation and send it again.
+
+    The old token stops working. Extending the deadline while leaving the
+    previous link alive would mean two live credentials for one seat, and the
+    usual reason for a resend is that the first mail went somewhere it should
+    not have.
+    """
+    if invitation.accepted_at is not None:
+        raise BusinessRuleError(ErrorCode.TOKEN_INVALID)
+
+    token = _new_token()
+    invitation.token_hash = _hash(token)
+    invitation.expires_at = timezone.now() + INVITATION_LIFETIME
+    invitation.save(update_fields=["token_hash", "expires_at", "updated_at"])
+
+    mail.send_invitation(
+        to=invitation.email,
+        first_name=invitation.first_name,
+        company_name=invitation.company.display_name,
+        token=token,
+    )
+    return token
+
+
+def invitation_for_token(token: str) -> Invitation:
+    """Look up an invitation from the link, for the sign-up screen.
+
+    Public: the invitee has no account yet. It reveals only the name and role
+    already written in the e-mail they are holding, and only to someone who has
+    the token.
+    """
+    with system_context():
+        invitation = Invitation.objects.filter(token_hash=_hash(token)).first()
+        if invitation is None or invitation.accepted_at is not None:
+            raise BusinessRuleError(ErrorCode.TOKEN_INVALID)
+        if invitation.expires_at <= timezone.now():
+            raise BusinessRuleError(ErrorCode.TOKEN_EXPIRED)
+        return invitation
 
 
 @transaction.atomic
@@ -367,3 +427,62 @@ def deactivate_user(*, user: User) -> None:
     user.is_active = False
     user.save(update_fields=["is_active", "updated_at"])
     revoke_all_sessions(user)
+
+
+def _is_last_active_owner(user: User) -> bool:
+    if user.role != Role.OWNER or not user.is_active:
+        return False
+    return (
+        not User.objects.filter(company_id=user.company_id, role=Role.OWNER, is_active=True)
+        .exclude(pk=user.pk)
+        .exists()
+    )
+
+
+def change_role(*, user: User, role: str) -> None:
+    """Move a user to another role.
+
+    The same rule as deactivation, for the same reason: a company that loses its
+    last owner has nobody who can manage users or company settings, and no way
+    back in short of a database edit.
+    """
+    if role != user.role and _is_last_active_owner(user):
+        raise BusinessRuleError(ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED)
+
+    user.role = role
+    user.save(update_fields=["role", "updated_at"])
+
+    if role != Role.TECHNICIAN:
+        # Assignments only mean something for technicians. Leaving them behind
+        # would silently narrow the person's view again if they ever moved back.
+        user.customer_assignments.all().delete()
+
+
+@transaction.atomic
+def set_assigned_customers(*, user: User, customer_ids: list, assigned_by: User) -> None:
+    """Replace the set of customers a technician may see.
+
+    A replace rather than an add: the caller sends the list it wants to be true,
+    which is the only form that can remove an assignment without a second
+    endpoint and a second race.
+    """
+    if user.role != Role.TECHNICIAN:
+        raise BusinessRuleError(ErrorCode.ONLY_TECHNICIANS_ARE_ASSIGNED)
+
+    wanted = set(customer_ids)
+    current = {row.customer_id: row for row in user.customer_assignments.all()}
+
+    for customer_id, row in current.items():
+        if customer_id not in wanted:
+            # Soft-deleted, so the history of who could see what survives. The
+            # unique constraint is conditional on is_deleted, so re-assigning
+            # the same customer later is not a conflict.
+            row.delete()
+
+    for customer_id in wanted - set(current):
+        UserCustomer.objects.create(
+            company_id=user.company_id,
+            user=user,
+            customer_id=customer_id,
+            assigned_by=assigned_by,
+        )
