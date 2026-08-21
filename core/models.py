@@ -16,6 +16,7 @@ from django.db import models
 from django.utils import timezone
 from uuid_utils.compat import uuid7
 
+from core.audit import AuditedModel
 from core.context import get_current_company_id, in_system_context
 from core.managers import SoftDeleteManager, TenantManager, UnscopedManager
 
@@ -24,7 +25,7 @@ class TenantMismatchError(RuntimeError):
     """Raised when a row is saved under a company other than the active one."""
 
 
-class UUIDPrimaryKeyModel(models.Model):
+class UUIDPrimaryKeyModel(AuditedModel):
     """UUIDv7 primary key.
 
     Time-ordered, so inserts stay at the right-hand edge of the B-tree instead

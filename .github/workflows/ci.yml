@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      # The suite runs on SQLite locally so nothing has to be installed, but CI
+      # runs it against the engine production uses. Trigram search and JSONB
+      # operators are not covered by the SQLite run, and those are exactly the
+      # places where the two engines disagree.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shiftlush
+          POSTGRES_PASSWORD: shiftlush
+          POSTGRES_DB: shiftlush
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # oasdiff needs the previous commit's spec to compare against.
+          fetch-depth: 2
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: No Turkish in product code
+        # Turkish belongs in locale catalogues, templates and data files. A
+        # Turkish string in a module means user-facing text was compiled into
+        # the API, where it cannot be translated or corrected without a deploy.
+        #
+        # Two deliberate exemptions, both about handling Turkish rather than
+        # displaying it: core/text.py holds the letter table the whole
+        # normaliser is built on, and the tests assert on the letters that
+        # actually break.
+        run: |
+          found=$(grep -rlP '[çğıöşüÇĞİÖŞÜ]' --include='*.py' apps core config \
+                  | grep -v -E '(locale/|templates/|/data/|core/text\.py)' || true)
+          if [ -n "$found" ]; then
+            echo "Turkish characters found in product code:"
+            echo "$found"
+            exit 1
+          fi
+
+      - name: Migrations are complete
+        run: uv run python manage.py makemigrations --check --dry-run
+
+      - name: Tests
+        env:
+          DATABASE_URL: postgres://shiftlush:shiftlush@localhost:5432/shiftlush
+        run: uv run pytest --cov=core --cov=apps --cov-report=term-missing
+
+      - name: A clean database can be brought up from nothing
+        env:
+          DATABASE_URL: postgres://shiftlush:shiftlush@localhost:5432/shiftlush
+        run: |
+          uv run python manage.py migrate
+          uv run python manage.py load_address_data
+          uv run python manage.py seed_demo_data
+
+      - name: The contract matches the code
+        # The spec is generated, so a stale committed copy means the frontend is
+        # building against something the backend no longer serves.
+        run: |
+          uv run python manage.py spectacular --file openapi/v1.yaml --fail-on-warn
+          git diff --exit-code openapi/v1.yaml \
+            || (echo "openapi/v1.yaml is out of date. Run 'make sync-spec'." && exit 1)
+
+      - name: No unannounced breaking changes
+        run: |
+          git show HEAD~1:openapi/v1.yaml > /tmp/previous.yaml 2>/dev/null || exit 0
+          docker run --rm -v /tmp:/specs -v "$PWD/openapi:/current" \
+            tufin/oasdiff breaking /specs/previous.yaml /current/v1.yaml --fail-on ERR

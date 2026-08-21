@@ -66,7 +66,10 @@ ignore = [
 "core/viewsets.py" = ["RUF012"]
 # Test fixtures hold literal credentials by definition; flagging them is noise
 # that trains people to ignore the rule where it matters.
-"tests/**" = ["S105", "S106", "S107"]
+"tests/**" = ["S105", "S106", "S107", "RUF059"]
+# Seed data is demonstration material: the password is meant to be known and
+# the randomness only has to be repeatable, not unguessable.
+"core/management/commands/seed_demo_data.py" = ["S105", "S311", "RUF059"]
 
 [tool.mypy]
 python_version = "3.13"

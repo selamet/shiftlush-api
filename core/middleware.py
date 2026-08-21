@@ -9,7 +9,7 @@ from django.http import HttpRequest, HttpResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 
-from core.context import company_context
+from core.context import RequestActor, actor_context, company_context
 
 RequestHandler = Callable[[HttpRequest], HttpResponse]
 
@@ -73,8 +73,32 @@ class CompanyContextMiddleware:
         claim = token.get("company_id")
         return uuid.UUID(claim) if claim else None
 
+    def _actor(self, request: HttpRequest) -> RequestActor:
+        header = self._auth.get_header(request)  # type: ignore[arg-type]
+        user_id = None
+        if header is not None:
+            raw = self._auth.get_raw_token(header)
+            if raw is not None:
+                try:
+                    token = self._auth.get_validated_token(raw)
+                    claim = token.get("user_id")
+                    user_id = uuid.UUID(str(claim)) if claim else None
+                except (InvalidToken, ValueError):
+                    user_id = None
+
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        ip = forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")
+        return RequestActor(
+            user_id=user_id, ip_address=ip, user_agent=request.headers.get("User-Agent", "")
+        )
+
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        with company_context(self._company_from_token(request)):
+        # Both contexts are opened here so the audit trail can name the actor
+        # from inside a signal handler, where nothing else has a request.
+        with (
+            company_context(self._company_from_token(request)),
+            actor_context(self._actor(request)),
+        ):
             return self.get_response(request)
 
 

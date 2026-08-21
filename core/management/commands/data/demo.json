@@ -1,0 +1,40 @@
+{
+  "company": {
+    "legal_name": "Yükseliş Asansör Bakım ve Servis Ltd. Şti.",
+    "display_name": "Yükseliş Asansör",
+    "first_name": "Mehmet",
+    "last_name": "Yılmaz"
+  },
+  "staff": [
+    ["Ayşe", "Demir", "operations"],
+    ["Hakan", "Çelik", "technician"],
+    ["Zeynep", "Kaya", "accountant"],
+    ["Emre", "Şahin", "technician"]
+  ],
+  "customers": [
+    ["Çamlıca Konakları Site Yönetimi", "complex_management", "Ayşe Demir"],
+    ["Ataşehir Ofis Kule A.Ş.", "corporate", "Hakan Çelik"],
+    ["Bahçelievler Belediyesi", "public", "Zeynep Kaya"],
+    ["Nurtepe Sitesi Yönetimi", "complex_management", "Emre Şahin"],
+    ["Yıldız Apartmanı Yönetimi", "building_management", "Fatma Aydın"],
+    ["Kayaşehir 24. Bölge Yönetimi", "complex_management", "Murat Doğan"],
+    ["Levent İş Merkezi A.Ş.", "corporate", "Selin Yıldırım"],
+    ["Beşiktaş Belediyesi", "public", "Kerem Arslan"],
+    ["Fenerbahçe Rezidans Yönetimi", "complex_management", "Deniz Koç"],
+    ["Merkez Plaza İşletmeleri", "corporate", "Burak Öztürk"]
+  ],
+  "brands": [
+    ["Schindler", "3300 AP"],
+    ["Otis", "Gen2 Switch"],
+    ["Kone", "MonoSpace 500"],
+    ["ThyssenKrupp", "Synergy 100"],
+    ["Merih Asansör", "MY-1600"],
+    ["Akış Asansör", "AK-320"]
+  ],
+  "tax_offices": ["Kadıköy", "Ataşehir", "Beşiktaş", "Kağıthane"],
+  "elevator_names": ["Sol asansör", "Sağ asansör", "Yük asansörü", "A1", "Servis asansörü"],
+  "block_suffix": " Blok",
+  "street_suffix": ". Sokak",
+  "address_note": "Sahil yolundan girip market sırasının arkasındaki ikinci blok.",
+  "complex_strip": [" Site Yönetimi", " Yönetimi"]
+}

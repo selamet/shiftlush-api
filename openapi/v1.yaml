@@ -3,6 +3,80 @@ info:
   title: ShiftLush API
   version: v1
 paths:
+  /api/v1/audit-logs/:
+    get:
+      operationId: audit_logs_list
+      description: |-
+        Read-only, and only for owners and admins.
+
+        There is no create, update or delete anywhere: a log that can be edited is
+        not evidence. Writes reach this table through signals only.
+      parameters:
+      - in: query
+        name: action
+        schema:
+          type: string
+          enum:
+          - create
+          - delete
+          - update
+        description: |-
+          * `create` - Create
+          * `update` - Update
+          * `delete` - Delete
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: record_id
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: since
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: table_name
+        schema:
+          type: string
+      - in: query
+        name: until
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - audit-logs
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogList'
+          description: ''
   /api/v1/auth/email/verify:
     post:
       operationId: auth_email_verify_create
@@ -1650,6 +1724,16 @@ paths:
           description: ''
 components:
   schemas:
+    ActionEnum:
+      enum:
+      - create
+      - update
+      - delete
+      type: string
+      description: |-
+        * `create` - Create
+        * `update` - Update
+        * `delete` - Delete
     AddElevatorsRequest:
       type: object
       properties:
@@ -1665,6 +1749,53 @@ components:
           nullable: true
       required:
       - elevator_ids
+    AuditLog:
+      type: object
+      properties:
+        company_id:
+          type: string
+          format: uuid
+          readOnly: true
+        user_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        table_name:
+          type: string
+          readOnly: true
+        record_id:
+          type: string
+          format: uuid
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/ActionEnum'
+          readOnly: true
+        old_values:
+          readOnly: true
+          nullable: true
+        new_values:
+          readOnly: true
+          nullable: true
+        ip_address:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - company_id
+      - created_at
+      - ip_address
+      - new_values
+      - old_values
+      - record_id
+      - table_name
+      - user_id
     BillingPeriodEnum:
       enum:
       - monthly
@@ -3690,6 +3821,29 @@ components:
         * `neighborhood` - Neighborhood
         * `village` - Village
         * `town` - Town
+    PaginatedAuditLogList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
     PaginatedBuildingReadList:
       type: object
       required:
