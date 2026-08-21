@@ -105,7 +105,7 @@ Bakım planı üretimi, bakım formu/kaydı, arıza yönetimi, periyodik kontrol
 
 | Katman | Seçim | Gerekçe |
 |---|---|---|
-| Veritabanı | PostgreSQL 16+ | JSONB (audit log), pg_trgm (mahalle arama), ileride PostGIS |
+| Veritabanı | **Üretim:** PostgreSQL 16+ · **Yerel/test:** SQLite | JSONB (audit log), pg_trgm (mahalle arama), ileride PostGIS. Yerelde SQLite'a düşmenin bedeli 12.6'da yazılı |
 | Dil | **Python 3.13** | Tüm C uzantılı bağımlılıkların (WeasyPrint, argon2-cffi, psycopg) wheel'i hazır. `.python-version` ile sabitlenir; 3.14'e geçiş ileride tek satırlık değişiklik |
 | Framework | **Django 6.1** + Django REST Framework | Django 6.x, Python 3.12–3.14 destekler. Sürüm politikası için bkz. 2.5 |
 | ORM / migration | Django ORM + Django migrations | Ayrı migration aracı gerekmez |
@@ -1450,7 +1450,12 @@ Admin **ürün arayüzü değildir**, iç operasyon aracıdır. Tamamen İngiliz
 - `pytest-django` + `factory_boy`. Her model için factory.
 - **Zorunlu test seti:** her ViewSet için (a) yetkisiz erişim reddi, (b) çapraz firma erişim reddi, (c) rol bazlı yetki matrisi doğrulaması.
 - Kapsam hedefi: `core/` ve `services.py` içinde %90, genelinde %70.
-- Testler gerçek PostgreSQL'e karşı çalışır — **SQLite kullanmayın**, JSONB ve partial index davranışları farklıdır.
+- **Yerel geliştirme ve testler SQLite üzerinde çalışır** (karar 22 Ağustos 2026'da güncellendi). Gerekçe: yerelde hiçbir servisin kurulup çalıştırılmasına gerek kalmıyor. Üretim PostgreSQL'dir ve `DATABASE_URL` ile verilir.
+- Şemanın dayandığı iki şey SQLite'ta doğrulanamaz, bunlar **sürüm öncesi PostgreSQL'e karşı test edilmelidir**:
+  - Mahalle typeahead'inin arkasındaki `pg_trgm` indeksi — SQLite'ta karşılığı yok, yerelde arama önek eşleşmesine düşer.
+  - `audit_log` üzerindeki JSONB sorgu operatörleri — SQLite'ın JSON1'i bunları taklit eder, semantiği aynı değildir.
+- Partial unique index ve `CheckConstraint` iki motorda da desteklenir, onlar yerelde güvenle test edilir.
+- CI, aynı test paketini `DATABASE_URL` PostgreSQL'e ayarlanmış hâlde tekrar çalıştırır (`make test-pg`). SQLite koşusu tek başına yeterli değildir.
 
 ---
 
@@ -1718,7 +1723,6 @@ Bu faz **frontend kodundan önce** yapılır (bölüm 20). Çıktısı üç şey
 - ❌ `GenericForeignKey` kullanmak
 - ❌ `settings.py`'ı tek dosyada bırakmak
 - ❌ N+1 sorgu bırakmak
-- ❌ Testleri SQLite'a karşı çalıştırmak
 - ❌ Faz 1'de Celery, Redis, async view kurmak
 
 ---

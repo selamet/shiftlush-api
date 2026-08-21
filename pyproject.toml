@@ -1,0 +1,75 @@
+[project]
+name = "shiftlush-api"
+version = "0.1.0"
+description = "ShiftLush — elevator maintenance tracking API"
+requires-python = ">=3.13,<3.14"
+
+dependencies = [
+    "django>=6.1,<6.2",
+    "djangorestframework>=3.16",
+    "drf-spectacular>=0.28",
+    "django-filter>=25.1",
+    "djangorestframework-simplejwt>=5.5",
+    "django-cors-headers>=4.7",
+    "argon2-cffi>=25.1",
+    "psycopg[binary]>=3.2",
+    "django-environ>=0.12",
+    # uuid7 is not in the standard library; uuid4 would fragment the B-tree
+    # index on tables that grow to hundreds of thousands of rows.
+    "uuid-utils>=0.11",
+    "django-storages[s3]>=1.14",
+    "cryptography>=45.0",
+    "qrcode[pil]>=8.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-django>=4.11",
+    "pytest-cov>=6.2",
+    "factory-boy>=3.3",
+    "ruff>=0.12",
+    "mypy>=1.17",
+    "django-stubs[compatible-mypy]>=5.2",
+    "djangorestframework-stubs>=3.16",
+]
+# WeasyPrint needs cairo and pango system libraries. It is only used to render
+# the QR label PDF, so it is kept out of the default install: a developer who
+# never touches label printing should not need the native stack.
+pdf = ["weasyprint>=66.0"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["."]
+# The specification is a document, not source. Ruff reformats Python blocks
+# inside Markdown, which rewrites the spec's examples behind our back.
+extend-exclude = ["*.md", "db.sqlite3"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ", "S", "C4", "RUF"]
+ignore = [
+    "S101",   # pytest relies on assert
+    "RUF001", # ambiguous unicode is expected in Turkish locale files
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E501", "RUF012"]
+"config/settings/*" = ["F403", "F405"]
+# Django's Meta.constraints and Meta.indexes are lists by design; annotating
+# every one of them as ClassVar adds noise without adding safety.
+"**/models.py" = ["RUF012"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+exclude = ["migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+addopts = "--strict-markers --reuse-db"

@@ -1,0 +1,36 @@
+# Optional. The application defaults to SQLite, so nothing here is needed to run
+# it locally.
+#
+#   - minio    stands in for Cloudflare R2 once attachments are implemented.
+#              R2 has no local emulator and writing to a real bucket from a
+#              developer machine pollutes it with test objects.
+#   - postgres is here to check the schema against the engine production uses,
+#              since trigram search and JSONB operators are not covered by the
+#              SQLite run. Point DATABASE_URL at it when you need that.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shiftlush
+      POSTGRES_PASSWORD: shiftlush
+      POSTGRES_DB: shiftlush
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: shiftlush
+      MINIO_ROOT_PASSWORD: shiftlush123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:
