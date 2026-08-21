@@ -153,6 +153,23 @@ def stat(backend: str, key: str) -> StoredObject:
     )
 
 
+def fetch(backend: str, key: str) -> tuple[bytes, str]:
+    """Read an object into memory.
+
+    The one case that needs this is embedding a company logo in a printed label,
+    where a signed URL would not help: the PDF renderer must not depend on the
+    network to produce a file that is needed in a basement.
+    """
+    try:
+        response = _client(backend).get_object(Bucket=_bucket(backend), Key=key)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+            raise ObjectNotFound(key) from exc
+        raise
+    body = response["Body"].read()
+    return body, str(response.get("ContentType", "application/octet-stream"))
+
+
 def delete(backend: str, key: str) -> None:
     """Remove an object. Deleting one that is already gone is not an error."""
     _client(backend).delete_object(Bucket=_bucket(backend), Key=key)

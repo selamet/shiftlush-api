@@ -1894,6 +1894,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/ElevatorByQr'
           description: ''
+  /api/v1/elevators/labels/:
+    post:
+      operationId: elevators_labels_create
+      description: 'A printable A4 sheet, twelve labels to the page. The identifiers
+        are sent in the body rather than the query string: a firm printing its whole
+        estate would otherwise build a URL no proxy will accept.'
+      tags:
+      - elevators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LabelRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LabelRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/invitations/:
     get:
       operationId: invitations_list
@@ -4713,6 +4743,23 @@ components:
       - first_name
       - last_name
       - role
+    LabelRequestRequest:
+      type: object
+      description: |-
+        Which elevators to print, in the order they should appear.
+
+        A list rather than a filter: the user ticks rows on a screen, and a filter
+        re-evaluated on the server could quietly print a different set from the one
+        they were looking at.
+      properties:
+        elevator_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 240
+      required:
+      - elevator_ids
     LoginRequest:
       type: object
       description: |-

@@ -104,6 +104,11 @@ class RolePermission(permissions.BasePermission):
     Every viewset sets `resource`; a viewset that forgets is denied rather than
     allowed, so the failure mode of forgetting is a broken endpoint in testing
     rather than an open one in production.
+
+    A viewset may also declare `resource_by_action` for the actions that are a
+    different permission from the rest of the resource. Printing a QR label is
+    the case that forced this: it hangs off the elevator endpoint but a
+    technician may do it, while editing an elevator is not theirs to do.
     """
 
     def has_permission(self, request: Request, view: APIView) -> bool:
@@ -111,7 +116,8 @@ class RolePermission(permissions.BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        resource = getattr(view, "resource", None)
+        overrides = getattr(view, "resource_by_action", {})
+        resource = overrides.get(getattr(view, "action", None)) or getattr(view, "resource", None)
         if resource is None:
             return False
 

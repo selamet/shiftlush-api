@@ -5,6 +5,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.elevators.labels import MAX_LABELS
 from apps.elevators.models import (
     USER_SELECTABLE_STATUSES,
     Category,
@@ -237,3 +238,21 @@ class ElevatorByQrSerializer(serializers.ModelSerializer):
             "next_inspection_date",
         ]
         read_only_fields = fields
+
+
+class LabelRequestSerializer(serializers.Serializer):
+    """Which elevators to print, in the order they should appear.
+
+    A list rather than a filter: the user ticks rows on a screen, and a filter
+    re-evaluated on the server could quietly print a different set from the one
+    they were looking at.
+    """
+
+    elevator_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        # A firm with five hundred lifts pressing "print all" would otherwise
+        # hold a worker for a minute and produce a document nobody prints in
+        # one sitting.
+        max_length=MAX_LABELS,
+    )

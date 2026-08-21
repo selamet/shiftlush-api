@@ -22,6 +22,7 @@ class ErrorCode(models.TextChoices):
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED", "Authentication failed"
     INTERNAL_ERROR = "INTERNAL_ERROR", "Unexpected server error"
     THROTTLED = "THROTTLED", "Rate limit exceeded"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE", "A required service is not available"
     API_VERSION_SUNSET = "API_VERSION_SUNSET", "This API version is no longer served"
 
     # Field level -----------------------------------------------------------

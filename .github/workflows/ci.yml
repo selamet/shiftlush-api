@@ -36,7 +36,13 @@ jobs:
         with:
           enable-cache: true
 
-      - run: uv sync --locked
+      # WeasyPrint renders through Pango and Cairo, which are system libraries
+      # rather than wheels. Without them the QR label tests skip themselves and
+      # a broken template reaches production unnoticed.
+      - name: PDF rendering libraries
+        run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
+
+      - run: uv sync --locked --group pdf
 
       - name: Lint
         run: |

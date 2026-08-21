@@ -1,0 +1,140 @@
+{% comment %}
+A4, twelve labels to the page, 3 across and 4 down.
+
+Every choice here is for a machine room: dim light, dusty surfaces, a phone held
+at an angle. So the QR is 28 mm — above the 25 mm floor the specification sets —
+printed at error correction level H, which tolerates 30% of the symbol being
+obscured. Type is heavy and black on white; there are no hairlines, no grey
+text and no background tints, because a 0.5 pt rule prints as a broken line on
+a worn label and a 60% grey caption is unreadable under a bare bulb.
+
+The cut guides are dashed and light on purpose: they must be visible to a person
+with scissors and invisible to a phone camera.
+{% endcomment %}
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      @page {
+        size: A4;
+        /* The grid is sized to what a consumer printer can actually reach.
+           Anything closer to the edge is clipped by half the printers in the
+           field, and a clipped QR is a label that has to be reprinted. */
+        margin: 10mm 8mm;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Helvetica", "Arial", sans-serif;
+        color: #000;
+      }
+
+      .sheet {
+        display: grid;
+        grid-template-columns: repeat(3, 64mm);
+        grid-auto-rows: 68mm;
+        gap: 0;
+      }
+
+      .label {
+        border: 0.4mm dashed #b0b0b0;
+        padding: 4mm;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        overflow: hidden;
+        /* Never split a label across a page. */
+        break-inside: avoid;
+      }
+
+      .company {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2mm;
+        width: 100%;
+        height: 8mm;
+        margin-bottom: 1mm;
+      }
+
+      .company img { max-height: 8mm; max-width: 24mm; }
+
+      .company-name {
+        font-size: 9pt;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .qr { width: 28mm; height: 28mm; margin: 1mm 0 2mm 0; }
+      .qr img { width: 100%; height: 100%; }
+
+      .elevator-name {
+        font-size: 13pt;
+        font-weight: 700;
+        line-height: 1.1;
+        /* Two lines at most. A third would push the registration number off the
+           label, and that number is what a technician reads out on the phone. */
+        max-height: 2.4em;
+        overflow: hidden;
+      }
+
+      .building {
+        font-size: 9pt;
+        font-weight: 500;
+        line-height: 1.2;
+        margin-top: 1mm;
+        max-height: 2.4em;
+        overflow: hidden;
+      }
+
+      .registration {
+        margin-top: auto;
+        font-size: 11pt;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+      }
+
+      .phone {
+        font-size: 9pt;
+        font-weight: 700;
+        margin-top: 1mm;
+      }
+
+      .caption {
+        font-size: 7pt;
+        font-weight: 500;
+        margin-top: 0.5mm;
+      }
+    </style>
+  </head>
+  <body>
+    {% partialdef label %}
+      <div class="label">
+        <div class="company">
+          {% if company_logo %}<img src="{{ company_logo }}" alt="">{% endif %}
+          <span class="company-name">{{ company_name }}</span>
+        </div>
+
+        <div class="qr"><img src="{{ elevator.qr_image }}" alt=""></div>
+
+        <div class="elevator-name">{{ elevator.name }}</div>
+        <div class="building">{{ elevator.building_name }}</div>
+
+        <div class="registration">{{ elevator.registration_number }}</div>
+        {% if company_phone %}
+          <div class="phone">{{ company_phone }}</div>
+          <div class="caption">Arıza ve bakım için arayın</div>
+        {% endif %}
+      </div>
+    {% endpartialdef %}
+
+    <div class="sheet">
+      {% for elevator in elevators %}{% partial label %}{% endfor %}
+    </div>
+  </body>
+</html>

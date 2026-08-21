@@ -45,6 +45,20 @@ class RecordInUse(exceptions.APIException):
         super().__init__(code.label, code=code.value)
 
 
+class ServiceUnavailable(exceptions.APIException):
+    """A dependency this request needs is not available in this deployment.
+
+    503 rather than 500: nothing about the request was wrong, and a client that
+    retries later may well succeed. The distinction matters to whoever is
+    reading the alert at three in the morning.
+    """
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def __init__(self, code: ErrorCode = ErrorCode.SERVICE_UNAVAILABLE) -> None:
+        super().__init__(code.label, code=code.value)
+
+
 class TenantIsolationError(Http404):
     """Another company's record.
 

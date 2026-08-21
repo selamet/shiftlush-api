@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import django_filters
 from django.db.models import Q, QuerySet
+from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -13,11 +15,13 @@ from apps.elevators.api.v1.serializers import (
     ElevatorDetailSerializer,
     ElevatorListSerializer,
     ElevatorWriteSerializer,
+    LabelRequestSerializer,
 )
+from apps.elevators.labels import PdfRenderingUnavailable, render_labels
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token, regenerate_qr_token
 from core.error_codes import ErrorCode
-from core.exceptions import RecordInUse
+from core.exceptions import RecordInUse, ServiceUnavailable
 from core.idempotency import replay_protected
 from core.permissions import RolePermission
 from core.viewsets import TenantViewSet
@@ -44,6 +48,10 @@ class ElevatorFilter(django_filters.FilterSet):
 
 class ElevatorViewSet(TenantViewSet):
     resource = "elevator"
+    # Printing a label and regenerating a token are field work: a technician who
+    # has to go back to the office for a replacement sticker is a technician who
+    # leaves the lift unlabelled.
+    resource_by_action = {"labels": "qr_label", "regenerate_qr": "qr_label"}
     read_serializer_class = ElevatorDetailSerializer
     write_serializer_class = ElevatorWriteSerializer
     filterset_class = ElevatorFilter
@@ -118,3 +126,42 @@ class ElevatorViewSet(TenantViewSet):
 
             raise NotFound
         return Response(ElevatorByQrSerializer(elevator).data)
+
+    @extend_schema(
+        request=LabelRequestSerializer,
+        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+        description=(
+            "A printable A4 sheet, twelve labels to the page. The identifiers "
+            "are sent in the body rather than the query string: a firm printing "
+            "its whole estate would otherwise build a URL no proxy will accept."
+        ),
+    )
+    @action(detail=False, methods=["post"], url_path="labels")
+    def labels(self, request: Request) -> HttpResponse:
+        form = LabelRequestSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        wanted = form.validated_data["elevator_ids"]
+
+        # Through the normal queryset, so an id from another company simply is
+        # not here. The order given by the caller is preserved, because the user
+        # picked it and a sheet that reshuffles itself is hard to check against
+        # the screen it came from.
+        found = {
+            elevator.id: elevator
+            for elevator in self.get_queryset().filter(id__in=wanted).select_related("building")
+        }
+        elevators = [found[one] for one in wanted if one in found]
+        if not elevators:
+            raise NotFound
+
+        try:
+            pdf = render_labels(elevators, request.user.company)
+        except PdfRenderingUnavailable as exc:
+            raise ServiceUnavailable() from exc
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        # inline, not attachment: the whole point is to reach a print dialogue,
+        # and a download the user then has to find and open is a step nobody
+        # standing next to a printer wants.
+        response["Content-Disposition"] = 'inline; filename="qr-labels.pdf"'
+        return response
