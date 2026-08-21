@@ -24,6 +24,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    # Declared rather than relied on as a transitive dependency of
+    # drf-spectacular: the contract tests read openapi/v1.yaml directly, and a
+    # dependency that only works by accident breaks on the next upgrade.
+    "pyyaml>=6.0",
     "pytest>=8.4",
     "pytest-django>=4.11",
     "pytest-cov>=6.2",

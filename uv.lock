@@ -898,6 +898,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 pdf = [
@@ -930,6 +931,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.2" },
     { name = "pytest-django", specifier = ">=4.11" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.12" },
 ]
 pdf = [{ name = "weasyprint", specifier = ">=66.0" }]

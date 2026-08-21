@@ -255,6 +255,9 @@ SPECTACULAR_SETTINGS = {
     "PREPROCESSING_HOOKS": ["core.spectacular.use_english"],
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
+        # The error vocabulary cannot be inferred from the views, so it is
+        # added here from the enum rather than maintained by hand.
+        "core.spectacular.add_error_codes",
         "core.spectacular.restore_language",
     ],
     "COMPONENT_SPLIT_REQUEST": True,

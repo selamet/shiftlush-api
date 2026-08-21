@@ -5840,6 +5840,111 @@ components:
       required:
       - first_name
       - last_name
+    ErrorCode:
+      type: string
+      enum:
+      - VALIDATION_ERROR
+      - NOT_FOUND
+      - PERMISSION_DENIED
+      - AUTHENTICATION_FAILED
+      - INTERNAL_ERROR
+      - THROTTLED
+      - SERVICE_UNAVAILABLE
+      - API_VERSION_SUNSET
+      - INVALID_TAX_NUMBER
+      - INVALID_NATIONAL_ID
+      - INVALID_PHONE
+      - INVALID_POSTAL_CODE
+      - END_DATE_BEFORE_START_DATE
+      - INSTALLATION_DATE_IN_FUTURE
+      - RECORD_IN_USE
+      - DUPLICATE_REGISTRATION_NUMBER
+      - DUPLICATE_CONTRACT_NUMBER
+      - EMAIL_ALREADY_REGISTERED
+      - IDEMPOTENCY_KEY_REUSED
+      - ELEVATOR_ALREADY_CONTRACTED
+      - LAST_OWNER_CANNOT_BE_DEACTIVATED
+      - ONLY_TECHNICIANS_ARE_ASSIGNED
+      - CANNOT_DEACTIVATE_SELF
+      - BUILDING_CUSTOMER_MISMATCH
+      - TERMINATION_REASON_REQUIRED
+      - STATUS_NOT_USER_SELECTABLE
+      - INVALID_CREDENTIALS
+      - ACCOUNT_LOCKED
+      - ACCOUNT_INACTIVE
+      - TOKEN_INVALID
+      - TOKEN_EXPIRED
+      - EMAIL_NOT_VERIFIED
+      - FILE_TOO_LARGE
+      - UNSUPPORTED_MIME_TYPE
+      - UPLOAD_NOT_COMPLETED
+      - ATTACHMENT_TARGET_MISMATCH
+      description: |-
+        * `VALIDATION_ERROR` - Request failed validation
+        * `NOT_FOUND` - Record not found
+        * `PERMISSION_DENIED` - Insufficient permissions
+        * `AUTHENTICATION_FAILED` - Authentication failed
+        * `INTERNAL_ERROR` - Unexpected server error
+        * `THROTTLED` - Rate limit exceeded
+        * `SERVICE_UNAVAILABLE` - A required service is not available
+        * `API_VERSION_SUNSET` - This API version is no longer served
+        * `INVALID_TAX_NUMBER` - Tax number failed its check digit
+        * `INVALID_NATIONAL_ID` - National ID failed its check digit
+        * `INVALID_PHONE` - Phone number is not a valid Turkish number
+        * `INVALID_POSTAL_CODE` - Postal code must be five digits
+        * `END_DATE_BEFORE_START_DATE` - End date must be after the start date
+        * `INSTALLATION_DATE_IN_FUTURE` - Installation date cannot be in the future
+        * `RECORD_IN_USE` - Record is referenced by other records
+        * `DUPLICATE_REGISTRATION_NUMBER` - Registration number already exists for this company
+        * `DUPLICATE_CONTRACT_NUMBER` - Contract number already exists for this company
+        * `EMAIL_ALREADY_REGISTERED` - E-mail address is already registered
+        * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
+        * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
+        * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
+        * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Customer assignments apply to technicians only
+        * `CANNOT_DEACTIVATE_SELF` - A user cannot deactivate their own account
+        * `BUILDING_CUSTOMER_MISMATCH` - A building in a complex must share the complex's customer
+        * `TERMINATION_REASON_REQUIRED` - A termination reason is required
+        * `STATUS_NOT_USER_SELECTABLE` - This status is assigned by the system
+        * `INVALID_CREDENTIALS` - E-mail or password is incorrect
+        * `ACCOUNT_LOCKED` - Too many failed attempts; account is temporarily locked
+        * `ACCOUNT_INACTIVE` - Account is not active
+        * `TOKEN_INVALID` - Token is invalid or has already been used
+        * `TOKEN_EXPIRED` - Token has expired
+        * `EMAIL_NOT_VERIFIED` - E-mail address has not been verified
+        * `FILE_TOO_LARGE` - File exceeds the 10 MB limit
+        * `UNSUPPORTED_MIME_TYPE` - File type is not accepted
+        * `UPLOAD_NOT_COMPLETED` - No uploaded object was found for this key
+        * `ATTACHMENT_TARGET_MISMATCH` - Attachment does not belong to the record it is being linked to
+    ErrorResponse:
+      type: object
+      description: 'The shape of every error response. There is no `message` field:
+        the backend sends codes, and the words live in the client''s translation file,
+        so wording changes in one place and adding a language does not touch the API.'
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              $ref: '#/components/schemas/ErrorCode'
+            request_id:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  code:
+                    type: string
+                required:
+                - code
+          required:
+          - code
+          - request_id
+      required:
+      - error
   securitySchemes:
     jwtAuth:
       type: http
