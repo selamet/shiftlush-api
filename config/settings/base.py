@@ -165,7 +165,10 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSION": "v1",
     # A version outside this list 404s rather than quietly falling back to v1.
     "ALLOWED_VERSIONS": ["v1"],
-    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+    ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Money crosses the wire as a string so JavaScript's float arithmetic never
     # touches it.
@@ -182,10 +185,22 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]",
     "COMPONENT_SPLIT_REQUEST": True,
-    # A serializer whose type cannot be inferred produces a warning here, and a
-    # warning becomes a broken type in the generated client — so CI treats them
-    # as errors.
-    "ENUM_NAME_OVERRIDES": {},
+    # Two models can both call a field "role" or "type" and mean different
+    # things. Left alone, the generator invents names like RoleE29Enum — which
+    # then appear verbatim in the frontend's types and change whenever the hash
+    # does. Naming them here keeps the generated client stable and readable.
+    "ENUM_NAME_OVERRIDES": {
+        "UserRole": "apps.users.models.Role.choices",
+        "ContactRole": "apps.customers.models.ContactRole.choices",
+        "CustomerType": "apps.customers.models.CustomerType.choices",
+        "BuildingType": "apps.properties.models.BuildingType.choices",
+        "NeighborhoodType": "apps.address.models.NeighborhoodType.choices",
+        "ElevatorStatus": "apps.elevators.models.ElevatorStatus.choices",
+        "ElevatorCategory": "apps.elevators.models.Category.choices",
+        "ContractStatus": "apps.contracts.models.ContractStatus.choices",
+        "ContractScope": "apps.contracts.models.Scope.choices",
+        "AttachmentCategory": "apps.attachments.models.AttachmentCategory.choices",
+    },
 }
 
 # --------------------------------------------------------------------------

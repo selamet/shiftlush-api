@@ -6,6 +6,8 @@ import uuid
 from collections.abc import Callable
 
 from django.http import HttpRequest, HttpResponse
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 from core.context import company_context
 
@@ -36,23 +38,43 @@ class RequestIDMiddleware:
 
 
 class CompanyContextMiddleware:
-    """Binds the authenticated user's company for the duration of the request.
+    """Binds the caller's company for the duration of the request.
 
-    The company is taken from the authenticated user, never from the request
-    body or the query string. If a client could name its own tenant, the whole
-    isolation layer would be advisory.
+    The company is read from the access token, never from the request body or
+    the query string. If a client could name its own tenant the whole isolation
+    layer would be advisory.
+
+    It reads the token directly rather than `request.user`, because DRF
+    authenticates inside the view — by the time JWTAuthentication has run,
+    middleware is long past, and `request.user` here is still anonymous. That
+    mismatch is easy to miss: every endpoint returns an empty list and looks
+    like a permissions problem rather than a context one.
+
+    The company id is a claim on the token, so this costs no query.
     """
 
     def __init__(self, get_response: RequestHandler) -> None:
         self.get_response = get_response
+        self._auth = JWTAuthentication()
+
+    def _company_from_token(self, request: HttpRequest) -> uuid.UUID | None:
+        header = self._auth.get_header(request)  # type: ignore[arg-type]
+        if header is None:
+            return None
+        raw = self._auth.get_raw_token(header)
+        if raw is None:
+            return None
+        try:
+            token = self._auth.get_validated_token(raw)
+        except InvalidToken:
+            # An invalid token is not this middleware's problem to report; the
+            # view's authentication will reject it with the right status.
+            return None
+        claim = token.get("company_id")
+        return uuid.UUID(claim) if claim else None
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        user = getattr(request, "user", None)
-        company_id: uuid.UUID | None = None
-        if user is not None and user.is_authenticated:
-            company_id = getattr(user, "company_id", None)
-
-        with company_context(company_id):
+        with company_context(self._company_from_token(request)):
             return self.get_response(request)
 
 

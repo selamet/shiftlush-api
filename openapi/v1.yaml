@@ -198,8 +198,485 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
           description: ''
+  /api/v1/customer-contacts/:
+    get:
+      operationId: customer_contacts_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: is_primary
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: role
+        schema:
+          type: string
+          enum:
+          - accounting
+          - auditor
+          - caretaker
+          - manager
+          - other
+          - technical_lead
+        description: |-
+          * `manager` - Manager
+          * `auditor` - Auditor
+          * `caretaker` - Caretaker
+          * `technical_lead` - Technical lead
+          * `accounting` - Accounting
+          * `other` - Other
+      tags:
+      - customer-contacts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerContactReadList'
+          description: ''
+    post:
+      operationId: customer_contacts_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - customer-contacts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerContactWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerContactWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerContactWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContactWrite'
+          description: ''
+  /api/v1/customer-contacts/{id}/:
+    get:
+      operationId: customer_contacts_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer contact öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customer-contacts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContactRead'
+          description: ''
+    patch:
+      operationId: customer_contacts_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer contact öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customer-contacts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerContactWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerContactWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerContactWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContactWrite'
+          description: ''
+    delete:
+      operationId: customer_contacts_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer contact öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customer-contacts
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/customers/:
+    get:
+      operationId: customers_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: type
+        schema:
+          type: string
+          enum:
+          - building_management
+          - complex_management
+          - corporate
+          - individual
+          - public
+        description: |-
+          * `complex_management` - Complex management
+          * `building_management` - Building management
+          * `corporate` - Corporate
+          * `public` - Public
+          * `individual` - Individual
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerReadList'
+          description: ''
+    post:
+      operationId: customers_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerWrite'
+          description: ''
+  /api/v1/customers/{id}/:
+    get:
+      operationId: customers_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerRead'
+          description: ''
+    patch:
+      operationId: customers_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerWrite'
+          description: ''
+    delete:
+      operationId: customers_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: Bir customer öğesini tanımlayan UUID metni.
+        required: true
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/districts/:
+    get:
+      operationId: districts_list
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - in: query
+        name: province
+        schema:
+          type: integer
+        required: true
+      tags:
+      - districts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/District'
+          description: ''
+  /api/v1/neighborhoods/:
+    get:
+      operationId: neighborhoods_list
+      description: |-
+        Typeahead only. The full list is never served.
+
+        Searching goes through `name_normalized`, which the loader fills with the
+        same `normalize()` the query uses. They have to agree character for
+        character — if they ever diverge, part of the table becomes unreachable and
+        nothing raises.
+      parameters:
+      - in: query
+        name: district
+        schema:
+          type: integer
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: At least two characters.
+      tags:
+      - neighborhoods
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Neighborhood'
+          description: ''
+  /api/v1/provinces/:
+    get:
+      operationId: provinces_list
+      description: All 81, unpaginated. Small enough to be a dropdown.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      tags:
+      - provinces
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Province'
+          description: ''
 components:
   schemas:
+    ContactRole:
+      enum:
+      - manager
+      - auditor
+      - caretaker
+      - technical_lead
+      - accounting
+      - other
+      type: string
+      description: |-
+        * `manager` - Manager
+        * `auditor` - Auditor
+        * `caretaker` - Caretaker
+        * `technical_lead` - Technical lead
+        * `accounting` - Accounting
+        * `other` - Other
     CurrentUser:
       type: object
       description: |-
@@ -236,7 +713,7 @@ components:
           readOnly: true
         role:
           allOf:
-          - $ref: '#/components/schemas/RoleEnum'
+          - $ref: '#/components/schemas/UserRole'
           readOnly: true
         is_active:
           type: boolean
@@ -271,6 +748,358 @@ components:
       - last_name
       - phone
       - role
+    CustomerContactRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/ContactRole'
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        is_primary:
+          type: boolean
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - customer_id
+      - email
+      - full_name
+      - id
+      - is_primary
+      - notes
+      - phone
+      - role
+      - updated_at
+    CustomerContactWrite:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          maxLength: 120
+        role:
+          allOf:
+          - $ref: '#/components/schemas/ContactRole'
+          default: other
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        is_primary:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - customer
+      - full_name
+    CustomerContactWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          allOf:
+          - $ref: '#/components/schemas/ContactRole'
+          default: other
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        is_primary:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - customer
+      - full_name
+    CustomerRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        type:
+          allOf:
+          - $ref: '#/components/schemas/CustomerType'
+          readOnly: true
+        legal_name:
+          type: string
+          readOnly: true
+        tax_office:
+          type: string
+          readOnly: true
+        tax_number:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        neighborhood_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+          readOnly: true
+        street:
+          type: string
+          readOnly: true
+        building_number:
+          type: string
+          readOnly: true
+        unit_number:
+          type: string
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerContactRead'
+          readOnly: true
+        building_count:
+          type: integer
+          readOnly: true
+          default: 0
+        elevator_count:
+          type: integer
+          readOnly: true
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - building_count
+      - building_number
+      - contacts
+      - created_at
+      - elevator_count
+      - email
+      - id
+      - is_active
+      - legal_name
+      - neighborhood_id
+      - notes
+      - phone
+      - street
+      - tax_number
+      - tax_office
+      - type
+      - unit_number
+      - updated_at
+    CustomerType:
+      enum:
+      - complex_management
+      - building_management
+      - corporate
+      - public
+      - individual
+      type: string
+      description: |-
+        * `complex_management` - Complex management
+        * `building_management` - Building management
+        * `corporate` - Corporate
+        * `public` - Public
+        * `individual` - Individual
+    CustomerWrite:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        type:
+          $ref: '#/components/schemas/CustomerType'
+        legal_name:
+          type: string
+          maxLength: 200
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        notes:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - legal_name
+      - type
+    CustomerWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        type:
+          $ref: '#/components/schemas/CustomerType'
+        legal_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        national_id:
+          type: string
+          writeOnly: true
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        notes:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - legal_name
+      - type
+    District:
+      type: object
+      properties:
+        id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        province_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+      required:
+      - id
+      - name
+      - province_id
     EmailVerifyRequest:
       type: object
       description: |-
@@ -327,6 +1156,96 @@ components:
       required:
       - email
       - password
+    Neighborhood:
+      type: object
+      properties:
+        id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        district_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          readOnly: true
+        district_name:
+          type: string
+          readOnly: true
+        province_name:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        postal_code:
+          type: string
+          maxLength: 5
+        type:
+          $ref: '#/components/schemas/NeighborhoodType'
+      required:
+      - district_id
+      - district_name
+      - id
+      - name
+      - province_name
+    NeighborhoodType:
+      enum:
+      - neighborhood
+      - village
+      - town
+      type: string
+      description: |-
+        * `neighborhood` - Neighborhood
+        * `village` - Village
+        * `town` - Town
+    PaginatedCustomerContactReadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerContactRead'
+    PaginatedCustomerReadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerRead'
     PasswordResetConfirmRequest:
       type: object
       description: |-
@@ -363,6 +1282,106 @@ components:
           maxLength: 150
       required:
       - email
+    PatchedCustomerContactWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          allOf:
+          - $ref: '#/components/schemas/ContactRole'
+          default: other
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        is_primary:
+          type: boolean
+        notes:
+          type: string
+    PatchedCustomerWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        type:
+          $ref: '#/components/schemas/CustomerType'
+        legal_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        national_id:
+          type: string
+          writeOnly: true
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        notes:
+          type: string
+        is_active:
+          type: boolean
+    Province:
+      type: object
+      properties:
+        id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        name:
+          type: string
+          maxLength: 50
+      required:
+      - id
+      - name
     RegisterRequest:
       type: object
       description: |-
@@ -404,20 +1423,6 @@ components:
       - last_name
       - legal_name
       - password
-    RoleEnum:
-      enum:
-      - owner
-      - admin
-      - operations
-      - technician
-      - accountant
-      type: string
-      description: |-
-        * `owner` - Owner
-        * `admin` - Admin
-        * `operations` - Operations
-        * `technician` - Technician
-        * `accountant` - Accountant
     TokenResponse:
       type: object
       description: |-
@@ -437,6 +1442,20 @@ components:
       required:
       - access
       - user
+    UserRole:
+      enum:
+      - owner
+      - admin
+      - operations
+      - technician
+      - accountant
+      type: string
+      description: |-
+        * `owner` - Owner
+        * `admin` - Admin
+        * `operations` - Operations
+        * `technician` - Technician
+        * `accountant` - Accountant
   securitySchemes:
     jwtAuth:
       type: http
