@@ -8,6 +8,7 @@ from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 
+from core.fields import EncryptedCharField
 from core.models import CompanyOwnedModel, SoftDeleteModel
 
 
@@ -97,7 +98,7 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     # Ciphertext, not eleven digits: AES-256-GCM output does not fit a char(11),
     # and a column sized for plaintext is the clearest sign encryption was
     # bolted on afterwards.
-    national_id = models.CharField(max_length=255, blank=True)
+    national_id = EncryptedCharField(max_length=255, blank=True)
     certificate_number = models.CharField(max_length=50, blank=True)
     certificate_valid_until = models.DateField(null=True, blank=True)
 

@@ -6,6 +6,9 @@ production uses — CI should do exactly that, because trigram search and JSONB
 operators are not covered by the SQLite run.
 """
 
+import base64
+import os
+
 from .base import *
 
 DEBUG = False
@@ -15,3 +18,8 @@ ALLOWED_HOSTS = ["testserver"]
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# A throwaway key so the suite needs no environment setup. Generated per run,
+# which also proves nothing in the tests depends on a fixed key. Built inline
+# rather than imported from core.crypto, so settings stay free of app imports.
+FIELD_ENCRYPTION_KEY = base64.urlsafe_b64encode(os.urandom(32)).decode()

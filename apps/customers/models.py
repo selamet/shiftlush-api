@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
+from core.fields import EncryptedCharField
 from core.models import CompanyOwnedModel
 
 
@@ -27,7 +28,7 @@ class Customer(CompanyOwnedModel):
     tax_office = models.CharField(max_length=100, blank=True)
     tax_number = models.CharField(max_length=11, blank=True)
     # Ciphertext for individual customers — see User.national_id.
-    national_id = models.CharField(max_length=255, blank=True)
+    national_id = EncryptedCharField(max_length=255, blank=True)
 
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(max_length=150, blank=True)

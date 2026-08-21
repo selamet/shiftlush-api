@@ -1,0 +1,89 @@
+"""Every error code the API can return.
+
+The backend sends codes, not sentences. Turkish lives in the frontend
+translation file, which means one place to change wording, one place to add a
+language, and no user-facing text compiled into the API.
+
+Adding a code is a backwards-compatible change. Removing or renaming one is a
+breaking change and needs a new API version — a client switching on a code it
+no longer receives falls through to nothing.
+"""
+
+from __future__ import annotations
+
+from django.db import models
+
+
+class ErrorCode(models.TextChoices):
+    # Generic ---------------------------------------------------------------
+    VALIDATION_ERROR = "VALIDATION_ERROR", "Request failed validation"
+    NOT_FOUND = "NOT_FOUND", "Record not found"
+    PERMISSION_DENIED = "PERMISSION_DENIED", "Insufficient permissions"
+    AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED", "Authentication failed"
+    INTERNAL_ERROR = "INTERNAL_ERROR", "Unexpected server error"
+    THROTTLED = "THROTTLED", "Rate limit exceeded"
+    API_VERSION_SUNSET = "API_VERSION_SUNSET", "This API version is no longer served"
+
+    # Field level -----------------------------------------------------------
+    INVALID_TAX_NUMBER = "INVALID_TAX_NUMBER", "Tax number failed its check digit"
+    INVALID_NATIONAL_ID = "INVALID_NATIONAL_ID", "National ID failed its check digit"
+    INVALID_PHONE = "INVALID_PHONE", "Phone number is not a valid Turkish number"
+    INVALID_POSTAL_CODE = "INVALID_POSTAL_CODE", "Postal code must be five digits"
+    END_DATE_BEFORE_START_DATE = (
+        "END_DATE_BEFORE_START_DATE",
+        "End date must be after the start date",
+    )
+    INSTALLATION_DATE_IN_FUTURE = (
+        "INSTALLATION_DATE_IN_FUTURE",
+        "Installation date cannot be in the future",
+    )
+
+    # Conflict --------------------------------------------------------------
+    RECORD_IN_USE = "RECORD_IN_USE", "Record is referenced by other records"
+    DUPLICATE_REGISTRATION_NUMBER = (
+        "DUPLICATE_REGISTRATION_NUMBER",
+        "Registration number already exists for this company",
+    )
+    DUPLICATE_CONTRACT_NUMBER = (
+        "DUPLICATE_CONTRACT_NUMBER",
+        "Contract number already exists for this company",
+    )
+    EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED", "E-mail address is already registered"
+    IDEMPOTENCY_KEY_REUSED = (
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused with a different request body",
+    )
+
+    # Business rules --------------------------------------------------------
+    ELEVATOR_ALREADY_CONTRACTED = (
+        "ELEVATOR_ALREADY_CONTRACTED",
+        "Elevator is already covered by an open contract",
+    )
+    LAST_OWNER_CANNOT_BE_DEACTIVATED = (
+        "LAST_OWNER_CANNOT_BE_DEACTIVATED",
+        "A company must keep at least one active owner",
+    )
+    BUILDING_CUSTOMER_MISMATCH = (
+        "BUILDING_CUSTOMER_MISMATCH",
+        "A building in a complex must share the complex's customer",
+    )
+    TERMINATION_REASON_REQUIRED = (
+        "TERMINATION_REASON_REQUIRED",
+        "A termination reason is required",
+    )
+    STATUS_NOT_USER_SELECTABLE = (
+        "STATUS_NOT_USER_SELECTABLE",
+        "This status is assigned by the system",
+    )
+
+    # Authentication --------------------------------------------------------
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS", "E-mail or password is incorrect"
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED", "Too many failed attempts; account is temporarily locked"
+    ACCOUNT_INACTIVE = "ACCOUNT_INACTIVE", "Account is not active"
+    TOKEN_INVALID = "TOKEN_INVALID", "Token is invalid or has already been used"
+    TOKEN_EXPIRED = "TOKEN_EXPIRED", "Token has expired"
+    EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED", "E-mail address has not been verified"
+
+    # Attachments -----------------------------------------------------------
+    FILE_TOO_LARGE = "FILE_TOO_LARGE", "File exceeds the 10 MB limit"
+    UNSUPPORTED_MIME_TYPE = "UNSUPPORTED_MIME_TYPE", "File type is not accepted"

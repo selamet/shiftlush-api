@@ -14,6 +14,8 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 DATABASES = {"default": env.db("DATABASE_URL")}
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+# No default: booting without it would silently write national IDs in plaintext.
+FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY")
 
 SECURE_SSL_REDIRECT = True
 SECURE_HSTS_SECONDS = 31_536_000

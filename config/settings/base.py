@@ -56,6 +56,10 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "core.middleware.RequestIDMiddleware",
+    # Must run after authentication: it reads the company off the user.
+    "core.middleware.CompanyContextMiddleware",
+    "core.middleware.APIVersionHeaderMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -110,6 +114,10 @@ PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
 ]
 
+# Read lazily by core.crypto; a missing key raises at first use rather than at
+# import, so migrations and `manage.py` still work without it.
+FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
+
 AUTH_PASSWORD_VALIDATORS = [
     # Length beats composition rules, so there is no upper/lower/digit/symbol
     # requirement — only a floor of 10 and a common-password blocklist.
@@ -162,6 +170,9 @@ REST_FRAMEWORK = {
     # Money crosses the wire as a string so JavaScript's float arithmetic never
     # touches it.
     "COERCE_DECIMAL_TO_STRING": True,
+    "EXCEPTION_HANDLER": "core.exceptions.exception_handler",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
+    "PAGE_SIZE": 25,
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
 
