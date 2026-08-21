@@ -3,6 +3,231 @@ info:
   title: ShiftLush API
   version: v1
 paths:
+  /api/v1/attachments/:
+    get:
+      operationId: attachments_list
+      description: |-
+        Files, without the bytes.
+
+        There is no update: a file is not edited, it is replaced. Correcting one
+        means uploading the new version and deleting the old, which leaves both in
+        the audit trail — where a silent overwrite would leave neither.
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+          enum:
+          - ce_certificate
+          - declaration_of_conformity
+          - inspection_report
+          - logo
+          - other
+          - permit
+          - photo
+          - signed_contract
+        description: |-
+          * `photo` - Photo
+          * `ce_certificate` - CE certificate
+          * `declaration_of_conformity` - Declaration of conformity
+          * `permit` - Permit
+          * `signed_contract` - Signed contract
+          * `inspection_report` - Inspection report
+          * `logo` - Logo
+          * `other` - Other
+      - in: query
+        name: object_id
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: object_type
+        schema:
+          type: string
+          enum:
+          - building
+          - company
+          - contract
+          - customer
+          - elevator
+          - user
+        description: |-
+          * `elevator` - Elevator
+          * `building` - Building
+          * `contract` - Contract
+          * `customer` - Customer
+          * `company` - Company
+          * `user` - User
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - attachments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAttachmentList'
+          description: ''
+    post:
+      operationId: attachments_create
+      description: |-
+        Confirm an upload that has already landed.
+
+        Not wrapped in replay protection: this call is idempotent by nature. A
+        storage key identifies exactly one object, so confirming it twice returns
+        the same record rather than creating a second one.
+      tags:
+      - attachments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AttachmentConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttachmentConfirmRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+          description: ''
+  /api/v1/attachments/{id}/:
+    get:
+      operationId: attachments_retrieve
+      description: |-
+        Files, without the bytes.
+
+        There is no update: a file is not edited, it is replaced. Correcting one
+        means uploading the new version and deleting the old, which leaves both in
+        the audit trail — where a silent overwrite would leave neither.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this attachment.
+        required: true
+      tags:
+      - attachments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+          description: ''
+    delete:
+      operationId: attachments_destroy
+      description: |-
+        Files, without the bytes.
+
+        There is no update: a file is not edited, it is replaced. Correcting one
+        means uploading the new version and deleting the old, which leaves both in
+        the audit trail — where a silent overwrite would leave neither.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this attachment.
+        required: true
+      tags:
+      - attachments
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/attachments/{id}/download-url/:
+    get:
+      operationId: attachments_download_url_retrieve
+      description: |-
+        A URL that works for a few minutes and only for this file.
+
+        The bucket is never public. Every read is a fresh signature, which is
+        also why these URLs are not worth caching or embedding anywhere.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this attachment.
+        required: true
+      tags:
+      - attachments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+          description: ''
+  /api/v1/attachments/upload-url/:
+    post:
+      operationId: attachments_upload_url_create
+      description: |-
+        Ask for permission to upload, then upload straight to storage.
+
+        No record is created here. A row for a file that was never uploaded is
+        worse than no row: it appears in lists, it cannot be downloaded, and
+        nothing ever cleans it up.
+      tags:
+      - attachments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+          description: ''
   /api/v1/audit-logs/:
     get:
       operationId: audit_logs_list
@@ -27,19 +252,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -299,19 +524,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -399,7 +624,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir building öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this building.
         required: true
       tags:
       - buildings
@@ -426,7 +651,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir building öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this building.
         required: true
       tags:
       - buildings
@@ -464,7 +689,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir building öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this building.
         required: true
       tags:
       - buildings
@@ -491,19 +716,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       tags:
@@ -563,7 +788,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir complex öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this complex.
         required: true
       tags:
       - complexes
@@ -590,7 +815,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir complex öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this complex.
         required: true
       tags:
       - complexes
@@ -628,7 +853,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir complex öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this complex.
         required: true
       tags:
       - complexes
@@ -655,19 +880,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -759,7 +984,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -786,7 +1011,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -824,7 +1049,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -848,7 +1073,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -894,7 +1119,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -918,7 +1143,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -958,7 +1183,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir contract öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this contract.
         required: true
       tags:
       - contracts
@@ -1005,19 +1230,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -1095,7 +1320,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer contact öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer contact.
         required: true
       tags:
       - customer-contacts
@@ -1122,7 +1347,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer contact öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer contact.
         required: true
       tags:
       - customer-contacts
@@ -1160,7 +1385,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer contact öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer contact.
         required: true
       tags:
       - customer-contacts
@@ -1186,19 +1411,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -1278,7 +1503,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer.
         required: true
       tags:
       - customers
@@ -1305,7 +1530,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer.
         required: true
       tags:
       - customers
@@ -1343,7 +1568,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir customer öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this customer.
         required: true
       tags:
       - customers
@@ -1359,7 +1584,7 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - in: query
@@ -1437,19 +1662,19 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - name: page
         required: false
         in: query
-        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        description: A page number within the paginated result set.
         schema:
           type: integer
       - name: page_size
         required: false
         in: query
-        description: Her sayfada döndürülecek sonuç sayısı.
+        description: Number of results to return per page.
         schema:
           type: integer
       - in: query
@@ -1529,7 +1754,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir elevator öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this elevator.
         required: true
       tags:
       - elevators
@@ -1556,7 +1781,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir elevator öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this elevator.
         required: true
       tags:
       - elevators
@@ -1594,7 +1819,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir elevator öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this elevator.
         required: true
       tags:
       - elevators
@@ -1618,7 +1843,7 @@ paths:
         schema:
           type: string
           format: uuid
-        description: Bir elevator öğesini tanımlayan UUID metni.
+        description: A UUID string identifying this elevator.
         required: true
       tags:
       - elevators
@@ -1677,7 +1902,7 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       - in: query
@@ -1706,7 +1931,7 @@ paths:
       - name: ordering
         required: false
         in: query
-        description: Sonuçların sıralanmasında kullanılacak alan.
+        description: Which field to use when ordering the results.
         schema:
           type: string
       tags:
@@ -1749,6 +1974,120 @@ components:
           nullable: true
       required:
       - elevator_ids
+    Attachment:
+      type: object
+      description: |-
+        What a client is told about a file.
+
+        `storage_key` and `storage_backend` are absent on purpose. They are how the
+        server finds the bytes, not facts about the document, and publishing them
+        would tie the API contract to the layout of a bucket that is expected to
+        change when the personal-data categories move provider.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        object_type:
+          allOf:
+          - $ref: '#/components/schemas/AttachmentObjectType'
+          readOnly: true
+        object_id:
+          type: string
+          format: uuid
+          readOnly: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/AttachmentCategory'
+          readOnly: true
+        original_filename:
+          type: string
+          readOnly: true
+        mime_type:
+          type: string
+          readOnly: true
+        size_bytes:
+          type: integer
+          readOnly: true
+        uploaded_by:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        uploaded_by_name:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - category
+      - created_at
+      - id
+      - mime_type
+      - object_id
+      - object_type
+      - original_filename
+      - size_bytes
+      - uploaded_by
+      - uploaded_by_name
+    AttachmentCategory:
+      enum:
+      - photo
+      - ce_certificate
+      - declaration_of_conformity
+      - permit
+      - signed_contract
+      - inspection_report
+      - logo
+      - other
+      type: string
+      description: |-
+        * `photo` - Photo
+        * `ce_certificate` - CE certificate
+        * `declaration_of_conformity` - Declaration of conformity
+        * `permit` - Permit
+        * `signed_contract` - Signed contract
+        * `inspection_report` - Inspection report
+        * `logo` - Logo
+        * `other` - Other
+    AttachmentConfirmRequest:
+      type: object
+      description: |-
+        The second half of an upload.
+
+        Only the key and the display name: everything else — which record the file
+        belongs to, its category, its size, its type — is read back from the key and
+        from storage, so the two calls cannot contradict each other.
+      properties:
+        storage_key:
+          type: string
+          minLength: 1
+          maxLength: 500
+        original_filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - original_filename
+      - storage_key
+    AttachmentObjectType:
+      enum:
+      - elevator
+      - building
+      - contract
+      - customer
+      - company
+      - user
+      type: string
+      description: |-
+        * `elevator` - Elevator
+        * `building` - Building
+        * `contract` - Contract
+        * `customer` - Customer
+        * `company` - Company
+        * `user` - User
     AuditLog:
       type: object
       properties:
@@ -2980,6 +3319,17 @@ components:
         * `automatic_side` - Automatic side opening
         * `semi_automatic` - Semi automatic
         * `manual` - Manual
+    DownloadUrl:
+      type: object
+      properties:
+        download_url:
+          type: string
+          format: uri
+        expires_in:
+          type: integer
+      required:
+      - download_url
+      - expires_in
     DriveTypeEnum:
       enum:
       - geared_electric
@@ -3777,6 +4127,18 @@ components:
         * `present` - Present
         * `absent` - Absent
         * `partial` - Partial
+    MimeTypeEnum:
+      enum:
+      - application/pdf
+      - image/jpeg
+      - image/png
+      - image/webp
+      type: string
+      description: |-
+        * `application/pdf` - application/pdf
+        * `image/jpeg` - image/jpeg
+        * `image/png` - image/png
+        * `image/webp` - image/webp
     Neighborhood:
       type: object
       properties:
@@ -3821,6 +4183,29 @@ components:
         * `neighborhood` - Neighborhood
         * `village` - Village
         * `town` - Town
+    PaginatedAttachmentList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
     PaginatedAuditLogList:
       type: object
       required:
@@ -4494,6 +4879,45 @@ components:
       required:
       - access
       - user
+    UploadUrlRequestRequest:
+      type: object
+      properties:
+        object_type:
+          $ref: '#/components/schemas/AttachmentObjectType'
+        object_id:
+          type: string
+          format: uuid
+        category:
+          $ref: '#/components/schemas/AttachmentCategory'
+        mime_type:
+          $ref: '#/components/schemas/MimeTypeEnum'
+        size_bytes:
+          type: integer
+          maximum: 10485760
+          minimum: 1
+      required:
+      - category
+      - mime_type
+      - object_id
+      - object_type
+      - size_bytes
+    UploadUrlResponse:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          format: uri
+        storage_key:
+          type: string
+        expires_in:
+          type: integer
+        content_type:
+          type: string
+      required:
+      - content_type
+      - expires_in
+      - storage_key
+      - upload_url
     UserRole:
       enum:
       - owner

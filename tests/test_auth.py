@@ -276,7 +276,25 @@ class TestInfrastructureEndpoints:
     def test_health_is_unversioned_and_open(self, client, db):
         assert client.get("/health").status_code == 200
 
-    def test_ready_checks_the_database(self, client, db):
+    def test_ready_checks_the_database_and_storage(self, client, db, monkeypatch):
+        from core import views
+
+        # Storage is not running in the test environment; the point here is that
+        # both checks are reported, not that MinIO is up.
+        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+
         response = client.get("/ready")
         assert response.status_code == 200
-        assert response.json()["checks"]["database"] == "ok"
+        assert response.json()["checks"] == {"database": "ok", "storage": "ok"}
+
+    def test_ready_fails_when_storage_is_unreachable(self, client, db, monkeypatch):
+        from core import views
+
+        monkeypatch.setattr(views.storage, "reachable", lambda backend: False)
+
+        response = client.get("/ready")
+        # An instance that cannot reach the bucket hands out upload URLs that
+        # fail at the confirmation step, which the user reads as their file
+        # disappearing. Better to take it out of rotation.
+        assert response.status_code == 503
+        assert response.json()["checks"]["storage"] == "unreachable"

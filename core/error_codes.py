@@ -87,3 +87,11 @@ class ErrorCode(models.TextChoices):
     # Attachments -----------------------------------------------------------
     FILE_TOO_LARGE = "FILE_TOO_LARGE", "File exceeds the 10 MB limit"
     UNSUPPORTED_MIME_TYPE = "UNSUPPORTED_MIME_TYPE", "File type is not accepted"
+    UPLOAD_NOT_COMPLETED = (
+        "UPLOAD_NOT_COMPLETED",
+        "No uploaded object was found for this key",
+    )
+    ATTACHMENT_TARGET_MISMATCH = (
+        "ATTACHMENT_TARGET_MISMATCH",
+        "Attachment does not belong to the record it is being linked to",
+    )

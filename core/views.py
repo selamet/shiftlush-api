@@ -7,8 +7,11 @@ take the health check with it.
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import connection
 from django.http import HttpRequest, JsonResponse
+
+from core import storage
 
 
 def health(request: HttpRequest) -> JsonResponse:
@@ -37,6 +40,15 @@ def ready(request: HttpRequest) -> JsonResponse:
         checks["database"] = "ok"
     except Exception as exc:
         checks["database"] = f"error: {exc.__class__.__name__}"
+        healthy = False
+
+    # Storage is a hard dependency, not a nicety: an instance that cannot reach
+    # the bucket accepts uploads that then fail at the confirmation step, which
+    # looks to the user like their file vanished.
+    if storage.reachable(settings.DEFAULT_STORAGE_BACKEND):
+        checks["storage"] = "ok"
+    else:
+        checks["storage"] = "unreachable"
         healthy = False
 
     return JsonResponse(

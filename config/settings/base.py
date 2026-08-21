@@ -118,6 +118,62 @@ PASSWORD_HASHERS = [
 # import, so migrations and `manage.py` still work without it.
 FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 
+# --------------------------------------------------------------------------
+# Object storage
+# --------------------------------------------------------------------------
+
+# Configured per backend rather than once, which is the whole point of
+# attachment.storage_backend: a signed URL is produced from the backend the row
+# was written to, not from today's default. That is what lets the categories
+# holding personal data move to a Turkey-resident provider later without a
+# migration and without breaking every file already uploaded.
+STORAGE_BACKENDS: dict[str, dict[str, str]] = {
+    # MinIO locally. R2 has no local emulator, and writing to the real bucket
+    # from a developer machine pollutes production data.
+    "local": {
+        "endpoint_url": env("S3_ENDPOINT_URL", default="http://localhost:9000"),
+        "access_key_id": env("S3_ACCESS_KEY_ID", default="shiftlush"),
+        "secret_access_key": env("S3_SECRET_ACCESS_KEY", default="shiftlush123"),
+        "bucket": env("S3_BUCKET_NAME", default="shiftlush-dev"),
+        # MinIO ignores the region; S3-compatible clients still require one.
+        "region": "us-east-1",
+    },
+    "r2": {
+        "endpoint_url": env("R2_ENDPOINT_URL", default=""),
+        "access_key_id": env("R2_ACCESS_KEY_ID", default=""),
+        "secret_access_key": env("R2_SECRET_ACCESS_KEY", default=""),
+        "bucket": env("R2_BUCKET_NAME", default=""),
+        # R2 wants the literal string "auto"; the jurisdiction is fixed on the
+        # bucket at creation time and cannot be changed afterwards.
+        "region": "auto",
+    },
+    # Reserved. Nothing is written here in phase 1 — the entry exists so the
+    # move is a configuration change rather than a code change.
+    "tr_provider": {
+        "endpoint_url": env("TR_ENDPOINT_URL", default=""),
+        "access_key_id": env("TR_ACCESS_KEY_ID", default=""),
+        "secret_access_key": env("TR_SECRET_ACCESS_KEY", default=""),
+        "bucket": env("TR_BUCKET_NAME", default=""),
+        "region": env("TR_REGION", default="auto"),
+    },
+}
+
+#: Where new uploads go. Existing rows keep their own backend.
+DEFAULT_STORAGE_BACKEND = env("STORAGE_BACKEND", default="local")
+
+#: Per-category override, for moving one class of file without moving the rest.
+#: Empty in phase 1; `{"signed_contract": "tr_provider"}` is the shape.
+STORAGE_BACKEND_BY_CATEGORY: dict[str, str] = {}
+
+# Short enough that a leaked URL is worthless within the hour, long enough that
+# a 10 MB upload over a poor mobile connection still finishes.
+UPLOAD_URL_TTL_SECONDS = 15 * 60
+DOWNLOAD_URL_TTL_SECONDS = 5 * 60
+
+#: Days a soft-deleted attachment keeps its bytes before the sweeper removes
+#: them. The row itself stays forever — the audit trail refers to it.
+ATTACHMENT_PURGE_AFTER_DAYS = 30
+
 AUTH_PASSWORD_VALIDATORS = [
     # Length beats composition rules, so there is no upper/lower/digit/symbol
     # requirement — only a floor of 10 and a common-password blocklist.
@@ -184,6 +240,13 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "v1",
     "SERVE_INCLUDE_SCHEMA": False,
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]",
+    # The contract is generated in English even though the application runs in
+    # Turkish — see core.spectacular for why that is not a contradiction.
+    "PREPROCESSING_HOOKS": ["core.spectacular.use_english"],
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "core.spectacular.restore_language",
+    ],
     "COMPONENT_SPLIT_REQUEST": True,
     # Two models can both call a field "role" or "type" and mean different
     # things. Left alone, the generator invents names like RoleE29Enum — which
@@ -198,8 +261,9 @@ SPECTACULAR_SETTINGS = {
         "ElevatorStatus": "apps.elevators.models.ElevatorStatus.choices",
         "ElevatorCategory": "apps.elevators.models.Category.choices",
         "ContractStatus": "apps.contracts.models.ContractStatus.choices",
-        "ContractScope": "apps.contracts.models.Scope.choices",
+        "AttachmentObjectType": "apps.attachments.models.ObjectType.choices",
         "AttachmentCategory": "apps.attachments.models.AttachmentCategory.choices",
+        "ContractScope": "apps.contracts.models.Scope.choices",
     },
 }
 

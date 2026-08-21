@@ -31,6 +31,24 @@ services:
     volumes:
       - minio_data:/data
 
+  # Creates the bucket and opens it to the browser origin. The CORS rule is the
+  # part worth having automated: without it a direct upload fails with a message
+  # that names neither CORS nor the bucket, and it is normally lost an hour
+  # before anyone thinks to check the bucket configuration. R2 needs the same
+  # rule set by hand in the dashboard.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 shiftlush shiftlush123; do sleep 1; done;
+      mc mb --ignore-existing local/shiftlush-dev;
+      mc anonymous set none local/shiftlush-dev;
+      echo '{\"CORSRules\":[{\"AllowedOrigins\":[\"http://localhost:5173\"],\"AllowedMethods\":[\"PUT\",\"GET\",\"HEAD\"],\"AllowedHeaders\":[\"*\"],\"ExposeHeaders\":[\"ETag\"],\"MaxAgeSeconds\":3000}]}' > /tmp/cors.json;
+      mc cors set local/shiftlush-dev /tmp/cors.json || true;
+      "
+
 volumes:
   postgres_data:
   minio_data:
