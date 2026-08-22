@@ -12,6 +12,7 @@ from django.db import connection
 from django.http import HttpRequest, JsonResponse
 
 from core import storage
+from core.error_codes import ErrorCode
 
 
 def health(request: HttpRequest) -> JsonResponse:
@@ -54,4 +55,48 @@ def ready(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {"status": "ready" if healthy else "not_ready", "checks": checks},
         status=200 if healthy else 503,
+    )
+
+
+def not_found(request: HttpRequest, exception: Exception) -> JsonResponse:
+    """The 404 for a URL that matches no route at all.
+
+    DRF's exception handler never sees these: resolution fails before any view
+    is reached, so Django's own handler answers — with an HTML page, from an API
+    that documents a JSON envelope for every other error. A client parsing the
+    body gets a syntax error and reports "something went wrong" instead of "that
+    URL does not exist".
+
+    Most often it is a missing trailing slash, so the answer says so rather than
+    leaving the reader to compare the URL character by character.
+    """
+    return JsonResponse(
+        {
+            "error": {
+                "code": ErrorCode.NOT_FOUND.value,
+                "request_id": getattr(request, "request_id", ""),
+                "detail": (
+                    "No route matches this URL. Router paths end in a slash; "
+                    "the authentication endpoints do not."
+                ),
+            }
+        },
+        status=404,
+    )
+
+
+def server_error(request: HttpRequest) -> JsonResponse:
+    """The 500 for a failure outside DRF's reach.
+
+    Same reason: an HTML page from a JSON API is one more thing for a client to
+    fail to parse on the worst day it has.
+    """
+    return JsonResponse(
+        {
+            "error": {
+                "code": ErrorCode.INTERNAL_ERROR.value,
+                "request_id": getattr(request, "request_id", ""),
+            }
+        },
+        status=500,
     )

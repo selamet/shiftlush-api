@@ -124,6 +124,18 @@ class TestAMissingSlashIsLegible:
         # see that the URL was wrong.
         assert response.headers.get("access-control-allow-origin") == ORIGIN
 
+    def test_the_404_is_json_like_every_other_error(self, browser, db, settings):
+        settings.DEBUG = False
+        response = browser.get("/api/v1/elevators", HTTP_ORIGIN=ORIGIN)
+
+        # Django answers an unresolvable URL before DRF is involved, and its own
+        # handler returns HTML. A client parsing the body gets a syntax error
+        # and says "something went wrong" instead of "that URL does not exist".
+        assert response.headers["Content-Type"].startswith("application/json")
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+        # Most of these are a missing trailing slash, so the answer says so.
+        assert "slash" in response.json()["error"]["detail"]
+
     def test_the_infrastructure_endpoints_still_resolve(self, browser, db):
         # These have no trailing slash by design — a load balancer does not
         # negotiate one.
