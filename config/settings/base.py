@@ -67,6 +67,15 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "config.urls"
+
+# Off. APPEND_SLASH exists for a human typing a URL into a browser bar; this is
+# an API whose clients are generated from a contract that spells every path
+# exactly. What the redirect costs is the failure mode: a browser will not
+# follow a redirect on a preflighted request — and every authenticated call is
+# preflighted, because it carries an Authorization header — so it reports the
+# 301 as a CORS error, with no response body and a cause that is not CORS. A
+# plain 404 in the documented envelope says what is actually wrong.
+APPEND_SLASH = False
 WSGI_APPLICATION = "config.wsgi.application"
 
 TEMPLATES = [

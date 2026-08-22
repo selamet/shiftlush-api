@@ -77,3 +77,55 @@ class TestEveryHeaderTheClientSends:
     def test_it_is_allowed(self, browser, db, header):
         headers = preflight(browser, "/api/v1/customers/", header)
         assert header in headers["access-control-allow-headers"].lower()
+
+
+class TestAMissingSlashIsLegible:
+    """A wrong URL should say so, not look like a CORS problem.
+
+    APPEND_SLASH answered a slashless router URL with a 301. A browser will not
+    follow a redirect on a preflighted request, and every authenticated call is
+    preflighted because it carries an Authorization header — so the browser
+    reported it as a CORS failure, with no body and a cause that is not CORS.
+
+    Reported from production, where it cost an afternoon looking at CORS
+    settings that were correct.
+    """
+
+    def test_the_documented_path_works(self, browser, db):
+        from apps.users.services import issue_tokens, register_company
+
+        _, owner = register_company(
+            legal_name="Firm Ltd",
+            display_name="Firm",
+            first_name="F",
+            last_name="Owner",
+            email="owner@example.com",
+            password="correct-horse-battery",
+        )
+        response = browser.get(
+            "/api/v1/elevators/",
+            HTTP_ORIGIN=ORIGIN,
+            HTTP_AUTHORIZATION=f"Bearer {issue_tokens(owner).access}",
+        )
+        assert response.status_code == 200
+
+    def test_the_slashless_path_is_a_plain_404(self, browser, db):
+        response = browser.get("/api/v1/elevators", HTTP_ORIGIN=ORIGIN)
+
+        # Not a 301. A redirect here is the least legible error a browser can
+        # produce: it names CORS, shows no body, and hides the URL mismatch.
+        assert response.status_code == 404
+        assert "location" not in {key.lower() for key in response.headers}
+
+    def test_the_404_is_readable_by_the_browser(self, browser, db):
+        response = browser.get("/api/v1/elevators", HTTP_ORIGIN=ORIGIN)
+
+        # The point of the change: the client can actually read the answer and
+        # see that the URL was wrong.
+        assert response.headers.get("access-control-allow-origin") == ORIGIN
+
+    def test_the_infrastructure_endpoints_still_resolve(self, browser, db):
+        # These have no trailing slash by design — a load balancer does not
+        # negotiate one.
+        assert browser.get("/health").status_code == 200
+        assert browser.get("/ready").status_code in (200, 503)
