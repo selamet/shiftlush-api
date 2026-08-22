@@ -145,3 +145,18 @@ class TestTheSchemaMatchesTheServer:
                 "results",
                 "pagination",
             }, name
+
+
+class TestNullableAddressNames:
+    """A name behind a nullable foreign key has to be declared nullable.
+
+    All three of `customer`, `building` and `complex` allow no neighbourhood.
+    A contract that says `string` there produces a client which reads the field
+    as always present — the types compile and the screen renders nothing.
+    """
+
+    @pytest.mark.parametrize("schema", ["CustomerRead", "BuildingRead", "ComplexRead"])
+    @pytest.mark.parametrize("field", ["neighborhood_name", "district_name", "province_name"])
+    def test_the_name_fields_are_declared_nullable(self, spec, schema, field):
+        properties = spec["components"]["schemas"][schema]["properties"]
+        assert properties[field].get("nullable") is True

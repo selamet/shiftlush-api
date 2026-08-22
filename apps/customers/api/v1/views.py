@@ -19,6 +19,7 @@ from apps.customers.models import Customer, CustomerContact
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
 from core.idempotency import replay_protected
+from core.serializers import ADDRESS_JOIN
 from core.text import normalize
 from core.viewsets import TenantViewSet
 
@@ -65,7 +66,7 @@ class CustomerViewSet(TenantViewSet):
                     filter=Q(buildings__elevators__is_deleted=False),
                 ),
             )
-            .select_related("neighborhood")
+            .select_related(*ADDRESS_JOIN)
             .prefetch_related("contacts")
         )
 

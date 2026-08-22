@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.properties.models import Building, BuildingType, Complex
 from core.error_codes import ErrorCode
+from core.serializers import AddressReadMixin
 
 
 class StrictMixin:
@@ -14,16 +15,6 @@ class StrictMixin:
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "unexpected field"))
         return super().validate(attrs)  # type: ignore[misc]
-
-
-class AddressReadMixin(serializers.Serializer):
-    """The address fields every property-like record shares."""
-
-    neighborhood_name = serializers.CharField(source="neighborhood.name", read_only=True)
-    district_name = serializers.CharField(source="neighborhood.district.name", read_only=True)
-    province_name = serializers.CharField(
-        source="neighborhood.district.province.name", read_only=True
-    )
 
 
 class ComplexReadSerializer(AddressReadMixin, serializers.ModelSerializer):

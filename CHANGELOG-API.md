@@ -84,6 +84,10 @@ carried as compatibility shims nobody will ever remove.
 
 ### Added since the first draft
 
+- **`neighborhood_name`, `district_name` and `province_name` on `CustomerRead`.**
+  The billing address (§5.6) could be written and not read: the response carried
+  an id, which no screen can display and no edit form can open a picker on.
+  Buildings and complexes already returned all three.
 - **`GET, POST /customers/{id}/contacts`** — specification §8.6, previously
   routed only as the flat `/customer-contacts`. The customer comes from the
   path; naming it in the body is a 400. `Idempotency-Key` is honoured.
@@ -93,6 +97,18 @@ carried as compatibility shims nobody will ever remove.
   to retry something that could never succeed.
 
 ### Corrected
+
+- **Address names behind a nullable key were declared as always present.**
+  `customer`, `building` and `complex` may each be entered before anyone knows
+  where they are, and `neighborhood_name`, `district_name` and `province_name`
+  are `null` on those rows. The contract said `string`, so a generated client
+  read them as always there and the screen printed an empty line without
+  anything having failed.
+
+  Not a behaviour change: no response changes shape. Breaking against the
+  document only, the same class of thing as the pagination envelope below.
+  Regenerate the client; the three fields become nullable and TypeScript will
+  point at the places that assumed otherwise.
 
 - **Pagination envelope.** The contract declared DRF's default
   `{count, next, previous, results}` on every list endpoint. The server has
