@@ -8,6 +8,7 @@ django-environ so types and defaults live in one place.
 from pathlib import Path
 
 import environ
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -300,3 +301,11 @@ CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 # The refresh token travels in an httpOnly cookie, so credentials must be
 # allowed; the origin list is therefore never a wildcard.
 CORS_ALLOW_CREDENTIALS = True
+
+# `Idempotency-Key` is a custom header, so the browser asks permission for it in
+# the preflight and refuses to send the request without it in this list. The
+# default list does not include it, so every create from a browser failed as a
+# CORS error — while the same call from a server-side client, which enforces no
+# CORS at all, worked. Anything the client sends that is not a CORS-safelisted
+# header has to be named here.
+CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
