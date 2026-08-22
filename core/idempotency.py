@@ -17,6 +17,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
+from django.db.models import QuerySet
 from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -27,6 +28,30 @@ from core.models import IdempotencyKey
 
 HEADER = "Idempotency-Key"
 RETENTION = timedelta(hours=24)
+
+
+def _expired() -> QuerySet[IdempotencyKey]:
+    return IdempotencyKey.objects.filter(expires_at__lte=timezone.now())
+
+
+def count_expired_keys() -> int:
+    return int(_expired().count())
+
+
+def purge_expired_keys() -> int:
+    """Delete every key whose window has closed.
+
+    The wrapper below drops an expired row only when the same key is presented
+    again, which is exactly the case that did not need cleaning up. A key used
+    once — the overwhelming majority, because the header exists for a retry that
+    usually never comes — is never looked at again and stays forever. Section
+    5.15 asks for a daily command; this is what it calls.
+
+    A hard delete: there is nothing here worth preserving once the window
+    closes, and the table carries no soft-delete columns to preserve it with.
+    """
+    deleted, _ = _expired().delete()
+    return int(deleted)
 
 
 def _fingerprint(request: Request) -> str:

@@ -291,6 +291,231 @@ class TestRenewal:
             )
 
 
+RENEWAL_STARTS = TODAY + timedelta(days=366)
+
+
+def covered_then_renewed_without_carrying(firm) -> tuple[APIClient, dict]:
+    """One elevator covered, then a renewal that deliberately leaves it behind."""
+    _, owner, customer, _, elevators = firm
+    client = api_for(owner)
+    original = make_contract(client, customer.id)
+    client.post(
+        reverse("contract-add-elevators", args=[original["id"]]),
+        {"elevator_ids": [str(elevators[0].pk)]},
+        format="json",
+    )
+    client.post(
+        reverse("contract-renew", args=[original["id"]]),
+        {
+            "start_date": str(RENEWAL_STARTS),
+            "end_date": str(RENEWAL_STARTS + timedelta(days=365)),
+            "carry_elevators": False,
+        },
+        format="json",
+    )
+    return client, original
+
+
+class TestARenewalThatLeavesTheElevatorsBehind:
+    """Issue #59: the flag used to decide whether the old lines closed at all.
+
+    Drafting a successor for a different set of machines is a real choice, and
+    the flag is there for it. But the predecessor still ends: it goes to
+    `renewed`, and a contract in a finished state cannot go on holding
+    elevators. Leaving those lines open pinned every one of them to the partial
+    unique index — which keys on `removed_at IS NULL` — so the next contract was
+    refused with ELEVATOR_ALREADY_CONTRACTED naming a contract the user had
+    closed, and no call in the API could release it.
+
+    "Do not carry the elevators forward" and "leave the old lines open forever"
+    are not the same instruction, and nobody ever meant the second.
+    """
+
+    def test_the_elevator_can_be_put_on_the_next_contract(self, firm):
+        _, owner, customer, _, elevators = firm
+        client, original = covered_then_renewed_without_carrying(firm)
+
+        # What the user does next: put the elevator on the contract they had in
+        # mind instead. This is the call that used to be refused for good.
+        replacement = make_contract(client, customer.id)
+        response = client.post(
+            reverse("contract-add-elevators", args=[replacement["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+
+        assert response.status_code == 200, (
+            f"refused with {response.data['error']['code']}, over contract "
+            f"{original['contract_number']} — which this renewal finished. "
+            f"Nothing in the API can reopen it to let the elevator go."
+        )
+
+    def test_the_old_line_is_closed_on_the_day_cover_moved(self, firm):
+        company, _, _, _, elevators = firm
+        _, original = covered_then_renewed_without_carrying(firm)
+
+        with company_context(company.id):
+            line = ContractElevator.objects.get(elevator=elevators[0], contract_id=original["id"])
+            # The successor's start date, the same date the carrying branch uses:
+            # billing history keeps the day cover ended, not the day someone
+            # noticed.
+            assert line.removed_at == RENEWAL_STARTS
+
+    def test_the_elevator_goes_back_to_uncontracted(self, firm):
+        company, _, _, _, elevators = firm
+        covered_then_renewed_without_carrying(firm)
+
+        with company_context(company.id):
+            # Nothing covers it now, so it belongs on the list of what needs a
+            # contract. Left "active" it would be invisible there — and that
+            # list is where the decision to renew gets made from.
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.UNCONTRACTED
+
+    def test_the_successor_starts_empty(self, firm):
+        company, _, _, _, elevators = firm
+        covered_then_renewed_without_carrying(firm)
+
+        with company_context(company.id):
+            # The flag is still honoured: releasing the elevator is not the same
+            # as quietly carrying it over anyway.
+            assert not ContractElevator.objects.filter(removed_at__isnull=True).exists()
+
+    def test_carrying_them_keeps_the_elevator_covered(self, firm):
+        """The other branch of the same flag, stated rather than assumed."""
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        original = make_contract(client, customer.id)
+        client.post(
+            reverse("contract-add-elevators", args=[original["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+
+        successor = client.post(
+            reverse("contract-renew", args=[original["id"]]),
+            {
+                "start_date": str(RENEWAL_STARTS),
+                "end_date": str(RENEWAL_STARTS + timedelta(days=365)),
+                "carry_elevators": True,
+            },
+            format="json",
+        ).data
+
+        with company_context(company.id):
+            open_line = ContractElevator.objects.get(elevator=elevators[0], removed_at__isnull=True)
+            assert str(open_line.contract_id) == str(successor["id"])
+            # Still covered, so it stays active — the release only happens when
+            # the successor does not take it.
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.ACTIVE
+
+
+def strand(company, elevator, contract_id) -> None:
+    """Put a line back into the state the old renewal left it in.
+
+    A line still open on a contract that has already moved to `renewed`. The
+    fixed service can no longer produce this, so it has to be written by hand —
+    but every renewal made without carrying its elevators, before the fix, left
+    exactly this behind.
+    """
+    with system_context():
+        ContractElevator.unscoped.filter(contract_id=contract_id, elevator=elevator).update(
+            removed_at=None
+        )
+        Elevator.unscoped.filter(pk=elevator.pk).update(status=ElevatorStatus.ACTIVE)
+
+
+def run_the_repair() -> None:
+    """Call the data migration against the historical models it will see."""
+    import importlib
+
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    module = importlib.import_module(
+        "apps.contracts.migrations.0004_release_elevators_stranded_by_renewal"
+    )
+    state = MigrationExecutor(connection).loader.project_state(
+        ("contracts", "0004_release_elevators_stranded_by_renewal")
+    )
+    module.release_stranded_lines(state.apps, connection.schema_editor())
+
+
+class TestTheRepairForRowsWrittenBeforeTheFix:
+    """Fixing the service does not free the elevators already stranded by it.
+
+    Those lines are open on contracts that are finished, no call in the API can
+    close them, and the elevator they hold is refused a place on anything else.
+    A migration is the only thing that can let go, so it is tested the same way
+    the fix is.
+    """
+
+    def test_the_stranded_line_is_closed_and_the_elevator_released(self, firm):
+        company, _, _, _, elevators = firm
+        _, original = covered_then_renewed_without_carrying(firm)
+        strand(company, elevators[0], original["id"])
+
+        run_the_repair()
+
+        with company_context(company.id):
+            line = ContractElevator.objects.get(elevator=elevators[0], contract_id=original["id"])
+            # Closed on the successor's start date, which is the day cover
+            # actually moved.
+            assert line.removed_at == RENEWAL_STARTS
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.UNCONTRACTED
+
+    def test_the_elevator_can_then_be_contracted_again(self, firm):
+        company, owner, customer, _, elevators = firm
+        client, original = covered_then_renewed_without_carrying(firm)
+        strand(company, elevators[0], original["id"])
+
+        run_the_repair()
+
+        replacement = make_contract(client, customer.id)
+        assert (
+            client.post(
+                reverse("contract-add-elevators", args=[replacement["id"]]),
+                {"elevator_ids": [str(elevators[0].pk)]},
+                format="json",
+            ).status_code
+            == 200
+        )
+
+    def test_it_does_not_overwrite_something_somebody_said_afterwards(self, firm):
+        company, _, _, _, elevators = firm
+        _, original = covered_then_renewed_without_carrying(firm)
+        strand(company, elevators[0], original["id"])
+        with system_context():
+            Elevator.unscoped.filter(pk=elevators[0].pk).update(status=ElevatorStatus.SEALED)
+
+        run_the_repair()
+
+        with company_context(company.id):
+            # The line is released either way — that is what frees the index —
+            # but "sealed" is a statement about the machine that somebody made
+            # after the bug, and a repair has no business erasing it.
+            assert ContractElevator.objects.get(elevator=elevators[0]).removed_at is not None
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.SEALED
+
+    def test_a_line_on_a_live_contract_is_left_alone(self, firm):
+        company, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk)]},
+            format="json",
+        )
+
+        run_the_repair()
+
+        with company_context(company.id):
+            # The footprint is exactly "open line on a finished contract". A
+            # sweep that closed live cover would end every contract in the
+            # database.
+            assert ContractElevator.objects.get(elevator=elevators[0]).removed_at is None
+            assert Elevator.objects.get(pk=elevators[0].pk).status == ElevatorStatus.ACTIVE
+
+
 class TestFinancialVisibility:
     def _contract_for(self, firm) -> str:
         _, owner, customer, _, _ = firm
