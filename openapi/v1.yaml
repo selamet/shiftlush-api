@@ -3418,15 +3418,21 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
+        vat_status:
+          allOf:
+          - $ref: '#/components/schemas/VatStatusEnum'
+          readOnly: true
         vat_amount:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
           readOnly: true
         monthly_total:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
           readOnly: true
         lines:
           type: array
@@ -3469,6 +3475,7 @@ components:
       - updated_at
       - vat_amount
       - vat_rate
+      - vat_status
     ContractScope:
       enum:
       - maintenance_only
@@ -3526,7 +3533,6 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
-          nullable: true
         billing_period:
           $ref: '#/components/schemas/BillingPeriodEnum'
         auto_renew:
@@ -3544,6 +3550,7 @@ components:
       - pricing_type
       - scope
       - start_date
+      - vat_rate
     ContractWriteRequest:
       type: object
       properties:
@@ -3579,7 +3586,6 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
-          nullable: true
         billing_period:
           $ref: '#/components/schemas/BillingPeriodEnum'
         auto_renew:
@@ -3597,6 +3603,7 @@ components:
       - pricing_type
       - scope
       - start_date
+      - vat_rate
     ControlTypeEnum:
       enum:
       - simple_collective
@@ -5675,7 +5682,6 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
-          nullable: true
         billing_period:
           $ref: '#/components/schemas/BillingPeriodEnum'
         auto_renew:
@@ -6272,6 +6278,16 @@ components:
       required:
       - first_name
       - last_name
+    VatStatusEnum:
+      enum:
+      - applied
+      - zero_rated
+      - unset
+      type: string
+      description: |-
+        * `applied` - A rate is stated and charged
+        * `zero_rated` - The rate is stated and it is zero
+        * `unset` - No rate has been stated, so the VAT cannot be computed
     ErrorCode:
       type: string
       enum:

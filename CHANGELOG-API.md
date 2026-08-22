@@ -100,6 +100,46 @@ carried as compatibility shims nobody will ever remove.
   previous one, rather than answering 500. No client change is needed; a client
   that worked around it by clearing the old flag first can stop.
 
+- **`POST /contracts` now requires `vat_rate`, and a contract with no rate no
+  longer has a total.** Three things that used to be one number are now three
+  different answers.
+
+  Elevator maintenance is VAT-liable in Turkey, so a blank rate is an omission
+  far more often than a decision — and the decision already had a way to say
+  itself, `0.00`. A missing rate used to be read as zero, which produced a
+  `monthly_total` that looked complete and was short by the VAT. Nobody
+  re-reads a number that filled itself in; it surfaced at reconciliation months
+  later, across every invoice raised from that contract.
+
+  - `vat_rate` is **required on create** and may never be `null`. Breaking: an
+    optional request field became required. Made in place because v1 is
+    unreleased. `PATCH` stays partial — an existing contract can have its notes
+    edited without restating its rate — but `"vat_rate": null` is a 400, so a
+    rate cannot be cleared once it has been stated.
+  - `vat_rate` must be between `0` and `100`. Refused with 400 on the field.
+    The bound is not in the schema, because a money value crosses the wire as a
+    string and OpenAPI cannot put a numeric range on one; the form has to show
+    the 400. `2000` typed for 20% fit `decimal(5, 2)` and invoiced twenty times
+    the agreed amount.
+  - **`vat_amount` and `monthly_total` are now nullable.** They are `null` when
+    no rate was ever stated. `monthly_subtotal` is still answered — that part is
+    known. This is a behaviour change as well as a document one: those two
+    fields used to answer `"0.00"` and the subtotal.
+  - **`vat_status`** is new on `ContractRead`: `applied`, `zero_rated` or
+    `unset`. A screen switches on it rather than inferring the case from a null,
+    which is what a hint reading "VAT is not calculated" was doing by guesswork.
+    Like every other enum here it is a code; the Turkish belongs to the
+    translation file.
+
+  A contract can still legitimately have no rate — `POST /contracts/{id}/renew`
+  with `copy_terms: false` produces a draft whose terms are still being
+  negotiated. That is why the column stayed nullable, and it is exactly the
+  state `unset` was added to describe.
+
+  Regenerate the client. TypeScript will point at every place that read
+  `monthly_total` as always present, which is the list of screens that would
+  have shown the wrong figure.
+
 ### Added since the first draft
 
 - **`neighborhood_name`, `district_name` and `province_name` on `CustomerRead`.**

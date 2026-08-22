@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from rest_framework.test import APIClient
 
@@ -75,6 +76,9 @@ def make_contract(client: APIClient, customer_id, **overrides) -> dict:
         "end_date": str(TODAY + timedelta(days=365)),
         "pricing_type": PricingType.PER_ELEVATOR,
         "monthly_fee": "4750.00",
+        # Required by the API, so it is part of the baseline payload rather
+        # than something each test remembers to add.
+        "vat_rate": "20.00",
         **overrides,
     }
     return client.post(reverse("contract-list"), payload, format="json").data
@@ -531,7 +535,7 @@ class TestWhatTheCustomerPays:
 
         body = api_for(operations).get(reverse("contract-detail", args=[contract["id"]])).data
 
-        for field in ("monthly_subtotal", "vat_amount", "monthly_total"):
+        for field in ("monthly_subtotal", "vat_status", "vat_amount", "monthly_total"):
             assert field not in body, field
 
     def test_a_renewal_names_its_predecessor(self, firm):
@@ -551,17 +555,244 @@ class TestWhatTheCustomerPays:
         # The screen names the contract this one replaced; it only had an id.
         assert body["previous_contract_number"] == original["contract_number"]
 
-    def test_a_contract_with_no_rate_stated_adds_no_vat(self, firm):
+    def test_the_vat_is_rounded_half_up_and_only_once(self, firm):
         _, owner, customer, _, _ = firm
         client = api_for(owner)
         contract = make_contract(
-            client, customer.id, pricing_type=PricingType.FLAT, monthly_fee="1000.00"
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="1000.25",
+            vat_rate="10.00",
         )
 
         body = client.get(reverse("contract-detail", args=[contract["id"]])).data
 
-        # `vat_rate` is nullable and has no default. No rate is not a rate of
-        # zero by accident — it is a contract nobody has said the rate for, and
-        # inventing 20% here would be inventing a tax position.
+        # 1000.25 x 10% is exactly 100.025 — a half-cent, which is the case the
+        # rounding mode was chosen for. Half-up gives 100.03. Python's own
+        # default, half-even, would give 100.02 because the preceding digit is
+        # even, and truncation would too, so this pins the mode rather than
+        # merely pinning "some rounding happened".
+        assert body["vat_amount"] == "100.03"
+        assert body["monthly_total"] == "1100.28"
+
+
+class TestWhatWasSaidAboutVat:
+    """Three different facts that `vat_rate` used to collapse into one number.
+
+    A rate that is charged, a rate that is deliberately zero, and a field
+    nobody filled in. The last one used to produce a monthly total that looked
+    complete and was short by the VAT — the kind of number nobody re-reads,
+    and which only surfaces at reconciliation months later, across every
+    invoice raised from the contract.
+    """
+
+    def test_a_stated_rate_is_applied(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="1000.00",
+            vat_rate="20.00",
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+
+        assert body["vat_status"] == "applied"
+        assert body["vat_rate"] == "20.00"
+        assert body["vat_amount"] == "200.00"
+        assert body["monthly_total"] == "1200.00"
+
+    def test_an_explicit_zero_is_a_real_answer(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="1000.00",
+            vat_rate="0.00",
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+
+        # Somebody said zero. The total is complete and can be invoiced.
+        assert body["vat_status"] == "zero_rated"
         assert body["vat_amount"] == "0.00"
         assert body["monthly_total"] == "1000.00"
+
+    def test_a_contract_with_no_rate_stated_has_no_total(self, firm):
+        company, owner, customer, _, _ = firm
+        # Through the ORM, because the API no longer lets one be created this
+        # way. `renew(copy_terms=False)` still does, deliberately, and rows
+        # written before this rule existed still do.
+        with company_context(company.id):
+            contract = Contract.objects.create(
+                company=company,
+                customer=customer,
+                contract_number="1900-0001",
+                scope=Scope.MAINTENANCE_ONLY,
+                start_date=TODAY,
+                end_date=TODAY + timedelta(days=365),
+                pricing_type=PricingType.FLAT,
+                monthly_fee="1000.00",
+            )
+
+        body = api_for(owner).get(reverse("contract-detail", args=[contract.id])).data
+
+        assert body["vat_status"] == "unset"
+        assert body["vat_rate"] is None
+        # Not "0.00". Nobody stated a rate, so there is no VAT figure to state.
+        assert body["vat_amount"] is None
+        # And no total either: a number here is short by the VAT and looks
+        # finished, which is the entire failure.
+        assert body["monthly_total"] is None
+        # The subtotal is still answered — that part is known, and the screen
+        # has something true to show while the rate is chased up.
+        assert body["monthly_subtotal"] == "1000.00"
+
+    def test_zero_and_unset_do_not_look_alike(self, firm):
+        company, owner, customer, _, _ = firm
+        client = api_for(owner)
+        zero_rated = make_contract(
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="1000.00",
+            vat_rate="0.00",
+        )
+        with company_context(company.id):
+            unset = Contract.objects.create(
+                company=company,
+                customer=customer,
+                contract_number="1900-0002",
+                scope=Scope.MAINTENANCE_ONLY,
+                start_date=TODAY,
+                end_date=TODAY + timedelta(days=365),
+                pricing_type=PricingType.FLAT,
+                monthly_fee="1000.00",
+            )
+
+        stated = client.get(reverse("contract-detail", args=[zero_rated["id"]])).data
+        blank = client.get(reverse("contract-detail", args=[unset.id])).data
+
+        # Same subtotal, same money, two different facts. Before this, both
+        # answered "0.00" and "1000.00" and a screen could only guess which
+        # one it was looking at.
+        assert stated["monthly_subtotal"] == blank["monthly_subtotal"]
+        assert stated["vat_status"] != blank["vat_status"]
+        assert stated["monthly_total"] != blank["monthly_total"]
+
+    def test_a_renewal_that_drops_the_terms_says_so(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        original = make_contract(
+            client, customer.id, pricing_type=PricingType.FLAT, monthly_fee="1000.00"
+        )
+        successor = client.post(
+            reverse("contract-renew", args=[original["id"]]),
+            {
+                "start_date": str(TODAY + timedelta(days=366)),
+                "end_date": str(TODAY + timedelta(days=731)),
+                "copy_terms": False,
+            },
+            format="json",
+        ).data
+
+        # This is the legitimate way a contract ends up without a rate: a draft
+        # whose terms are still being negotiated. It is allowed to exist and it
+        # is not allowed to be invoiced, and the response says both.
+        assert successor["vat_status"] == "unset"
+        assert successor["monthly_total"] is None
+
+    def test_the_rate_is_required_when_a_contract_is_created(self, firm):
+        _, owner, customer, _, _ = firm
+        response = api_for(owner).post(
+            reverse("contract-list"),
+            {
+                "customer": str(customer.id),
+                "scope": Scope.MAINTENANCE_ONLY,
+                "start_date": str(TODAY),
+                "end_date": str(TODAY + timedelta(days=365)),
+                "pricing_type": PricingType.FLAT,
+                "monthly_fee": "1000.00",
+            },
+            format="json",
+        )
+
+        # Elevator maintenance is VAT-liable, so a blank rate is an omission,
+        # not a decision. The decision has its own way of saying itself: 0.00.
+        assert response.status_code == 400
+        assert [d["field"] for d in response.data["error"]["details"]] == ["vat_rate"]
+
+    def test_the_rate_cannot_be_cleared_afterwards(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id)
+
+        response = client.patch(
+            reverse("contract-detail", args=[contract["id"]]),
+            {"vat_rate": None},
+            format="json",
+        )
+
+        assert response.status_code == 400
+
+    def test_editing_something_else_does_not_restate_the_rate(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id, vat_rate="20.00")
+
+        response = client.patch(
+            reverse("contract-detail", args=[contract["id"]]),
+            {"notes": "Renegotiated in person"},
+            format="json",
+        )
+
+        # PATCH stays partial. Requiring the rate on every edit would make a
+        # note impossible to add without retyping the money.
+        assert response.status_code == 200
+        assert response.data["vat_rate"] == "20.00"
+
+    @pytest.mark.parametrize("rate", ["-1.00", "100.01", "2000"])
+    def test_a_rate_that_is_not_a_percentage_is_refused(self, firm, rate):
+        _, owner, customer, _, _ = firm
+        response = api_for(owner).post(
+            reverse("contract-list"),
+            {
+                "customer": str(customer.id),
+                "scope": Scope.MAINTENANCE_ONLY,
+                "start_date": str(TODAY),
+                "end_date": str(TODAY + timedelta(days=365)),
+                "pricing_type": PricingType.FLAT,
+                "monthly_fee": "1000.00",
+                "vat_rate": rate,
+            },
+            format="json",
+        )
+
+        # "2000" is 20% typed without the decimal point. It fits decimal(5, 2),
+        # so nothing about the column would have stopped it, and it invoices
+        # twenty times the agreed amount.
+        assert response.status_code == 400
+        assert [d["field"] for d in response.data["error"]["details"]] == ["vat_rate"]
+
+    def test_the_database_refuses_one_too(self, firm):
+        company, _, customer, _, _ = firm
+        with company_context(company.id), pytest.raises(IntegrityError), transaction.atomic():
+            # Not everything writes through the serializer — imports, shells and
+            # future services do not. The bound belongs where nothing can go
+            # around it.
+            Contract.objects.create(
+                company=company,
+                customer=customer,
+                contract_number="1900-0003",
+                scope=Scope.MAINTENANCE_ONLY,
+                start_date=TODAY,
+                end_date=TODAY + timedelta(days=365),
+                pricing_type=PricingType.FLAT,
+                monthly_fee="1000.00",
+                vat_rate="200.00",
+            )
