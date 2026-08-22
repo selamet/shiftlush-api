@@ -1,0 +1,33 @@
+# The port mapping and container name live in docker-compose.override.yml,
+# which the server symlinks from /opt/vds-stack/overrides/. Deployment-specific
+# facts belong to the server, not to this repository.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+      - DATABASE_URL=${DATABASE_URL}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS}
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - EMAIL_URL=${EMAIL_URL}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+    expose:
+      - "8000"
+    healthcheck:
+      # /health only: liveness must not fail when the database is down, or the
+      # orchestrator restarts the one instance that could still serve reads.
+      # /ready is what a load balancer asks, and it does check dependencies.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

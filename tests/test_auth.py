@@ -332,3 +332,39 @@ class TestSessionPayload:
         # Same serializer, so the client has the name before its first
         # authenticated request rather than after it.
         assert body["user"]["company_name"] == "Test Elevator"
+
+
+class TestReadinessNeverRaises:
+    """A probe that throws is worse than one that says no.
+
+    An unreachable bucket is the condition /ready exists to report. When the
+    check raised instead, the endpoint returned a 500 HTML page and whatever
+    reads it — a load balancer, a deploy script — got no usable answer at all.
+    Found by running the built image against a bucket that does not exist.
+    """
+
+    def test_an_unreachable_bucket_reports_not_ready(self, client, db, settings):
+        settings.STORAGE_BACKENDS = {
+            **settings.STORAGE_BACKENDS,
+            "local": {
+                "endpoint_url": "https://nothing.invalid",
+                "access_key_id": "x",
+                "secret_access_key": "x",
+                "bucket": "x",
+                "region": "us-east-1",
+            },
+        }
+
+        response = client.get("/ready")
+
+        assert response.status_code == 503
+        assert response.json()["checks"]["storage"] == "unreachable"
+
+    def test_a_backend_that_is_not_configured_reports_not_ready(self, client, db, settings):
+        settings.DEFAULT_STORAGE_BACKEND = "nonexistent"
+
+        response = client.get("/ready")
+        # Not a crash either: a deployment pointing at a backend it has no
+        # credentials for should be reported, not raised.
+        assert response.status_code == 503
+        assert response.json()["checks"]["storage"] == "unreachable"
