@@ -280,7 +280,7 @@ class TestUsers:
         colleague(company, Role.TECHNICIAN, "tech@example.com")
 
         row = api_for(owner).get(reverse("user-list")).data["results"][0]
-        for field in ("password", "national_id", "failed_login_count", "locked_until"):
+        for field in ("password", "national_id"):
             assert field not in row
 
     def test_the_last_owner_cannot_be_deactivated(self, firm):

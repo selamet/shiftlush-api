@@ -337,11 +337,20 @@ class TestTheGeocodingEndpoint:
 
 
 class TestTheLoginLockout:
-    """The per-account lockout of 7.4 and the throttle have to coexist.
+    """The sign-in lockout of 7.4 and the throttle have to coexist.
 
-    They answer different questions — one is about an account being attacked,
-    the other about an address making too many requests — and either one
-    swallowing the other would leave a hole where the swallowed rule was.
+    They answer different questions — one is about a credential being guessed at,
+    the other about an address making too many requests of any kind — and either
+    one swallowing the other would leave a hole where the swallowed rule was.
+
+    Both are now keyed on an address, which is what makes the overlap worth a
+    test rather than obvious. They are still not the same control: the throttle
+    counts every request from an address, the lockout counts failed sign-ins for
+    one e-mail from one address, and five of the latter fit comfortably inside
+    twenty of the former on purpose — so an account under attack is refused for
+    being under attack, and says so, rather than disappearing behind a 429 that
+    tells the account's owner nothing. `tests/test_login_lockout.py` has the
+    lockout's own rules.
     """
 
     def test_five_wrong_passwords_still_reach_the_lockout(self, db, limits):
@@ -376,7 +385,7 @@ class TestTheLoginLockout:
         assert statuses == [422] * ANON_LIMIT
         assert api.post(login, wrong).status_code == 429
 
-    def test_the_lockout_is_per_account_and_the_throttle_is_per_address(self, db, limits):
+    def test_the_lockout_is_per_pair_and_the_throttle_is_per_address(self, db, limits):
         limits()
         make_user("first@example.com")
         make_user("second@example.com")
@@ -387,8 +396,11 @@ class TestTheLoginLockout:
             api.post(login, {"email": "first@example.com", "password": "not-the-password"})
         other = api.post(login, {"email": "second@example.com", "password": PASSWORD})
 
-        # One account locked, the other unaffected — an attacker cannot lock a
-        # whole company out by failing against one address.
+        # One pair locked, the other unaffected. Two things follow from that and
+        # both matter: an attacker cannot lock a whole firm out by grinding one
+        # address, and an office where everybody shares one NAT address does not
+        # share one allowance — the e-mail is in the key, so a colleague
+        # fumbling their own password never spends anybody else's.
         assert other.status_code == 200
 
 

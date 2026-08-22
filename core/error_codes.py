@@ -108,7 +108,16 @@ class ErrorCode(models.TextChoices):
 
     # Authentication --------------------------------------------------------
     INVALID_CREDENTIALS = "INVALID_CREDENTIALS", "E-mail or password is incorrect"
-    ACCOUNT_LOCKED = "ACCOUNT_LOCKED", "Too many failed attempts; account is temporarily locked"
+    # Kept under its original name: renaming a code is a breaking change, and
+    # this is the one the sign-in screen already switches on. What it means has
+    # narrowed — 7.4 counts failures per e-mail *and* address, so what is locked
+    # is this caller for fifteen minutes, not the account. The same person
+    # signing in from anywhere else is unaffected, and the wording says address
+    # rather than account so a translation of it cannot promise otherwise.
+    ACCOUNT_LOCKED = (
+        "ACCOUNT_LOCKED",
+        "Too many failed attempts from this address; try again later",
+    )
     ACCOUNT_INACTIVE = "ACCOUNT_INACTIVE", "Account is not active"
     TOKEN_INVALID = "TOKEN_INVALID", "Token is invalid or has already been used"
     TOKEN_EXPIRED = "TOKEN_EXPIRED", "Token has expired"

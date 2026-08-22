@@ -122,9 +122,8 @@ class InvitationAcceptSerializer(StrictSerializer):
 class CurrentUserSerializer(serializers.ModelSerializer):
     """What `/auth/me` returns.
 
-    Read-only, and narrower than the model on purpose: `national_id`,
-    `password`, `failed_login_count` and `locked_until` are all on User and none
-    of them belong in a response.
+    Read-only, and narrower than the model on purpose: `national_id` and
+    `password` are both on User and neither belongs in a response.
     """
 
     company_id = serializers.UUIDField(read_only=True, allow_null=True)

@@ -19,6 +19,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.companies.models import Company
+from apps.users import lockout
 from apps.users.models import (
     Invitation,
     OneTimeToken,
@@ -38,9 +39,6 @@ REFRESH_TOKEN_LIFETIME = timedelta(days=30)
 INVITATION_LIFETIME = timedelta(hours=72)
 PASSWORD_RESET_LIFETIME = timedelta(hours=1)
 EMAIL_VERIFICATION_LIFETIME = timedelta(hours=24)
-
-MAX_FAILED_LOGINS = 5
-LOCKOUT_DURATION = timedelta(minutes=15)
 
 
 def _hash(token: str) -> str:
@@ -138,40 +136,61 @@ def register_company(
     return company, owner
 
 
-def authenticate(*, email: str, password: str) -> User:
-    """Verify credentials, applying the lockout.
+def authenticate(*, email: str, password: str, ip: str | None) -> User:
+    """Verify credentials, applying the lockout of 7.4.
 
     Every failure path raises the same code. Telling the caller that an address
     is unknown turns the login form into a way to enumerate who has an account.
+
+    `ip` is required rather than defaulted, because the lockout is keyed on the
+    pair and a default would quietly put every caller in one bucket — which is
+    the account-wide lock this replaced, reintroduced by an argument nobody
+    passed. It must be `core.client_ip.client_ip`'s answer and no other: that
+    one reads the right-most trusted `X-Forwarded-For` entry, and a bucket keyed
+    on a value the caller writes is not a bucket.
     """
-    with system_context():
-        user = User.objects.filter(email=email.lower()).first()
+    email = email.lower()
 
-    if user is None:
-        raise BusinessRuleError(ErrorCode.INVALID_CREDENTIALS)
-
-    now = timezone.now()
-    if user.locked_until and user.locked_until > now:
+    if lockout.is_locked(email=email, ip=ip):
+        # Checked first, so a locked bucket costs no query and reads the same
+        # whether or not the address is registered.
+        #
         # Stated as its own code, because the interface says so up front rather
-        # than springing it: a surprise lockout produces more support calls
-        # than the lockout itself.
+        # than springing it: a surprise lockout produces more support calls than
+        # the lockout itself. The code keeps its name — renaming one is a
+        # breaking change for every client switching on it — but it no longer
+        # means the account is locked, only that this pair is. Nothing an
+        # attacker does to it reaches the person whose account it is.
         raise BusinessRuleError(ErrorCode.ACCOUNT_LOCKED)
 
-    if not user.check_password(password):
-        user.failed_login_count += 1
-        if user.failed_login_count >= MAX_FAILED_LOGINS:
-            user.locked_until = now + LOCKOUT_DURATION
-            user.failed_login_count = 0
-        user.save(update_fields=["failed_login_count", "locked_until", "updated_at"])
+    with system_context():
+        user = User.objects.filter(email=email).first()
+
+    if user is None:
+        # Hash something anyway. Returning before paying for argon2id is the
+        # difference between a few milliseconds and a few hundred, and that is
+        # the same enumeration answer the shared error code exists to withhold —
+        # readable over a handful of requests and free to collect. Django's own
+        # ModelBackend does this, for this reason.
+        User().set_password(password)
+        lockout.record_failure(email=email, ip=ip)
         raise BusinessRuleError(ErrorCode.INVALID_CREDENTIALS)
 
+    if not user.check_password(password):
+        lockout.record_failure(email=email, ip=ip)
+        raise BusinessRuleError(ErrorCode.INVALID_CREDENTIALS)
+
+    # Past this line the password was right, so nothing below is a guess. An
+    # inactive account is refused without counting against the pair and without
+    # clearing it: a leaver typing their own old password is not an attempt to
+    # be counted, and it is not a reason to hand a fresh five attempts back to
+    # whoever else is in the middle of spending them.
     if not user.is_active:
         raise BusinessRuleError(ErrorCode.ACCOUNT_INACTIVE)
 
-    user.failed_login_count = 0
-    user.locked_until = None
-    user.last_login_at = now
-    user.save(update_fields=["failed_login_count", "locked_until", "last_login_at", "updated_at"])
+    lockout.clear(email=email, ip=ip)
+    user.last_login_at = timezone.now()
+    user.save(update_fields=["last_login_at", "updated_at"])
     return user
 
 
@@ -375,12 +394,11 @@ def change_password(
         raise BusinessRuleError(ErrorCode.INVALID_CREDENTIALS)
 
     user.set_password(new_password)
-    # A password one knows well enough to change is not a password one is locked
-    # out of. Clearing these here means a lockout in progress does not outlive
-    # the credential that caused it.
-    user.failed_login_count = 0
-    user.locked_until = None
-    user.save(update_fields=["password", "failed_login_count", "locked_until", "updated_at"])
+    # Nothing to unlock here. This caller is inside a live session, so they
+    # signed in — and signing in clears the pair they signed in from. The
+    # equivalent clear for somebody who cannot sign in is in
+    # `confirm_password_reset`, which is the flow they are actually in.
+    user.save(update_fields=["password", "updated_at"])
 
     revoke_all_sessions(user)
     return issue_tokens(user, user_agent=user_agent, ip=ip, continues=current_session)
@@ -440,12 +458,24 @@ def request_password_reset(email: str) -> str | None:
 
 
 @transaction.atomic
-def confirm_password_reset(*, token: str, new_password: str) -> User:
+def confirm_password_reset(*, token: str, new_password: str, ip: str | None = None) -> User:
+    """Set a new password from a mailbox token, and let the holder back in.
+
+    `ip` releases the lock on the pair completing the reset, and only that pair.
+    Somebody who has been locked out is very often locked out at the address they
+    are sitting at, and this is the flow whose entire purpose is regaining
+    access — leaving them to wait fifteen minutes after they have proved they
+    hold the mailbox is the product refusing to accept its own answer.
+
+    Only the presenting address, because the keys are hashed and there is no
+    list of a person's buckets to clear. That is the right limit anyway: it
+    releases the person who is here, and leaves an attacker's own bucket
+    somewhere else exactly as locked as they earned.
+    """
     user = _consume_one_time_token(token, TokenPurpose.PASSWORD_RESET)
     user.set_password(new_password)
-    user.failed_login_count = 0
-    user.locked_until = None
-    user.save(update_fields=["password", "failed_login_count", "locked_until", "updated_at"])
+    user.save(update_fields=["password", "updated_at"])
+    lockout.clear(email=user.email, ip=ip)
     # If the reset was triggered because the account was taken over, leaving the
     # attacker's sessions alive would defeat the point.
     revoke_all_sessions(user)

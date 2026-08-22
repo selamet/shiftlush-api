@@ -28,17 +28,11 @@ from apps.users.api.v1.serializers import (
     RegisterSerializer,
     TokenResponseSerializer,
 )
+from core.client_ip import client_ip
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 
 REFRESH_COOKIE = "shiftlush_refresh"
-
-
-def _client_ip(request: Request) -> str | None:
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 def _token_response(request: Request, pair: services.TokenPair, user: Any) -> Response:
@@ -71,7 +65,7 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         _, owner = services.register_company(**serializer.validated_data)
         pair = services.issue_tokens(
-            owner, user_agent=request.headers.get("User-Agent", ""), ip=_client_ip(request)
+            owner, user_agent=request.headers.get("User-Agent", ""), ip=client_ip(request)
         )
         response = _token_response(request, pair, owner)
         response.status_code = status.HTTP_201_CREATED
@@ -85,9 +79,13 @@ class LoginView(APIView):
     def post(self, request: Request) -> Response:
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = services.authenticate(**serializer.validated_data)
+        # The lockout of 7.4 is counted per (e-mail, address), so the address is
+        # an argument to the rule rather than something the service could look
+        # up for itself. `core.client_ip` is the only place that answers it.
+        caller = client_ip(request)
+        user = services.authenticate(**serializer.validated_data, ip=caller)
         pair = services.issue_tokens(
-            user, user_agent=request.headers.get("User-Agent", ""), ip=_client_ip(request)
+            user, user_agent=request.headers.get("User-Agent", ""), ip=caller
         )
         return _token_response(request, pair, user)
 
@@ -109,7 +107,7 @@ class RefreshView(APIView):
         pair = services.rotate_refresh_token(
             refresh_token=token,
             user_agent=request.headers.get("User-Agent", ""),
-            ip=_client_ip(request),
+            ip=client_ip(request),
         )
         from apps.users.models import RefreshSession  # local import avoids a cycle
 
@@ -153,6 +151,10 @@ class PasswordResetConfirmView(APIView):
         services.confirm_password_reset(
             token=serializer.validated_data["token"],
             new_password=serializer.validated_data["password"],
+            # Releases this address's lock, so somebody who was locked out is not
+            # made to wait out a window they have just proved they should not be
+            # in.
+            ip=client_ip(request),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -180,7 +182,7 @@ class InvitationAcceptView(APIView):
             password=serializer.validated_data["password"],
         )
         pair = services.issue_tokens(
-            user, user_agent=request.headers.get("User-Agent", ""), ip=_client_ip(request)
+            user, user_agent=request.headers.get("User-Agent", ""), ip=client_ip(request)
         )
         response = _token_response(request, pair, user)
         response.status_code = status.HTTP_201_CREATED
