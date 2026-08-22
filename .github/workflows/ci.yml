@@ -89,7 +89,7 @@ jobs:
         run: |
           uv run python manage.py spectacular --file openapi/v1.yaml --fail-on-warn
           git diff --exit-code openapi/v1.yaml \
-            || (echo "openapi/v1.yaml is out of date. Run 'make sync-spec'." && exit 1)
+            || (echo "openapi/v1.yaml is out of date. Run 'make spec'." && exit 1)
 
       - name: No unannounced breaking changes
         # "Unannounced" is the operative word, and until now there was no way to
@@ -115,3 +115,42 @@ jobs:
           echo "If the break is intended, record it there in this commit. If it"
           echo "is not, the diff above is telling you what a client will lose."
           exit 1
+
+      - name: Report whether the frontend holds this contract
+        # A REPORT, NOT A CHECK. It guarantees nothing, and when it cannot read
+        # the frontend's copy it says exactly that rather than staying quiet and
+        # letting silence read as agreement.
+        #
+        # The guarantee lives in shiftlush-web, where `npm run lint:contract`
+        # compares against this repository's published spec and fails closed.
+        # It cannot live here. On a backend pull request the frontend is
+        # NECESSARILY behind until this merges, so gating here would deadlock
+        # every backend change against a sync that cannot have happened yet. On
+        # a frontend pull request the backend's change is already on main, so
+        # syncing is possible and blocking is the right answer. That asymmetry
+        # is why the gate is over there and only the heads-up is here.
+        #
+        # shiftlush-web is public, so reading its copy needs no token.
+        run: |
+          here=$(shasum -a 256 openapi/v1.yaml | cut -d' ' -f1)
+          if curl -fsSL --max-time 20 -o /tmp/web-v1.yaml \
+              https://raw.githubusercontent.com/selamet/shiftlush-web/main/openapi/v1.yaml \
+              && grep -q '^openapi: 3\.' /tmp/web-v1.yaml; then
+            there=$(shasum -a 256 /tmp/web-v1.yaml | cut -d' ' -f1)
+          else
+            echo "::notice::Could not read shiftlush-web's copy of the contract."
+            echo "No comparison was made. This step proves nothing either way;"
+            echo "the check that does is 'npm run lint:contract' in that repository."
+            exit 0
+          fi
+          if [ "$here" = "$there" ]; then
+            echo "shiftlush-web holds this contract ($here)."
+            exit 0
+          fi
+          echo "::notice::shiftlush-web does not hold this contract yet."
+          echo "  here (shiftlush-api)  $here"
+          echo "  there (shiftlush-web) $there"
+          echo ""
+          echo "Expected on a pull request that changes the contract: the frontend"
+          echo "cannot sync until this lands. Once it has, run 'npm run api:sync'"
+          echo "in shiftlush-web, which is also what its CI will tell you."
