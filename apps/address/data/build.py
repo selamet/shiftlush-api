@@ -34,6 +34,12 @@ EXPECTED = {"provinces": 81, "districts": 900, "neighborhoods": 30_000, "village
 
 
 def fetch(name: str) -> list[dict]:
+    """Read one upstream file into memory.
+
+    Deliberately not written to disk on the way past. An earlier version kept
+    the downloads, and nine megabytes of intermediate JSON ended up committed
+    because they landed in the working directory.
+    """
     url = f"{BASE}/{name}.json"
     if not url.startswith("https://"):  # pragma: no cover - BASE is a constant
         raise SystemExit("refusing a non-https source")

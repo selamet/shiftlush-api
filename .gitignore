@@ -39,3 +39,11 @@ coverage.xml
 # Local data dumps
 /tmp/
 *.dump
+
+# The intermediate download the address build script reads. The CSVs under
+# apps/address/data are the artefact; these are 9 MB of raw JSON on the way to
+# them, and they were committed once already.
+/provinces.json
+/districts.json
+/neighborhoods.json
+/villages.json
