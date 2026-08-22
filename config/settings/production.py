@@ -87,6 +87,15 @@ FRONTEND_URL = env("FRONTEND_URL").rstrip("/")
 # it; trusting it is only safe because nothing else can reach the port.
 SECURE_SSL_REDIRECT = True
 
+# One proxy — Caddy — so the right-most X-Forwarded-For entry is the address it
+# accepted the connection from, and everything to its left is whatever the
+# caller chose to send. Getting this wrong is not cosmetic: at zero, REMOTE_ADDR
+# is the Docker gateway and every anonymous caller in the world shares a single
+# twenty-a-minute bucket; at two, a forged entry buys a bucket per request. It
+# is a fact about the deployment, so it is settable, but the default is the
+# deployment we have.
+TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=1)
+
 # The two infrastructure endpoints are exempt, because the things that call
 # them are inside the host and speak plain HTTP on the loopback: Docker's own
 # healthcheck and anything a load balancer runs against the container directly.

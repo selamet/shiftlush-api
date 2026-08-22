@@ -65,6 +65,27 @@ it is exploited. `.env` on the server is the only place they exist.
 | `EMAIL_URL` | SMTP. **Must use `smtp+tls://` or `smtp+ssl://`** — `?tls=True` is ignored and production refuses to boot without TLS, because SMTP AUTH would otherwise send the password in clear text. Invitations and password resets are the only way anyone but the founder gets in. |
 | `R2_*` | object storage; `/ready` reports 503 while these are unset |
 
+**The request limits** are the other exception, and the one that depends on the
+deployment rather than on a credential. `ANON_RATE_LIMIT` (20/min per address)
+and `USER_RATE_LIMIT` (300/min per user) default to what the specification asks
+for and need not be set. `TRUSTED_PROXY_COUNT` defaults to **1** in production,
+which is the Caddy in front of the container: the right-most `X-Forwarded-For`
+entry is the address Caddy accepted the connection from, and everything to its
+left is whatever the caller chose to send.
+
+That number is the one to check if the limits ever behave strangely. Too low —
+zero — and `REMOTE_ADDR` is the Docker gateway, so every anonymous caller in the
+world shares a single twenty-a-minute bucket and the API looks broken under
+mild load. Too high and a forged header buys a fresh bucket per request, which
+removes the limit and puts an invented address in the audit log. Adding a second
+proxy in front of Caddy means raising it, in the same change.
+
+The counter itself lives in Redis, which is what makes the limit a limit: with
+three gunicorn workers and a per-process cache, each worker enforces the number
+separately and the real allowance is three times what is configured. Measured
+rather than assumed — 60 of 120 requests through on the in-memory cache against
+exactly 20 of 60 on Redis.
+
 **Reverse geocoding** is the exception to the rule above: `GEOCODING_URL`,
 `GEOCODING_USER_AGENT` and `GEOCODING_RATE_LIMIT` all have working defaults, so
 nothing has to be set for the address picker to work. Two of them are still

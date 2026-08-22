@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from http import HTTPStatus
 
 from django.http import HttpRequest, HttpResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+from core.client_ip import client_ip
 from core.context import RequestActor, actor_context, company_context
+from core.throttling import STATE_ATTRIBUTE, RateLimitState
 
 RequestHandler = Callable[[HttpRequest], HttpResponse]
 
@@ -86,10 +89,15 @@ class CompanyContextMiddleware:
                 except (InvalidToken, ValueError):
                     user_id = None
 
-        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-        ip = forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")
+        # Resolved by core.client_ip rather than here, so the address in the
+        # audit trail and the address the rate limit counts against are the same
+        # address. It used to read the left-most X-Forwarded-For entry, which
+        # the caller writes: an audit row could name whichever address the
+        # person being recorded felt like naming.
         return RequestActor(
-            user_id=user_id, ip_address=ip, user_agent=request.headers.get("User-Agent", "")
+            user_id=user_id,
+            ip_address=client_ip(request),
+            user_agent=request.headers.get("User-Agent", ""),
         )
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
@@ -100,6 +108,42 @@ class CompanyContextMiddleware:
             actor_context(self._actor(request)),
         ):
             return self.get_response(request)
+
+
+class RateLimitHeaderMiddleware:
+    """Reports the caller's remaining quota, as 8.9 requires.
+
+    Middleware rather than something in the view layer, because the response
+    that most needs these headers is the one no view produced: a 429 is raised
+    inside DRF's throttle check and rendered by the exception handler. Here it
+    is the same three headers on every answer, refusals included.
+
+    `Retry-After` is written here too, on a refusal, and deliberately overwrites
+    the one DRF's exception handler produced. Both mean "the moment the window
+    frees a slot"; DRF formats it with `%d`, which truncates, so a client that
+    waits exactly as long as it was told comes back a fraction of a second early
+    and is refused again. Rounded up they cost a client one extra second and
+    agree with `RateLimit-Reset`, which is the same instant reported twice and
+    should not be two different numbers.
+
+    Endpoints with no throttle leave no state behind and get no headers. That is
+    the honest answer for `/health` and `/ready`, which are plain Django views
+    outside DRF entirely and are not counted at all.
+    """
+
+    def __init__(self, get_response: RequestHandler) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+        state: RateLimitState | None = getattr(request, STATE_ATTRIBUTE, None)
+        if state is not None:
+            response["RateLimit-Limit"] = str(state.limit)
+            response["RateLimit-Remaining"] = str(state.remaining)
+            response["RateLimit-Reset"] = str(state.reset)
+            if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+                response["Retry-After"] = str(state.reset)
+        return response
 
 
 class APIVersionHeaderMiddleware:
