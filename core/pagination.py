@@ -21,6 +21,34 @@ class StandardPagination(PageNumberPagination):
     page_size_query_param = "page_size"
     max_page_size = 100
 
+    def get_paginated_response_schema(self, schema: Any) -> Any:
+        """Declare the envelope this class actually returns.
+
+        DRF's default schema describes `count`/`next`/`previous`, and overriding
+        `get_paginated_response` does not change it — the schema generator reads
+        this method and never runs the other one. Left inherited, every list
+        endpoint in the contract described a response the server has never sent,
+        and a client generated from it read `count` as undefined: the types
+        compile, the build passes, and the row counter silently shows zero.
+        """
+        return {
+            "type": "object",
+            "required": ["results", "pagination"],
+            "properties": {
+                "results": schema,
+                "pagination": {
+                    "type": "object",
+                    "required": ["page", "page_size", "total", "total_pages"],
+                    "properties": {
+                        "page": {"type": "integer", "example": 1},
+                        "page_size": {"type": "integer", "example": 25},
+                        "total": {"type": "integer", "example": 342},
+                        "total_pages": {"type": "integer", "example": 14},
+                    },
+                },
+            },
+        }
+
     def get_paginated_response(self, data: Any) -> Response:
         return Response(
             OrderedDict(

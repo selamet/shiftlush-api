@@ -92,7 +92,26 @@ jobs:
             || (echo "openapi/v1.yaml is out of date. Run 'make sync-spec'." && exit 1)
 
       - name: No unannounced breaking changes
+        # "Unannounced" is the operative word, and until now there was no way to
+        # announce one — the step simply failed. A breaking change is sometimes
+        # correct: this check first fired on a commit that fixed a contract
+        # describing a response the server had never sent. Removing the check
+        # for that would have removed it for the accidental case too.
+        #
+        # The escape hatch is the thing we want to happen anyway: say so in
+        # CHANGELOG-API.md, in the same commit, where a reviewer sees it in the
+        # diff. An accidental break does not touch that file.
         run: |
           git show HEAD~1:openapi/v1.yaml > /tmp/previous.yaml 2>/dev/null || exit 0
-          docker run --rm -v /tmp:/specs -v "$PWD/openapi:/current" \
-            tufin/oasdiff breaking /specs/previous.yaml /current/v1.yaml --fail-on ERR
+          if docker run --rm -v /tmp:/specs -v "$PWD/openapi:/current" \
+              tufin/oasdiff breaking /specs/previous.yaml /current/v1.yaml --fail-on ERR; then
+            exit 0
+          fi
+          if git diff --name-only HEAD~1 HEAD | grep -qx CHANGELOG-API.md; then
+            echo "::notice::Breaking contract change, announced in CHANGELOG-API.md."
+            exit 0
+          fi
+          echo "::error::The contract broke and CHANGELOG-API.md was not touched."
+          echo "If the break is intended, record it there in this commit. If it"
+          echo "is not, the diff above is telling you what a client will lose."
+          exit 1

@@ -93,3 +93,55 @@ class TestTheContractItself:
                 # client as one that needs no token, and the mistake is only
                 # found by the person who gets a 401 they did not expect.
                 assert operation.get("security"), f"{method.upper()} {path}"
+
+
+class TestTheSchemaMatchesTheServer:
+    """The gap the other tests in this file did not cover.
+
+    Everything above checks that the document is internally consistent. That is
+    not the same as checking it describes this server: the pagination envelope
+    was declared as DRF's default for months while the server sent something
+    else entirely, and every test passed because none of them ever compared a
+    real response to the schema.
+    """
+
+    def test_a_list_response_has_exactly_the_keys_the_schema_declares(self, spec, db):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        from apps.users.services import issue_tokens, register_company
+
+        _, owner = register_company(
+            legal_name="Firm Ltd",
+            display_name="Firm",
+            first_name="F",
+            last_name="Owner",
+            email="owner@example.com",
+            password="correct-horse-battery",
+        )
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(owner).access}")
+
+        body = client.get(reverse("customer-list")).data
+        declared = spec["components"]["schemas"]["PaginatedCustomerReadList"]
+
+        assert set(body.keys()) == set(declared["properties"].keys())
+        assert set(body["pagination"].keys()) == set(
+            declared["properties"]["pagination"]["properties"].keys()
+        )
+
+    def test_every_list_endpoint_shares_that_envelope(self, spec):
+        paginated = [
+            name
+            for name in spec["components"]["schemas"]
+            if name.startswith("Paginated") and name.endswith("List")
+        ]
+        assert paginated, "no paginated schemas found — the naming convention changed"
+
+        for name in paginated:
+            # One shape everywhere. A client that learns the envelope once should
+            # not meet a second one on the ninth endpoint.
+            assert set(spec["components"]["schemas"][name]["properties"]) == {
+                "results",
+                "pagination",
+            }, name
