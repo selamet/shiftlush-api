@@ -32,6 +32,8 @@ JOINS = ("building", "building__customer", "building__complex")
 class ElevatorFilter(django_filters.FilterSet):
     search = django_filters.CharFilter(method="filter_search")
     customer = django_filters.UUIDFilter(field_name="building__customer_id")
+    # Same reason as `customer` above, which was already declared by hand.
+    building = django_filters.UUIDFilter(field_name="building_id")
 
     class Meta:
         model = Elevator
