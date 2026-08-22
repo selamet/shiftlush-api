@@ -3276,6 +3276,25 @@ components:
           type: integer
           readOnly: true
           default: 0
+        previous_contract_number:
+          type: string
+          readOnly: true
+          default: ''
+        monthly_subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        monthly_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
         lines:
           type: array
           items:
@@ -3302,8 +3321,11 @@ components:
       - id
       - lines
       - monthly_fee
+      - monthly_subtotal
+      - monthly_total
       - notes
       - previous_contract_id
+      - previous_contract_number
       - pricing_type
       - renewal_notice_days
       - scope
@@ -3312,6 +3334,7 @@ components:
       - terminated_at
       - termination_reason
       - updated_at
+      - vat_amount
       - vat_rate
     ContractScope:
       enum:
