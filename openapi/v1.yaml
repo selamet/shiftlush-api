@@ -2563,6 +2563,19 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        user_name:
+          type: string
+          description: |-
+            Who did it, by name.
+
+            The names are looked up once for the whole page and handed in through
+            the context — see the viewset. There is no foreign key to join on, and
+            that is deliberate: the trail has to survive the hard deletion of what
+            it describes, so it holds a plain id.
+
+            Empty string rather than null for a write with no actor — a background
+            job, a bootstrap flow — since the client prints this directly.
+          readOnly: true
         table_name:
           type: string
           readOnly: true
@@ -2598,6 +2611,7 @@ components:
       - record_id
       - table_name
       - user_id
+      - user_name
     BillingPeriodEnum:
       enum:
       - monthly

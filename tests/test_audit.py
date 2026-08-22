@@ -212,3 +212,68 @@ class TestScope:
 
         ours = entries_for(company, "customer")
         assert all(entry.company_id == company.id for entry in ours)
+
+
+class TestWhoDidIt:
+    """The trail names the person, not just their id.
+
+    Without this every screen showing history would fetch a user per row over
+    the network — an N+1 that happens to be spelled in HTTP.
+    """
+
+    def test_an_entry_names_its_actor(self, firm):
+        company, owner = firm
+        api_for(owner).post(
+            reverse("customer-list"),
+            {"type": CustomerType.CORPORATE, "legal_name": "Named"},
+        )
+
+        response = api_for(owner).get(reverse("audit-log-list"), {"table_name": "customer"})
+        rows = response.data["results"]
+        assert rows[0]["user_name"] == owner.full_name
+
+    def test_a_write_with_no_actor_reads_as_empty(self, firm):
+        company, owner = firm
+        with company_context(company.id):
+            Customer.objects.create(
+                company=company, type=CustomerType.CORPORATE, legal_name="No actor"
+            )
+
+        response = api_for(owner).get(reverse("audit-log-list"), {"table_name": "customer"})
+        rows = response.data["results"]
+        anonymous = [row for row in rows if row["user_id"] is None]
+        assert anonymous
+        # Empty string, not null: the client prints this straight into a line of
+        # text and a null would render as "null".
+        assert all(row["user_name"] == "" for row in anonymous)
+
+    def test_a_leaver_keeps_their_name_on_past_entries(self, firm):
+        company, owner = firm
+        api_for(owner).post(
+            reverse("customer-list"),
+            {"type": CustomerType.CORPORATE, "legal_name": "Before leaving"},
+        )
+        with system_context():
+            owner.is_deleted = True
+            owner.save(update_fields=["is_deleted"])
+
+        response = api_for(owner).get(reverse("audit-log-list"), {"table_name": "customer"})
+        rows = response.data["results"]
+        # The trail outlives employment. A tenant-scoped read would stop finding
+        # them and turn years of their entries anonymous.
+        assert rows[0]["user_name"] == owner.full_name
+
+    def test_a_page_of_entries_costs_one_lookup(self, firm, django_assert_max_num_queries):
+        company, owner = firm
+        client = api_for(owner)
+        for index in range(10):
+            client.post(
+                reverse("customer-list"),
+                {"type": CustomerType.CORPORATE, "legal_name": f"Row {index}"},
+            )
+
+        client.get(reverse("audit-log-list"))  # warm the auth path
+        with django_assert_max_num_queries(5):
+            body = client.get(reverse("audit-log-list")).data
+
+        assert len(body["results"]) >= 10
