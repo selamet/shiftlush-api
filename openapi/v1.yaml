@@ -3421,6 +3421,40 @@ components:
         * `down_collective` - Down collective
         * `full_collective` - Full collective
         * `group_control` - Group control
+    CurrentContract:
+      type: object
+      description: |-
+        The contract covering this elevator right now, if any.
+
+        A compact block rather than the whole contract: the detail screen shows four
+        facts, and embedding a full contract here would drag its lines — every other
+        elevator in the same agreement — into a response about one lift.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        contract_number:
+          type: string
+          readOnly: true
+        scope:
+          type: string
+          readOnly: true
+        end_date:
+          type: string
+          format: date
+          readOnly: true
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - contract_number
+      - end_date
+      - id
+      - scope
+      - unit_price
     CurrentUser:
       type: object
       description: |-
@@ -4008,6 +4042,11 @@ components:
         complex_name:
           type: string
           readOnly: true
+        current_contract:
+          allOf:
+          - $ref: '#/components/schemas/CurrentContract'
+          nullable: true
+          readOnly: true
         registration_number:
           type: string
           readOnly: true
@@ -4167,6 +4206,7 @@ components:
       - complex_name
       - control_type
       - created_at
+      - current_contract
       - customer_id
       - customer_name
       - door_type

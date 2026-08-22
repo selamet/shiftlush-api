@@ -325,3 +325,120 @@ class TestFinancialVisibility:
         contract_id = self._contract_for(firm)
         user = self._user(company, Role.TECHNICIAN, "tech@example.com")
         assert api_for(user).get(reverse("contract-detail", args=[contract_id])).status_code == 403
+
+
+@pytest.fixture
+def contracted(firm):
+    """A contract covering the first elevator, created through the API."""
+    company, owner, customer, _, elevators = firm
+    client = api_for(owner)
+    contract = make_contract(client, customer.id)
+    client.post(
+        reverse("contract-add-elevators", args=[contract["id"]]),
+        {"elevator_ids": [str(elevators[0].id)], "unit_price": "1250.00"},
+        format="json",
+    )
+    return company, owner, contract, elevators[0]
+
+
+def colleague(company, role: str, email: str) -> User:
+    with system_context():
+        return User.objects.create_user(
+            email=email,
+            password=PASSWORD,
+            company=company,
+            first_name=role.title(),
+            last_name="Person",
+            role=role,
+        )
+
+
+class TestTheContractOnAnElevator:
+    """What the elevator detail screen shows about cover.
+
+    The elevator already knows whether it is covered — `status` says so — but
+    not by what. Without this the client would have to fetch every contract the
+    customer has and search their lines for one elevator.
+    """
+
+    def test_a_covered_elevator_names_its_contract(self, contracted):
+        _, owner, contract, elevator = contracted
+        body = api_for(owner).get(reverse("elevator-detail", args=[elevator.id])).data
+
+        assert body["current_contract"]["contract_number"] == contract["contract_number"]
+        assert body["current_contract"]["end_date"] == contract["end_date"]
+
+    def test_an_uncovered_elevator_says_so_plainly(self, firm):
+        _, owner, _, _, elevators = firm
+        body = api_for(owner).get(reverse("elevator-detail", args=[elevators[2].id])).data
+        assert body["current_contract"] is None
+
+    def test_a_terminated_contract_is_not_cover(self, contracted):
+        _, owner, contract, elevator = contracted
+        api_for(owner).post(
+            reverse("contract-terminate", args=[contract["id"]]),
+            {"terminated_at": str(TODAY), "reason": "Customer moved to another firm"},
+            format="json",
+        )
+
+        body = api_for(owner).get(reverse("elevator-detail", args=[elevator.id])).data
+        # Telling an operator there is cover where there is none is worse than
+        # telling them nothing.
+        assert body["current_contract"] is None
+
+    def test_the_detail_costs_no_extra_query_per_line(
+        self, contracted, django_assert_max_num_queries
+    ):
+        _, owner, _, elevator = contracted
+        client = api_for(owner)
+        # Warm the auth path so the assertion is about the serializer.
+        client.get(reverse("elevator-detail", args=[elevator.id]))
+
+        with django_assert_max_num_queries(4):
+            client.get(reverse("elevator-detail", args=[elevator.id]))
+
+
+class TestWhoSeesThePrice:
+    def test_an_owner_sees_the_unit_price_as_a_string(self, contracted):
+        _, owner, _, elevator = contracted
+        body = api_for(owner).get(reverse("elevator-detail", args=[elevator.id])).data
+
+        # A string, not a number. Money never crosses the wire as a float, and a
+        # SerializerMethodField returning a raw Decimal would have done exactly
+        # that.
+        assert body["current_contract"]["unit_price"] == "1250.00"
+
+    def test_an_accountant_cannot_reach_this_screen_at_all(self, contracted):
+        company, _, _, elevator = contracted
+        accountant = colleague(company, Role.ACCOUNTANT, "acc@example.com")
+
+        # Worth stating rather than leaving implied: accounting may read
+        # financials but not elevators, so the only roles that see a unit price
+        # here are owner and admin — the intersection of the two permissions.
+        assert (
+            api_for(accountant).get(reverse("elevator-detail", args=[elevator.id])).status_code
+            == 403
+        )
+
+    def test_operations_does_not(self, contracted):
+        company, _, _, elevator = contracted
+        operations = colleague(company, Role.OPERATIONS, "ops@example.com")
+
+        body = api_for(operations).get(reverse("elevator-detail", args=[elevator.id])).data
+
+        # Absent, not null. `null` says the line has no price; absence says the
+        # reader is not entitled to ask. And it has to be absent from the body —
+        # hiding it in the client would leave the number one network tab away
+        # from anyone who looked.
+        assert "unit_price" not in body["current_contract"]
+
+    def test_a_technician_does_not_either(self, contracted):
+        company, _, _, elevator = contracted
+        technician = colleague(company, Role.TECHNICIAN, "tech@example.com")
+        with company_context(company.id):
+            technician.customer_assignments.create(
+                company=company, customer=elevator.building.customer
+            )
+
+        body = api_for(technician).get(reverse("elevator-detail", args=[elevator.id])).data
+        assert "unit_price" not in body["current_contract"]
