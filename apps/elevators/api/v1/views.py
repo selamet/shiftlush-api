@@ -22,7 +22,6 @@ from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token, regenerate_qr_token
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse, ServiceUnavailable
-from core.idempotency import replay_protected
 from core.permissions import RolePermission
 from core.viewsets import TenantViewSet
 
@@ -66,12 +65,6 @@ class ElevatorViewSet(TenantViewSet):
         if self.action == "list":
             return ElevatorListSerializer
         return super().get_serializer_class()
-
-    # Creating one of these twice from a retry is the complaint field software
-    # gets most, and both copies look legitimate afterwards.
-    @replay_protected
-    def create(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
-        return super().create(request, *args, **kwargs)
 
     def get_base_queryset(self) -> QuerySet[Elevator]:
         queryset = Elevator.objects.select_related(*JOINS)

@@ -22,7 +22,6 @@ from apps.contracts.api.v1.serializers import (
 from apps.contracts.models import Contract
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
-from core.idempotency import replay_protected
 from core.permissions import READ, may
 from core.viewsets import TenantViewSet
 
@@ -49,12 +48,6 @@ class ContractViewSet(TenantViewSet):
     write_serializer_class = ContractWriteSerializer
     filterset_class = ContractFilter
     ordering_fields = ["contract_number", "start_date", "end_date", "created_at"]
-
-    # Creating one of these twice from a retry is the complaint field software
-    # gets most, and both copies look legitimate afterwards.
-    @replay_protected
-    def create(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
-        return super().create(request, *args, **kwargs)
 
     def get_base_queryset(self) -> QuerySet[Contract]:
         return Contract.objects.select_related("customer").annotate(
