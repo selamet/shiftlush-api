@@ -60,7 +60,7 @@ it is exploited. `.env` on the server is the only place they exist.
 | `CSRF_TRUSTED_ORIGINS` | the same origin — Django checks it separately from CORS |
 | `FIELD_ENCRYPTION_KEY` | **Rotating this without re-encrypting makes every stored national ID unreadable.** |
 | `FRONTEND_URL` | every e-mail links into it |
-| `EMAIL_URL` | SMTP; invitations and password resets are the only way anyone but the founder gets in |
+| `EMAIL_URL` | SMTP. **Must use `smtp+tls://` or `smtp+ssl://`** — `?tls=True` is ignored and production refuses to boot without TLS, because SMTP AUTH would otherwise send the password in clear text. Invitations and password resets are the only way anyone but the founder gets in. |
 | `R2_*` | object storage; `/ready` reports 503 while these are unset |
 
 ## Checking a deployment
