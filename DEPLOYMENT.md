@@ -1,0 +1,89 @@
+# Deployment
+
+Production runs on the VDS at `91.98.233.170`, alongside four other
+applications. Nothing here is specific to ShiftLush except the port and the
+name — the shape is the one `/opt/vds-stack` already imposes, and departing
+from it would mean one server with two conventions.
+
+| | |
+|---|---|
+| API | `https://shiftlush-api.selamet.dev` → `127.0.0.1:8105` |
+| Frontend | `https://shiftlush.selamet.dev` (Vercel) |
+| Database | `database.selamet.dev`, isolated database `shiftlush` on the laboflush stack |
+
+## How a deploy happens
+
+1. A pull request merges to `main`.
+2. CI runs. **Deploy waits for it** — the workflow triggers on CI's completion,
+   not on the push, so a red build cannot ship.
+3. GitHub connects as `selamet@91.98.233.170` with a key restricted to
+   `/opt/vds-stack/deploy/gh-deploy.sh`. The key cannot open a shell; the only
+   thing it can say is which application to deploy.
+4. That script runs `deploy/shiftlush-api.sh`: `git pull --ff-only`, then
+   `docker compose up -d --build`.
+5. The container's entrypoint applies migrations, then starts gunicorn.
+6. The workflow polls `/health` for up to 150 seconds and **fails if it never
+   answers**. A deploy that reports success while the container crash-loops is
+   worse than no report.
+
+`workflow_dispatch` re-runs step 3 onwards without a code change, which is what
+you want after editing an environment variable on the server.
+
+## Server layout
+
+```
+/opt/apps/shiftlush-api/          the repository, pulled by the deploy script
+  .env                            secrets, 0600, never committed
+  docker-compose.override.yml  →  /opt/vds-stack/overrides/shiftlush-api.override.yml
+/opt/vds-stack/
+  Caddyfile                       the site block for shiftlush-api.selamet.dev
+  deploy/shiftlush-api.sh         what the forced command runs
+  overrides/                      container name and the loopback port mapping
+```
+
+Deployment facts — the port, the container name — live in `vds-stack`, not in
+this repository. The application does not need to know which port on which box
+it happens to be behind.
+
+## Environment
+
+Every variable is read with no default. A missing secret stops the process at
+boot rather than falling back to something insecure that nobody notices until
+it is exploited. `.env` on the server is the only place they exist.
+
+| Variable | Notes |
+|---|---|
+| `DJANGO_SECRET_KEY` | |
+| `DJANGO_ALLOWED_HOSTS` | `shiftlush-api.selamet.dev` |
+| `DATABASE_URL` | `sslmode=verify-full`; the image points libpq at the system CA bundle |
+| `CORS_ALLOWED_ORIGINS` | the frontend origin |
+| `CSRF_TRUSTED_ORIGINS` | the same origin — Django checks it separately from CORS |
+| `FIELD_ENCRYPTION_KEY` | **Rotating this without re-encrypting makes every stored national ID unreadable.** |
+| `FRONTEND_URL` | every e-mail links into it |
+| `EMAIL_URL` | SMTP; invitations and password resets are the only way anyone but the founder gets in |
+| `R2_*` | object storage; `/ready` reports 503 while these are unset |
+
+## Checking a deployment
+
+```bash
+curl https://shiftlush-api.selamet.dev/health   # liveness: is the process up
+curl https://shiftlush-api.selamet.dev/ready    # readiness: can it serve
+```
+
+`/health` deliberately does not check the database. A liveness probe that fails
+when a dependency is down gets the container killed and restarted, which fixes
+nothing and removes the instance that could still have served cached reads.
+`/ready` is the one that checks, and it is what a load balancer should ask.
+
+## Rolling back
+
+```bash
+ssh selamet@91.98.233.170
+cd /opt/apps/shiftlush-api
+git reset --hard <previous-commit>
+/opt/vds-stack/deploy/shiftlush-api.sh
+```
+
+Note what this does *not* do: migrations are not reversed. A rollback across a
+migration that dropped or rewrote a column needs a plan of its own, decided
+before the migration ships rather than during the incident.

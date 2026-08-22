@@ -8,6 +8,10 @@ on:
     workflows: ["CI"]
     branches: [main]
     types: [completed]
+  # Re-deploy without a code change: rolling a container after an environment
+  # variable is edited on the server is a normal thing to need, and doing it by
+  # pushing an empty commit is worse than having a button.
+  workflow_dispatch:
 
 concurrency:
   # One deploy at a time. Two `docker compose up --build` runs in the same
@@ -17,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy on VDS
