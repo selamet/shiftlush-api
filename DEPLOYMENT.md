@@ -134,3 +134,28 @@ git reset --hard <previous-commit>
 Note what this does *not* do: migrations are not reversed. A rollback across a
 migration that dropped or rewrote a column needs a plan of its own, decided
 before the migration ships rather than during the incident.
+
+## Error reporting
+
+Production reports uncaught exceptions and anything logged at `ERROR` to Sentry.
+It is off unless `SENTRY_DSN` is set, so a deployment that does not want it
+simply does not set one.
+
+| Variable | |
+|---|---|
+| `SENTRY_DSN` | The project's DSN. A separate project from the frontend's — the platform decides how stack traces are read. |
+| `SENTRY_ENVIRONMENT` | `production` by default. |
+| `SENTRY_RELEASE` | The deployed commit, so a new issue points at the deploy that introduced it. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.0`. Tracing samples ordinary requests rather than errors, so it costs quota continuously. |
+
+**What is not sent, and why.** The request body is never collected — not
+scrubbed, not truncated. This application holds national identity numbers,
+encrypted at rest; a validation error carrying one to a third party would undo
+that encryption with none of the effort. Passwords, tokens and cookies are in
+the same category. Sentry's own quickstart turns this collection on
+(`send_default_pii=True`); this deployment does not, and `tests/test_observability.py`
+fails if that is ever reversed.
+
+What is sent instead: the company id, the user id, and the `request_id` the user
+can read off their own error screen. Enough to find anyone in the admin, and
+nothing that identifies them to whoever reads the report.
