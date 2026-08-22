@@ -1,9 +1,12 @@
 {% extends "email/base.html" %}
+{% block preheader %}E-posta adresinizi doğrulayın; bağlantı {{ valid_for_hours }} saat geçerli.{% endblock %}
+{% block title %}E-posta adresinizi doğrulayın{% endblock %}
 {% block content %}
-  <p style="margin:0 0 16px 0;">Merhaba {{ first_name }},</p>
-  <p style="margin:0 0 24px 0;">E-posta adresinizi doğrulamak için aşağıdaki düğmeyi kullanın.</p>
-  <p style="margin:0 0 24px 0;">{% include "email/_button.html" with label="Adresimi doğrula" %}</p>
-  <p style="margin:0;color:#52525b;font-size:13px;">Bağlantı {{ valid_for_hours }} saat geçerlidir.</p>
+  <p style="margin:0 0 14px 0;">Merhaba {{ first_name }},</p>
+  <p style="margin:0 0 28px 0;color:#5a5f6b;">Hesabınızı kullanmaya başlamadan önce bu adresin size ait olduğunu doğrulamamız gerekiyor.</p>
+  {% include "email/_button.html" with label="Adresimi doğrula" %}
+  {% include "email/_notice.html" with hours=valid_for_hours %}
+  {% include "email/_fallback_link.html" %}
 {% endblock %}
 {% block footer %}
   Bu hesabı siz oluşturmadıysanız e-postayı yok sayabilirsiniz.

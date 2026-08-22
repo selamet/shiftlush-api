@@ -8,3 +8,6 @@ Aşağıdaki bağlantıdan şifrenizi belirleyerek hesabınızı oluşturabilirs
 Bu bağlantı {{ valid_for_hours }} saat geçerlidir ve yalnızca bir kez kullanılabilir.
 
 Bu daveti beklemiyorsanız bu e-postayı yok sayabilirsiniz; hesabınız oluşturulmaz.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi

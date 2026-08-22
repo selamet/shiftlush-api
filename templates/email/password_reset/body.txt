@@ -6,3 +6,6 @@ Hesabınız için şifre sıfırlama talebi aldık. Yeni şifrenizi belirlemek i
 Bu bağlantı {{ valid_for_hours }} saat geçerlidir ve yalnızca bir kez kullanılabilir.
 
 Bu talebi siz yapmadıysanız bir şey yapmanıza gerek yok; şifreniz değişmez.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi

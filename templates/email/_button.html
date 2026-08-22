@@ -1,5 +1,31 @@
 {% comment %}
 A link styled as a button. Never an <input> or a form: some clients refuse to
-submit them and the user is left with a mail that does nothing.
+submit them and the reader is left with a mail that does nothing.
+
+Outlook draws HTML through Word, which ignores border-radius and drops padding on
+an anchor -- the call to action arrives as underlined text in the middle of the
+message. The VML rectangle below is what Outlook draws instead; every other
+client is served the anchor and never parses the conditional comment.
+
+Because VML needs its width in advance, a longer label than the Turkish ones in
+use should pass `width` alongside it.
+
+  {% include "email/_button.html" with label="Hesabımı oluştur" %}
+
+`url` comes from the surrounding context, which is where the single-use token is.
 {% endcomment %}
-<a href="{{ url }}" style="display:inline-block;padding:11px 20px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:500;">{{ label }}</a>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+  <tr>
+    <td align="center" bgcolor="#5a3bd4" style="border-radius:8px;">
+      <!--[if mso]>
+      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ url }}" style="height:48px;v-text-anchor:middle;width:{{ width|default:280 }}px;" arcsize="17%" stroke="f" fillcolor="#5a3bd4">
+        <w:anchorlock/>
+        <center style="color:#ffffff;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:600;">{{ label }}</center>
+      </v:roundrect>
+      <![endif]-->
+      <!--[if !mso]><!-- -->
+      <a href="{{ url }}" style="display:inline-block;padding:14px 32px;background:#5a3bd4;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;line-height:1.2;color:#ffffff;text-decoration:none;">{{ label }}</a>
+      <!--<![endif]-->
+    </td>
+  </tr>
+</table>

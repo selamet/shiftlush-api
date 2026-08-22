@@ -1,29 +1,106 @@
 {% comment %}
-Inline styles only, and a single-column table layout. Mail clients strip
-<style> blocks and ignore flexbox; this renders the same in Outlook as in
-Gmail, which is the only test that matters here.
+The shell every outgoing e-mail extends.
 
-{% comment %} rather than {# #}: Django's hash comment is single-line only, and
-a multi-line one is not a comment at all — it is rendered, which is how three
-kinds of e-mail went out with this paragraph printed above the greeting.
+Inline styles only, and a single-column table layout. Mail clients strip <style>
+blocks and ignore flexbox; this renders the same in Outlook as in Gmail, which is
+the only test that matters here.
+
+{% comment %} rather than {# #}: Django's hash comment is single-line only, and a
+multi-line one is not a comment at all -- it is rendered, which is how three kinds
+of e-mail went out with this paragraph printed above the greeting.
+
+Colours are transcribed from the frontend design tokens in
+shiftlush-web/src/styles/globals.css, so a message looks like the product it came
+from. The token each one is taken from is named beside it. Do not introduce a
+colour that is not defined there.
+
+  #5a3bd4  --primary             brand band, button, links
+  #4a2cbe  --sl-primary-hover    the rule under the band
+  #f4f5f7  --background          the page behind the card
+  #ffffff  --card                the card
+  #16171c  --foreground          body text
+  #5a5f6b  --muted-foreground    secondary body text
+  #6e7381  --sl-subtle           footer text; the floor for readable text
+  #e4e6eb  --sl-border-subtle    rules and the card border
+
+Blocks a message fills in:
+
+  preheader  one sentence. The inbox prints it beside the subject line, and if it
+             is empty the client takes the greeting instead, so every message
+             sets it.
+  title      the heading above the greeting.
+  content    the message.
+  footer     the line under the card that says what to do if this was not for you.
 {% endcomment %}
 <!doctype html>
 <html lang="tr">
-  <body style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#18181b;">
-    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e4e4e7;">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>ShiftLush</title>
+    {% comment %}
+    Outlook desktop is the one client that both honours a <style> block and needs
+    one: it falls back to Times New Roman wherever an inline font stack names a
+    font it does not have.
+    {% endcomment %}
+    <!--[if mso]>
+    <style>
+      td, div, p, h1, a { font-family: "Segoe UI", Arial, sans-serif !important; }
+    </style>
+    <![endif]-->
+  </head>
+  <body style="margin:0;padding:0;background:#f4f5f7;color:#16171c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+    {% comment %}
+    The preview text, and then a run of zero-width characters. Without the run the
+    client fills the rest of the preview line with whatever text comes next, which
+    is the greeting -- the reader would see the sentence twice.
+    {% endcomment %}
+    <div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;mso-hide:all;">
+      {% block preheader %}{% endblock %}
+      &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+    </div>
+
+    {% comment %} The page. A table rather than the body, because Outlook.com drops a background set on <body>. {% endcomment %}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f5f7;">
       <tr>
-        <td style="padding:28px 32px 8px 32px;">
-          <div style="font-size:18px;font-weight:600;letter-spacing:-0.01em;">ShiftLush</div>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:8px 32px 28px 32px;font-size:15px;line-height:1.6;">
-          {% block content %}{% endblock %}
+        <td align="center" style="padding:32px 16px;">
+
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e4e6eb;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:22px 32px;background:#5a3bd4;border-bottom:3px solid #4a2cbe;">
+                {% comment %}
+                The mark is drawn, not fetched. Most clients block remote images by
+                default, and a logo that arrives as a broken-image icon is worse
+                than no logo.
+                {% endcomment %}
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td width="34" height="34" align="center" valign="middle" style="width:34px;height:34px;background:#ffffff;border-radius:9px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:700;line-height:34px;color:#5a3bd4;">S</td>
+                    <td valign="middle" style="padding-left:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#ffffff;">ShiftLush</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:36px 32px 32px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.65;color:#16171c;">
+                <h1 style="margin:0 0 20px 0;font-size:22px;font-weight:600;line-height:1.35;letter-spacing:-0.01em;color:#16171c;">{% block title %}{% endblock %}</h1>
+                {% block content %}{% endblock %}
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
+            <tr>
+              <td align="center" style="padding:20px 16px 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#6e7381;">
+                {% block footer %}{% endblock %}
+                <div style="margin-top:10px;">ShiftLush &middot; Asansör bakım ve muayene yönetimi</div>
+              </td>
+            </tr>
+          </table>
+
         </td>
       </tr>
     </table>
-    <div style="max-width:560px;margin:16px auto 0 auto;font-size:12px;line-height:1.5;color:#71717a;">
-      {% block footer %}{% endblock %}
-    </div>
   </body>
 </html>

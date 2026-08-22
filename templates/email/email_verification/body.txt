@@ -4,3 +4,6 @@ E-posta adresinizi doğrulamak için:
 {{ url }}
 
 Bu bağlantı {{ valid_for_hours }} saat geçerlidir.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi

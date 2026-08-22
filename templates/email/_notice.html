@@ -1,0 +1,31 @@
+{% comment %}
+The validity notice under the button.
+
+The wording lives here rather than in the three messages, because it is the same
+sentence in all of them and it states a security property -- how long the token
+lives, and whether spending it once ends it. A message that phrases that
+differently from the code behind it is worse than one that says nothing.
+
+  {% include "email/_notice.html" with hours=valid_for_hours single_use=True %}
+
+Omit `single_use` where the link may be followed more than once.
+
+The spacing above the box belongs to the box, not to the message including it:
+a margin on a table is dropped by Outlook, so the gap has to be a row.
+{% endcomment %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td height="26" style="height:26px;line-height:26px;font-size:0;">&nbsp;</td>
+  </tr>
+  <tr>
+    <td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fdf2dc;border-left:3px solid #af7d00;border-radius:6px;">
+        <tr>
+          <td style="padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#7a4a00;">
+            Bu bağlantı <strong style="font-weight:600;">{{ hours }} saat</strong> geçerlidir{% if single_use %} ve yalnızca bir kez kullanılabilir{% endif %}.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
