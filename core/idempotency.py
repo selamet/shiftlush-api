@@ -10,6 +10,7 @@ The header is optional; clients that do not send it get today's behaviour.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from collections.abc import Callable
@@ -43,6 +44,7 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
     hardest classes of bug to trace afterwards.
     """
 
+    @functools.wraps(handler)
     def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
         key = request.headers.get(HEADER, "").strip()
         if not key:
@@ -83,4 +85,49 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
             )
         return response
 
+    # Read back by ReplayProtectedCreate below, and by the test that walks the
+    # URL configuration asking every create endpoint whether it is covered.
+    wrapper.replay_protected = True  # type: ignore[attr-defined]
     return wrapper
+
+
+def replay_exempt(handler: Callable[..., Response]) -> Callable[..., Response]:
+    """Declare a create that needs no replay protection, and say so out loud.
+
+    There is exactly one honest reason: the operation is already idempotent, so
+    a retry converges on the same record without the header. Confirming an
+    upload is that case — a storage key names one object.
+
+    The marker exists so the exemption is a decision written next to the method
+    rather than the absence of one, which is indistinguishable from an
+    oversight.
+    """
+    handler.replay_exempt = True  # type: ignore[attr-defined]
+    return handler
+
+
+class ReplayProtectedCreate:
+    """Protects whichever `create` a viewset actually ends up running.
+
+    The decorator alone protects the method it is written on. A viewset that
+    writes its own `create` — the usual reason being that the record is not a
+    plain row — replaces that method with an unprotected one, and nothing about
+    the class says so. The endpoint then accepts `Idempotency-Key` the way any
+    endpoint accepts any header, and ignores it: the invisible failure, one
+    viewset later.
+
+    Hooking subclass creation turns "remember the decorator" into "declare the
+    exemption". Anything that inherits this gets its create wrapped, including a
+    subclass several levels down that overrides an already-protected one.
+    """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Only the class's own create: an inherited one is already wrapped, and
+        # wrapping it a second time would store the same response twice.
+        create = cls.__dict__.get("create")
+        if create is None or not callable(create):
+            return
+        if getattr(create, "replay_protected", False) or getattr(create, "replay_exempt", False):
+            return
+        cls.create = replay_protected(create)

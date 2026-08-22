@@ -10,6 +10,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -25,10 +26,11 @@ from apps.users.api.v1.team_serializers import (
     UserSerializer,
     UserUpdateSerializer,
 )
-from apps.users.models import Invitation, User
+from apps.users.models import Invitation, Role, User
 from core.context import require_current_company_id
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
+from core.idempotency import ReplayProtectedCreate
 from core.permissions import RolePermission
 
 
@@ -54,6 +56,11 @@ class UserViewSet(
     """
 
     resource = "user"
+    # Specification 6.2 gives deactivation to the owner alone. It is a POST on
+    # this viewset, so without this line it resolves to "user"/WRITE and an
+    # administrator is let through — the rule was written down and never
+    # enforced.
+    resource_by_action = {"deactivate": "user_deactivation"}
     # Never served — get_queryset() below replaces it on every request. It is
     # here so the schema generator can find the model without running a
     # request-time code path, and it is `none()` rather than `all()` so that if
@@ -87,6 +94,14 @@ class UserViewSet(
         form.is_valid(raise_exception=True)
 
         role = form.validated_data.pop("role", None)
+        if role == Role.OWNER and request.user.role != Role.OWNER:
+            # The rule InvitationCreateSerializer already applies, on the other
+            # path to the same outcome: an administrator who could mint an owner
+            # could promote themselves past the one role they do not hold.
+            # Checked before anything is written, so a refused request leaves
+            # the record untouched rather than half-renamed.
+            raise PermissionDenied()
+
         for field, value in form.validated_data.items():
             setattr(user, field, value)
         user.save()
@@ -131,7 +146,15 @@ class UserViewSet(
         return Response(UserSerializer(user).data)
 
 
+# Not a TenantViewSet: there is no update, and the create mints a token and
+# sends a message rather than saving a row. That is why the replay protection
+# has to be inherited explicitly here — without it this endpoint accepted
+# Idempotency-Key the way any endpoint accepts any header, and ignored it. A
+# duplicate here is worse than a duplicate row: each invitation mails its own
+# live token and nothing invalidates the first, so the invitee ends up holding
+# two working links for one seat.
 class InvitationViewSet(
+    ReplayProtectedCreate,
     mixins.ListModelMixin,
     mixins.DestroyModelMixin,
     GenericViewSet,

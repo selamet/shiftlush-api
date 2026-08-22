@@ -59,6 +59,10 @@ class ErrorCode(models.TextChoices):
         "National ID already belongs to another customer of this company",
     )
     EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED", "E-mail address is already registered"
+    INVITATION_ALREADY_PENDING = (
+        "INVITATION_ALREADY_PENDING",
+        "This address already holds an invitation that has not been accepted",
+    )
     IDEMPOTENCY_KEY_REUSED = (
         "IDEMPOTENCY_KEY_REUSED",
         "Idempotency key was reused with a different request body",

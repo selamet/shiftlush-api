@@ -42,6 +42,16 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN},
         WRITE: {Role.OWNER, Role.ADMIN},
     },
+    # The one row of 6.2 the administrator is not ticked on, while every other
+    # user-management row ticks them. Listing, inviting and editing a colleague are
+    # an administrator's job; ending someone's access is the owner's. Written as
+    # its own resource rather than by narrowing "user"/WRITE, because narrowing
+    # that would take editing away from the administrator too. There is nothing
+    # to read here, so nobody may read it.
+    "user_deactivation": {
+        READ: set(),
+        WRITE: {Role.OWNER},
+    },
     # Separate from "user" although the roles match today: inviting somebody is
     # not the same act as editing a colleague's record, and the day they need
     # to be granted separately this table is where it happens.

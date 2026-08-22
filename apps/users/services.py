@@ -487,6 +487,18 @@ def create_invitation(
     if User.objects.filter(email=email.lower()).exists():
         raise BusinessRuleError(ErrorCode.EMAIL_ALREADY_REGISTERED)
 
+    # Replay protection stops a retry of the *same* request. It cannot stop a
+    # second send a minute later, and that one is the worse outcome: nothing
+    # here invalidates the earlier token, so the invitee would hold two working
+    # links for one seat and the older message would still open an account.
+    # Resending is the intended path — it reissues the token and kills the
+    # previous one. An expired invitation is not in the way: it has no live
+    # link, so inviting again is a real request rather than a duplicate.
+    if Invitation.objects.filter(
+        email=email.lower(), accepted_at__isnull=True, expires_at__gt=timezone.now()
+    ).exists():
+        raise BusinessRuleError(ErrorCode.INVITATION_ALREADY_PENDING)
+
     token = _new_token()
     invitation = Invitation.objects.create(
         company=company,

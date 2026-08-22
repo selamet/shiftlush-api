@@ -92,9 +92,8 @@ paths:
       description: |-
         Confirm an upload that has already landed.
 
-        Not wrapped in replay protection: this call is idempotent by nature. A
-        storage key identifies exactly one object, so confirming it twice returns
-        the same record rather than creating a second one.
+        Retrying is safe: a storage key names one object, so a second
+        confirmation returns the record the first one made.
       tags:
       - attachments
       requestBody:
@@ -6478,6 +6477,7 @@ components:
       - DUPLICATE_TAX_NUMBER
       - DUPLICATE_NATIONAL_ID
       - EMAIL_ALREADY_REGISTERED
+      - INVITATION_ALREADY_PENDING
       - IDEMPOTENCY_KEY_REUSED
       - ELEVATOR_ALREADY_CONTRACTED
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
@@ -6520,6 +6520,7 @@ components:
         * `DUPLICATE_TAX_NUMBER` - Tax number already belongs to another customer of this company
         * `DUPLICATE_NATIONAL_ID` - National ID already belongs to another customer of this company
         * `EMAIL_ALREADY_REGISTERED` - E-mail address is already registered
+        * `INVITATION_ALREADY_PENDING` - This address already holds an invitation that has not been accepted
         * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner

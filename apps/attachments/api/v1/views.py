@@ -20,6 +20,7 @@ from apps.attachments.api.v1.serializers import (
 from apps.attachments.models import Attachment, ObjectType
 from apps.attachments.services import confirm_upload, download_url, prepare_upload
 from apps.users.models import Role
+from core.idempotency import ReplayProtectedCreate, replay_exempt
 from core.permissions import RolePermission
 
 
@@ -32,6 +33,7 @@ class AttachmentFilter(django_filters.FilterSet):
 
 
 class AttachmentViewSet(
+    ReplayProtectedCreate,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.DestroyModelMixin,
@@ -110,12 +112,16 @@ class AttachmentViewSet(
         return Response(UploadUrlResponseSerializer(ticket).data)
 
     @extend_schema(request=AttachmentConfirmSerializer, responses={201: AttachmentSerializer})
+    # Exempt from replay protection, and marked as such rather than merely left
+    # undecorated: this call is idempotent by nature. A storage key identifies
+    # exactly one object, so confirm_upload returns the existing record instead
+    # of making a second one, with or without the header.
+    @replay_exempt
     def create(self, request: Request) -> Response:
         """Confirm an upload that has already landed.
 
-        Not wrapped in replay protection: this call is idempotent by nature. A
-        storage key identifies exactly one object, so confirming it twice returns
-        the same record rather than creating a second one.
+        Retrying is safe: a storage key names one object, so a second
+        confirmation returns the record the first one made.
         """
         form = AttachmentConfirmSerializer(data=request.data)
         form.is_valid(raise_exception=True)

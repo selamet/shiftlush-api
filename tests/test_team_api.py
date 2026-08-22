@@ -16,9 +16,12 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.customers.models import Customer, CustomerType
+from apps.users import services
 from apps.users.models import Invitation, Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
+from core.error_codes import ErrorCode
+from core.exceptions import BusinessRuleError
 from tests.identifiers import tax_number
 
 PASSWORD = "correct-horse-battery"
@@ -210,6 +213,42 @@ class TestInviting:
         assert response.status_code == 422
         assert response.data["error"]["code"] == "TOKEN_INVALID"
 
+    def test_a_second_invitation_to_a_pending_address_is_refused(self, firm, deliver):
+        _, owner = firm
+        client = api_for(owner)
+        invite(client, deliver)
+
+        response = invite(client, deliver)
+
+        # Nothing invalidates the first token, so a second one would leave the
+        # invitee holding two working links for one seat — and the older message
+        # would still open an account. Resending is the path that was built for
+        # this, and it kills the previous link.
+        assert response.status_code == 422
+        assert response.data["error"]["code"] == "INVITATION_ALREADY_PENDING"
+        assert Invitation.unscoped.filter(email=INVITEE["email"]).count() == 1
+        assert len(django_mail.outbox) == 1
+
+    def test_a_revoked_invitation_does_not_block_a_new_one(self, firm, deliver):
+        _, owner = firm
+        client = api_for(owner)
+        created = invite(client, deliver)
+        client.delete(reverse("invitation-detail", args=[created.data["id"]]))
+
+        # Revoking is how a mistyped address is corrected. If the revoked row
+        # kept blocking the address, the correction could never be sent.
+        assert invite(client, deliver).status_code == 201
+
+    def test_an_expired_invitation_does_not_block_a_new_one(self, firm, deliver):
+        _, owner = firm
+        client = api_for(owner)
+        invite(client, deliver)
+        Invitation.unscoped.update(expires_at=timezone.now() - timezone.timedelta(seconds=1))
+
+        # An expired invitation has no live link, so inviting again is a real
+        # request rather than a duplicate of one.
+        assert invite(client, deliver).status_code == 201
+
     def test_only_owners_and_admins_may_invite(self, firm, deliver):
         company, _ = firm
         operations = colleague(company, Role.OPERATIONS, "ops@example.com")
@@ -245,15 +284,19 @@ class TestUsers:
             assert field not in row
 
     def test_the_last_owner_cannot_be_deactivated(self, firm):
-        company, owner = firm
-        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        _, owner = firm
 
-        response = api_for(admin).post(reverse("user-deactivate", args=[owner.id]))
+        # Asserted against the service rather than through the endpoint. Now
+        # that deactivation is owner-only, any caller the endpoint accepts is
+        # itself a second active owner, so the rule can no longer fire there.
+        # It stays as the guard behind every other route into this function,
+        # including the one phase 2's mobile API will take.
+        with pytest.raises(BusinessRuleError) as raised:
+            services.deactivate_user(user=owner)
 
         # Otherwise nobody can manage users or company settings again, and there
         # is no way back short of editing the database.
-        assert response.status_code == 422
-        assert response.data["error"]["code"] == "LAST_OWNER_CANNOT_BE_DEACTIVATED"
+        assert raised.value.detail.code == ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED.value
 
     def test_the_last_owner_cannot_be_demoted_either(self, firm):
         company, owner = firm
@@ -305,6 +348,133 @@ class TestUsers:
 
         response = api_for(owner).get(reverse("user-detail", args=[stranger.id]))
         assert response.status_code == 404
+
+
+class TestWhatOnlyAnOwnerMayDo:
+    """Specification 6.2, the two limits that were written down and not enforced.
+
+    Deactivating a user is the single user-management row the administrator is
+    not ticked on, and the server let them through anyway. The other is not a
+    row but the reason behind one: an administrator who can mint an owner can
+    promote themselves past the only role they do not hold. The invitation path
+    already refused that; the update path did not, and the two disagreed about
+    the same rule.
+    """
+
+    def test_an_administrator_cannot_deactivate_a_colleague(self, firm):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        technician = colleague(company, Role.TECHNICIAN, "tech@example.com")
+
+        response = api_for(admin).post(reverse("user-deactivate", args=[technician.id]))
+
+        assert response.status_code == 403
+        assert response.data["error"]["code"] == "PERMISSION_DENIED"
+        technician.refresh_from_db()
+        assert technician.is_active
+
+    def test_an_owner_still_deactivates_a_colleague(self, firm):
+        company, owner = firm
+        technician = colleague(company, Role.TECHNICIAN, "tech@example.com")
+
+        response = api_for(owner).post(reverse("user-deactivate", args=[technician.id]))
+
+        # The rule narrows one action, not the endpoint.
+        assert response.status_code == 200
+        technician.refresh_from_db()
+        assert not technician.is_active
+
+    def test_an_administrator_may_still_edit_a_colleague(self, firm):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        technician = colleague(company, Role.TECHNICIAN, "tech@example.com")
+
+        response = api_for(admin).patch(
+            reverse("user-detail", args=[technician.id]), {"first_name": "Renamed"}, format="json"
+        )
+        # 6.2 ticks the administrator for inviting and editing users. Fixing the
+        # deactivation row must not cost them the editing one.
+        assert response.status_code == 200
+        assert response.data["first_name"] == "Renamed"
+
+    def test_an_administrator_cannot_promote_a_colleague_to_owner(self, firm):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        operations = colleague(company, Role.OPERATIONS, "ops@example.com")
+
+        response = api_for(admin).patch(
+            reverse("user-detail", args=[operations.id]), {"role": Role.OWNER}, format="json"
+        )
+
+        assert response.status_code == 403
+        operations.refresh_from_db()
+        assert operations.role == Role.OPERATIONS
+
+    def test_an_administrator_cannot_promote_themselves(self, firm):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+
+        response = api_for(admin).patch(
+            reverse("user-detail", args=[admin.id]), {"role": Role.OWNER}, format="json"
+        )
+
+        # The whole point of the limit: the shortest path to the role an
+        # administrator does not hold is their own record.
+        assert response.status_code == 403
+        admin.refresh_from_db()
+        assert admin.role == Role.ADMIN
+
+    def test_a_refused_promotion_writes_nothing_at_all(self, firm):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        operations = colleague(company, Role.OPERATIONS, "ops@example.com")
+
+        api_for(admin).patch(
+            reverse("user-detail", args=[operations.id]),
+            {"first_name": "Renamed", "role": Role.OWNER},
+            format="json",
+        )
+
+        # Refused after the name had been saved would leave the record half
+        # updated, and the caller with no way to tell which half.
+        operations.refresh_from_db()
+        assert operations.first_name == "Operations"
+        assert operations.role == Role.OPERATIONS
+
+    def test_an_owner_may_appoint_another_owner(self, firm):
+        company, owner = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+
+        response = api_for(owner).patch(
+            reverse("user-detail", args=[admin.id]), {"role": Role.OWNER}, format="json"
+        )
+
+        # A firm has to be able to gain a second owner without a database edit.
+        assert response.status_code == 200
+        admin.refresh_from_db()
+        assert admin.role == Role.OWNER
+
+    def test_the_two_paths_to_an_owner_now_agree(self, firm, deliver):
+        company, _ = firm
+        admin = colleague(company, Role.ADMIN, "admin@example.com")
+        operations = colleague(company, Role.OPERATIONS, "ops@example.com")
+        with system_context():
+            # Otherwise the invitation is stopped by the verification gate in
+            # front of it, and the answer says nothing about roles.
+            admin.is_email_verified = True
+            admin.save(update_fields=["is_email_verified"])
+        client = api_for(admin)
+
+        by_invitation = invite(client, deliver, role=Role.OWNER)
+        by_update = client.patch(
+            reverse("user-detail", args=[operations.id]), {"role": Role.OWNER}, format="json"
+        )
+
+        # Both refuse. Which status each returns differs — one is a field the
+        # serializer will not accept, the other is a caller who may not ask —
+        # but an administrator ends up with no route to the role either way.
+        assert by_invitation.status_code == 400
+        assert by_update.status_code == 403
 
 
 class TestTechnicianAssignments:
