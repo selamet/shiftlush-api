@@ -8,6 +8,7 @@ safety net into the largest single leak in the system.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from django.urls import reverse
@@ -19,6 +20,11 @@ from apps.users.models import User
 from apps.users.services import issue_tokens, register_company
 from core.audit import MASK
 from core.context import RequestActor, actor_context, company_context, system_context
+
+#: The three-province sample, not the real fifty thousand rows. These tests
+#: are about the loader and the endpoints, and loading the country into every
+#: one of them buys nothing but seconds.
+SAMPLE_DATA = str(Path(__file__).resolve().parent / "data" / "address")
 
 PASSWORD = "correct-horse-battery"
 TCKN = "10000000146"
@@ -194,7 +200,7 @@ class TestScope:
     def test_reference_data_is_not_recorded(self, db):
         from django.core.management import call_command
 
-        call_command("load_address_data")
+        call_command("load_address_data", path=SAMPLE_DATA)
         # bulk_create does not fire signals, which is the correct outcome here:
         # auditing 50,000 unchanged rows every year would bury the entries that
         # matter.
