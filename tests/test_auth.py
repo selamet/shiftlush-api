@@ -298,3 +298,37 @@ class TestInfrastructureEndpoints:
         # disappearing. Better to take it out of rotation.
         assert response.status_code == 503
         assert response.json()["checks"]["storage"] == "unreachable"
+
+
+class TestSessionPayload:
+    def test_me_carries_the_company_name(self, client, owner):
+        login(client)
+        token = client.post(reverse("auth:login"), {"email": EMAIL, "password": PASSWORD}).data[
+            "access"
+        ]
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        body = client.get(reverse("auth:me")).data
+
+        # The shell shows the firm's name on every screen. Making that a second
+        # request puts an independently failing call on the boot path for one
+        # string, and the topbar renders empty while it is in flight.
+        assert body["company_name"] == "Test Elevator"
+
+    def test_the_name_costs_no_extra_query(self, client, owner, django_assert_num_queries):
+        token = client.post(reverse("auth:login"), {"email": EMAIL, "password": PASSWORD}).data[
+            "access"
+        ]
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        # One query: the user, joined to the company. Without the join this is
+        # two, and the same second query appears on invitation creation and on
+        # label printing, which both read request.user.company.
+        with django_assert_num_queries(1):
+            client.get(reverse("auth:me"))
+
+    def test_login_returns_it_too(self, client, owner):
+        body = login(client).data
+        # Same serializer, so the client has the name before its first
+        # authenticated request rather than after it.
+        assert body["user"]["company_name"] == "Test Elevator"

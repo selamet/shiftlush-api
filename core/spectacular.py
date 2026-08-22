@@ -16,6 +16,21 @@ from __future__ import annotations
 from typing import Any
 
 from django.utils import translation
+from drf_spectacular.contrib.rest_framework_simplejwt import SimpleJWTScheme
+
+
+class CompanyAwareJWTScheme(SimpleJWTScheme):
+    """Teaches the generator that our subclass is still bearer-token auth.
+
+    Without this every operation loses its `security` block, and a generated
+    client reads that as an endpoint needing no token — a mistake only found by
+    whoever gets a 401 they did not expect. The contract build treats the
+    warning as an error for exactly this reason.
+    """
+
+    target_class = "core.authentication.CompanyAwareJWTAuthentication"
+    name = "jwtAuth"
+
 
 _previous: list[str | None] = []
 

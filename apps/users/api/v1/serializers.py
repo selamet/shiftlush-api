@@ -100,14 +100,25 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     """
 
     company_id = serializers.UUIDField(read_only=True, allow_null=True)
+    # Part of the session rather than a separate resource: the shell shows the
+    # firm's name on every screen, and making that a second request puts an
+    # independently failing call on the boot path for one string.
+    company_name = serializers.SerializerMethodField()
     full_name = serializers.CharField(read_only=True)
     role = serializers.ChoiceField(choices=Role.choices, read_only=True)
+
+    def get_company_name(self, user: User) -> str:
+        # Empty string rather than null for a superuser with no company: the
+        # client renders it directly, and widening the type for a case that
+        # never reaches a real screen costs every call site a null check.
+        return user.company.display_name if user.company_id else ""
 
     class Meta:
         model = User
         fields = [
             "id",
             "company_id",
+            "company_name",
             "first_name",
             "last_name",
             "full_name",
