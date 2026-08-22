@@ -18,11 +18,12 @@ from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 
 from apps.users.models import Role
-from core.idempotency import replay_protected
+from core.idempotency import ReplayProtectedCreate
 from core.permissions import RolePermission
 
 
 class TenantViewSet(
+    ReplayProtectedCreate,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.CreateModelMixin,
@@ -74,12 +75,14 @@ class TenantViewSet(
             queryset = queryset.filter(**{f"{self.customer_path}__in": assigned})
         return queryset
 
-    # Every company-owned resource is replay-protected by default rather than
-    # per endpoint. Opt-in was the wrong shape: adding a resource means
-    # remembering the decorator, forgetting it is invisible, and the symptom
-    # only ever appears on a bad connection in front of a user. The header stays
-    # optional — a client that does not send one gets the behaviour it had.
-    @replay_protected
+    # Replay-protected by ReplayProtectedCreate, not by a decorator written
+    # here. Opt-in was the wrong shape: adding a resource means remembering the
+    # decorator, forgetting it is invisible, and the symptom only ever appears
+    # on a bad connection in front of a user. Decorating this method was the
+    # half-measure — it protects this create and not the one a subclass writes
+    # instead of it, which is how the invitation endpoint ended up accepting the
+    # header and ignoring it. The header stays optional either way: a client
+    # that does not send one gets the behaviour it had.
     def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         # Respond with the read representation. The write serializer omits `id`
         # and every computed field, so answering with it would leave the client

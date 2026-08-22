@@ -20,6 +20,10 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("company", WRITE): {Role.OWNER},
     ("user", READ): {Role.OWNER, Role.ADMIN},
     ("user", WRITE): {Role.OWNER, Role.ADMIN},
+    # User deactivation: the owner alone. The one user-management row of 6.2
+    # where the administrator is not ticked.
+    ("user_deactivation", READ): set(),
+    ("user_deactivation", WRITE): {Role.OWNER},
     ("customer", READ): set(ALL_ROLES),
     ("customer", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     ("building", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
@@ -50,6 +54,15 @@ class TestSpecificBoundaries:
     def test_only_the_owner_writes_company_settings(self):
         assert may(Role.OWNER, "company", WRITE)
         assert not may(Role.ADMIN, "company", WRITE)
+
+    def test_only_the_owner_deactivates_a_colleague(self):
+        # An administrator manages people — invites them, edits them, moves them
+        # between roles. Ending someone's access is where 6.2 stops them, and it
+        # is a separate resource so that saying so does not also take editing
+        # away.
+        assert may(Role.ADMIN, "user", WRITE)
+        assert not may(Role.ADMIN, "user_deactivation", WRITE)
+        assert may(Role.OWNER, "user_deactivation", WRITE)
 
     def test_operations_cannot_see_contract_money(self):
         # Operations runs the fleet; the amount is not part of that job, and
