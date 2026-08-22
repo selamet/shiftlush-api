@@ -2716,7 +2716,14 @@ components:
       - ''
     BuildingRead:
       type: object
-      description: The address fields every property-like record shares.
+      description: |-
+        The named address behind a `neighborhood` foreign key.
+
+        Every one of these keys is nullable — a record can be entered before anyone
+        knows where it is — so the fields are declared nullable too. Without that
+        the contract promises a string on rows that hold nothing, a generated client
+        reads the field as always present, and the screen prints an empty line
+        without anything having failed.
       properties:
         id:
           type: string
@@ -2754,12 +2761,15 @@ components:
         neighborhood_name:
           type: string
           readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
+          nullable: true
         province_name:
           type: string
           readOnly: true
+          nullable: true
         street:
           type: string
           readOnly: true
@@ -3043,7 +3053,14 @@ components:
       - logo_url
     ComplexRead:
       type: object
-      description: The address fields every property-like record shares.
+      description: |-
+        The named address behind a `neighborhood` foreign key.
+
+        Every one of these keys is nullable — a record can be entered before anyone
+        knows where it is — so the fields are declared nullable too. Without that
+        the contract promises a string on rows that hold nothing, a generated client
+        reads the field as always present, and the screen prints an empty line
+        without anything having failed.
       properties:
         id:
           type: string
@@ -3069,12 +3086,15 @@ components:
         neighborhood_name:
           type: string
           readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
+          nullable: true
         province_name:
           type: string
           readOnly: true
+          nullable: true
         street:
           type: string
           readOnly: true
@@ -3810,6 +3830,14 @@ components:
       - full_name
     CustomerRead:
       type: object
+      description: |-
+        The named address behind a `neighborhood` foreign key.
+
+        Every one of these keys is nullable — a record can be entered before anyone
+        knows where it is — so the fields are declared nullable too. Without that
+        the contract promises a string on rows that hold nothing, a generated client
+        reads the field as always present, and the screen prints an empty line
+        without anything having failed.
       properties:
         id:
           type: string
@@ -3842,6 +3870,18 @@ components:
           format: int64
           nullable: true
           readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+          nullable: true
+        district_name:
+          type: string
+          readOnly: true
+          nullable: true
+        province_name:
+          type: string
+          readOnly: true
+          nullable: true
         street:
           type: string
           readOnly: true
@@ -3883,14 +3923,17 @@ components:
       - building_number
       - contacts
       - created_at
+      - district_name
       - elevator_count
       - email
       - id
       - is_active
       - legal_name
       - neighborhood_id
+      - neighborhood_name
       - notes
       - phone
+      - province_name
       - street
       - tax_number
       - tax_office

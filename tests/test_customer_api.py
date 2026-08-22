@@ -15,6 +15,7 @@ from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
+from tests.identifiers import tax_number
 
 PASSWORD = "correct-horse-battery"
 
@@ -606,3 +607,74 @@ class TestTypeRules:
         # Refusing this would freeze those records: every edit would fail,
         # including the one that would have completed them.
         assert response.status_code == 200
+
+
+class TestBillingAddress:
+    """The address the invoice goes to — specification §5.6.
+
+    `CustomerWrite` has always accepted a neighbourhood; reading it back gave an
+    id and nothing else, so no screen could show it and no edit form could open
+    the picker on the right place.
+    """
+
+    @pytest.fixture
+    def kadikoy(self, db):
+        from apps.address.models import District, Neighborhood, Province
+
+        province = Province.objects.create(id=34, name="İstanbul", name_normalized="istanbul")
+        district = District.objects.create(
+            id=3401, province=province, name="Kadıköy", name_normalized="kadikoy"
+        )
+        return Neighborhood.objects.create(
+            id=340101, district=district, name="Caferağa", name_normalized="caferaga"
+        )
+
+    def test_the_address_comes_back_named(self, firm_a, kadikoy):
+        _, owner, _ = firm_a
+        client = api_for(owner)
+        created = client.post(
+            reverse("customer-list"),
+            corporate(neighborhood=kadikoy.pk, street="Moda Caddesi", building_number="12"),
+        )
+        assert created.status_code == 201
+
+        detail = client.get(reverse("customer-detail", args=[created.data["id"]])).data
+        assert detail["neighborhood_id"] == kadikoy.pk
+        assert detail["neighborhood_name"] == "Caferağa"
+        assert detail["district_name"] == "Kadıköy"
+        assert detail["province_name"] == "İstanbul"
+
+    def test_a_customer_without_an_address_answers_null(self, firm_a):
+        _, owner, customer = firm_a
+        detail = api_for(owner).get(reverse("customer-detail", args=[customer.pk])).data
+        # The column is nullable, so this is an ordinary state, not a failure.
+        assert detail["neighborhood_id"] is None
+        assert detail["neighborhood_name"] is None
+        assert detail["district_name"] is None
+        assert detail["province_name"] is None
+
+    def test_a_page_of_addressed_customers_does_not_walk_the_joins(
+        self, firm_a, kadikoy, django_assert_max_num_queries
+    ):
+        company, owner, _ = firm_a
+        client = api_for(owner)
+        for index in range(10):
+            client.post(
+                reverse("customer-list"),
+                corporate(
+                    legal_name=f"Row {index}",
+                    tax_number=tax_number(index),
+                    neighborhood=kadikoy.pk,
+                ),
+            )
+
+        client.get(reverse("customer-list"))  # warm the auth path
+        with django_assert_max_num_queries(6):
+            client.get(reverse("customer-list"))
+
+    def test_the_list_carries_the_names_too(self, firm_a, kadikoy):
+        _, owner, _ = firm_a
+        client = api_for(owner)
+        client.post(reverse("customer-list"), corporate(neighborhood=kadikoy.pk))
+        rows = client.get(reverse("customer-list"), {"search": "acme"}).data["results"]
+        assert [row["district_name"] for row in rows] == ["Kadıköy"]

@@ -10,6 +10,7 @@ from apps.customers.services import demote_other_primaries
 from core.crypto import fingerprint
 from core.error_codes import ErrorCode
 from core.exceptions import DuplicateRecord
+from core.serializers import AddressReadMixin
 from core.validators import (
     normalize_email,
     normalize_phone,
@@ -98,7 +99,7 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
         fields = ["full_name", "role", "phone", "email", "is_primary", "notes"]
 
 
-class CustomerReadSerializer(serializers.ModelSerializer):
+class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer):
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
@@ -114,6 +115,9 @@ class CustomerReadSerializer(serializers.ModelSerializer):
             "phone",
             "email",
             "neighborhood_id",
+            "neighborhood_name",
+            "district_name",
+            "province_name",
             "street",
             "building_number",
             "unit_number",

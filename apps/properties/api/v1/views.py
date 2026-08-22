@@ -12,9 +12,8 @@ from apps.properties.api.v1.serializers import (
 from apps.properties.models import Building, Complex
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
+from core.serializers import ADDRESS_JOIN
 from core.viewsets import TenantViewSet
-
-ADDRESS_JOIN = ("neighborhood", "neighborhood__district", "neighborhood__district__province")
 
 
 class BuildingFilter(django_filters.FilterSet):
