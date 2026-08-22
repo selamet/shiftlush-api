@@ -182,3 +182,79 @@ class TestReplay:
         # the other's response.
         with company_context(company.id):
             assert Contract.objects.count() == 2
+
+
+class TestEveryCreateIsProtected:
+    """Protection is a property of the base viewset, not a decorator to remember.
+
+    It used to be opt-in on two endpoints. Adding a resource meant remembering
+    the decorator, forgetting it was invisible, and the symptom only ever showed
+    up on a bad connection in front of a user — who then had two records that
+    both looked legitimate.
+
+    Found against the deployed server: the client sends the header on every
+    create, and customers silently ignored it.
+    """
+
+    def test_a_second_customer_is_not_created(self, firm):
+        company, owner, _ = firm
+        client = api_for(owner)
+        body = {"type": CustomerType.CORPORATE, "legal_name": "Only once"}
+
+        first = client.post(reverse("customer-list"), body, format="json", HTTP_IDEMPOTENCY_KEY=KEY)
+        second = client.post(
+            reverse("customer-list"), body, format="json", HTTP_IDEMPOTENCY_KEY=KEY
+        )
+
+        assert first.status_code == second.status_code == 201
+        assert first.data["id"] == second.data["id"]
+        with company_context(company.id):
+            assert Customer.objects.filter(legal_name="Only once").count() == 1
+
+    def test_a_second_building_is_not_created(self, firm):
+        from apps.properties.models import Building, BuildingType
+
+        company, owner, customer = firm
+        client = api_for(owner)
+        body = {
+            "customer": str(customer.id),
+            "name": "A Blok",
+            "type": BuildingType.RESIDENTIAL,
+            "address_note": "Test",
+        }
+
+        client.post(reverse("building-list"), body, format="json", HTTP_IDEMPOTENCY_KEY=KEY)
+        client.post(reverse("building-list"), body, format="json", HTTP_IDEMPOTENCY_KEY=KEY)
+
+        with company_context(company.id):
+            assert Building.objects.filter(name="A Blok").count() == 1
+
+    def test_the_same_key_with_a_different_body_is_still_refused(self, firm):
+        _, owner, _ = firm
+        client = api_for(owner)
+        client.post(
+            reverse("customer-list"),
+            {"type": CustomerType.CORPORATE, "legal_name": "First"},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=KEY,
+        )
+
+        response = client.post(
+            reverse("customer-list"),
+            {"type": CustomerType.CORPORATE, "legal_name": "Different"},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=KEY,
+        )
+        assert response.status_code == 409
+
+    def test_a_client_that_sends_no_key_is_unaffected(self, firm):
+        company, owner, _ = firm
+        client = api_for(owner)
+        body = {"type": CustomerType.CORPORATE, "legal_name": "No key"}
+
+        client.post(reverse("customer-list"), body, format="json")
+        client.post(reverse("customer-list"), body, format="json")
+
+        # The header is optional and stays optional.
+        with company_context(company.id):
+            assert Customer.objects.filter(legal_name="No key").count() == 2

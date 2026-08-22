@@ -56,6 +56,7 @@ okunduğunda kod yanlış görünür, o yüzden gerekçesiyle birlikte buraya ya
 | Rol matrisi | Kaynak başına tek satır (6.2) | **Eylem bazlı istisna** eklendi | QR etiket basma `elevator` ucunda yaşıyor ama teknisyene açık (6.2 satır "QR etiket üretimi"), asansör düzenleme değil. `resource_by_action` bu ikisini ayırıyor |
 | `storage_key` biçimi | "üretilir" (5.13) | `{company}/{object_type}/{object_id}/{category}/{uuid7}{ext}` | Onaylama çağrısının ihtiyaç duyduğu her şey anahtarın içinde. İki çağrı neyin nereye yüklendiği konusunda birbiriyle çelişemiyor |
 | Ek boyut/tür doğrulaması | "yükleme öncesi" (5.13) | Yükleme **öncesi ve sonrası** | Öncesi istemcinin beyanı, sonrası deponun ölçümü. Sadece beyana güvenmek 40 MB'lık bir nesnenin kalıcı olarak sahipsiz kalması demekti |
+| Tekrar koruması | Yalnızca `/contracts` ve `/elevators` POST (adım 17) | **Her firma-sahipli oluşturma ucunda** | Opt-in yanlış şekildi: yeni kaynak eklerken dekoratörü koymayı unutmak görünmez, belirti yalnızca kötü bağlantıda ve yalnızca kullanıcıda çıkar. Frontend her oluşturmada anahtar gönderiyor; sunucunun onu sessizce yok sayması, hiç korumamaktan kötü — istemci korunduğunu sanır |
 | `/ready` | Veritabanı + S3 (8.6) | Aynı; depo erişilemezse **503** | Bucket'a ulaşamayan sunucu, onay adımında patlayan yükleme URL'leri dağıtır. Kullanıcı bunu "dosyam kayboldu" diye okur |
 
 **Uygulama sırasında bulunan güvenlik açıkları**
