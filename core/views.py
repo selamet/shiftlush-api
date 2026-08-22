@@ -53,13 +53,14 @@ def ready(request: HttpRequest) -> JsonResponse:
         checks["storage"] = "unreachable"
         healthy = False
 
-    # Reported, but never fatal. Nothing depends on the cache yet, so taking a
-    # working instance out of rotation over it would be the wrong trade. It is
-    # still worth answering, because the two ways this connection breaks are
-    # both silent: the shared Redis refuses any key outside the `shiftlush:`
+    # Reported, but never fatal. Reverse geocoding is the first feature to use
+    # the cache and it degrades rather than fails without one — the lookups go
+    # to the provider instead, which costs quota, not correctness. Taking the
+    # instance out of rotation over that would be the wrong trade. It is still
+    # worth answering, because the two ways this connection breaks are both
+    # silent: the shared Redis refuses any key outside the `shiftlush:`
     # namespace, and the credential belongs to a server several other
-    # applications also use. Without this line the first symptom would be a
-    # NOPERM from whichever feature starts using the cache first.
+    # applications also use.
     try:
         cache.set("ready-probe", "ok", timeout=10)
         checks["cache"] = "ok" if cache.get("ready-probe") == "ok" else "error: read-back"

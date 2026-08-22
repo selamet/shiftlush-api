@@ -65,6 +65,17 @@ it is exploited. `.env` on the server is the only place they exist.
 | `EMAIL_URL` | SMTP. **Must use `smtp+tls://` or `smtp+ssl://`** — `?tls=True` is ignored and production refuses to boot without TLS, because SMTP AUTH would otherwise send the password in clear text. Invitations and password resets are the only way anyone but the founder gets in. |
 | `R2_*` | object storage; `/ready` reports 503 while these are unset |
 
+**Reverse geocoding** is the exception to the rule above: `GEOCODING_URL`,
+`GEOCODING_USER_AGENT` and `GEOCODING_RATE_LIMIT` all have working defaults, so
+nothing has to be set for the address picker to work. Two of them are still
+worth setting deliberately. Nominatim's usage policy asks that the `User-Agent`
+identify the operator and offer a way to reach them, and it caps traffic at one
+request a second across the whole deployment — so the day this product has more
+than a handful of firms on it, the answer is a self-hosted instance or a
+commercial provider at `GEOCODING_URL`, not a larger rate limit. Responses are
+cached in Redis for a month; that cache is what keeps the current traffic inside
+the policy, and losing it costs quota rather than correctness.
+
 ## Checking a deployment
 
 ```bash

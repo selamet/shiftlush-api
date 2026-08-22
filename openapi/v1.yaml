@@ -2011,6 +2011,50 @@ paths:
                 type: string
                 format: binary
           description: ''
+  /api/v1/geocode/reverse:
+    get:
+      operationId: geocode_reverse_retrieve
+      description: |-
+        `GET /geocode/reverse?lat=&lng=` — a point, as ids from our own tables.
+
+        The lookup goes through this API rather than from the browser so answers
+        can be cached, the provider's quota stays under one roof, and changing
+        provider is a change here (8.6). The throttle is the second half of that:
+        caching bounds repeat lookups, but nothing bounds a client walking the
+        coordinate space except a rate limit.
+
+        A level that could not be resolved comes back null and named in
+        `unmatched`. That is the whole point of the endpoint rather than a
+        shortcoming of it — see `apps.address.matching`.
+      summary: Resolve a map point to province, district and neighborhood ids
+      parameters:
+      - in: query
+        name: lat
+        schema:
+          type: number
+          format: double
+          maximum: 90
+          minimum: -90
+        required: true
+      - in: query
+        name: lng
+        schema:
+          type: number
+          format: double
+          maximum: 180
+          minimum: -180
+        required: true
+      tags:
+      - geocode
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReverseGeocode'
+          description: ''
   /api/v1/invitations/:
     get:
       operationId: invitations_list
@@ -4843,6 +4887,31 @@ components:
           maxLength: 128
       required:
       - token
+    GeocodeMatch:
+      type: object
+      description: One level of the address, resolved to a row the client can select.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: Feeds straight back into the province/district/neighborhood
+            endpoints.
+        name:
+          type: string
+          readOnly: true
+          description: The name as this API stores it.
+        confidence:
+          type: number
+          format: double
+          readOnly: true
+          description: Trigram similarity between the provider's name and ours, 0-1.
+            1.0 means the two agree once folded; anything at or above the server's
+            threshold is a match, and anything below is reported as no match rather
+            than as a low score.
+      required:
+      - confidence
+      - id
+      - name
     InspectionLabelEnum:
       enum:
       - green
@@ -5950,6 +6019,45 @@ components:
       required:
       - end_date
       - start_date
+    ReverseGeocode:
+      type: object
+      description: |-
+        What a dropped pin resolves to.
+
+        Ids rather than names, because the form the client is filling in is a
+        cascade of selects over the address tables — a name would only send it back
+        to look the row up, and would leave it guessing when the lookup found two.
+      properties:
+        province:
+          allOf:
+          - $ref: '#/components/schemas/GeocodeMatch'
+          readOnly: true
+          nullable: true
+        district:
+          allOf:
+          - $ref: '#/components/schemas/GeocodeMatch'
+          readOnly: true
+          nullable: true
+        neighborhood:
+          allOf:
+          - $ref: '#/components/schemas/GeocodeMatch'
+          readOnly: true
+          nullable: true
+        unmatched:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnmatchedEnum'
+          readOnly: true
+          description: 'Levels that could not be resolved and must be chosen by the
+            user. Stated explicitly rather than left as three nulls: a client that
+            reads null as ''not filled in yet'' behaves differently from one that
+            reads it as ''we looked and found nothing'', and only one of those asks
+            the user.'
+      required:
+      - district
+      - neighborhood
+      - province
+      - unmatched
     TerminateRequest:
       type: object
       properties:
@@ -5981,6 +6089,16 @@ components:
       required:
       - access
       - user
+    UnmatchedEnum:
+      enum:
+      - province
+      - district
+      - neighborhood
+      type: string
+      description: |-
+        * `province` - province
+        * `district` - district
+        * `neighborhood` - neighborhood
     UploadUrlRequestRequest:
       type: object
       properties:
