@@ -74,7 +74,13 @@ class ElevatorViewSet(TenantViewSet):
         return super().create(request, *args, **kwargs)
 
     def get_base_queryset(self) -> QuerySet[Elevator]:
-        return Elevator.objects.select_related(*JOINS)
+        queryset = Elevator.objects.select_related(*JOINS)
+        if self.action == "retrieve":
+            # Only the detail response carries the covering contract. Prefetching
+            # it for the list would add a query and a join to the heaviest screen
+            # in the product for a block that screen does not draw.
+            queryset = queryset.prefetch_related("contract_lines__contract")
+        return queryset
 
     def perform_create(self, serializer) -> None:  # type: ignore[no-untyped-def]
         # Every elevator gets a token at birth: the label can be printed the

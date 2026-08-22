@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.elevators.labels import MAX_LABELS
@@ -18,6 +19,7 @@ from apps.elevators.models import (
     MachineRoom,
 )
 from core.error_codes import ErrorCode
+from core.permissions import READ, may
 
 
 class StrictMixin:
@@ -60,6 +62,21 @@ class ElevatorListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class CurrentContractSerializer(serializers.Serializer):
+    """The contract covering this elevator right now, if any.
+
+    A compact block rather than the whole contract: the detail screen shows four
+    facts, and embedding a full contract here would drag its lines — every other
+    elevator in the same agreement — into a response about one lift.
+    """
+
+    id = serializers.UUIDField(read_only=True)
+    contract_number = serializers.CharField(read_only=True)
+    scope = serializers.CharField(read_only=True)
+    end_date = serializers.DateField(read_only=True)
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+
 class ElevatorDetailSerializer(serializers.ModelSerializer):
     building_name = serializers.CharField(source="building.name", read_only=True)
     customer_id = serializers.UUIDField(source="building.customer_id", read_only=True)
@@ -67,6 +84,52 @@ class ElevatorDetailSerializer(serializers.ModelSerializer):
     complex_name = serializers.CharField(
         source="building.complex.name", read_only=True, default=None
     )
+    current_contract = serializers.SerializerMethodField()
+
+    @extend_schema_field(CurrentContractSerializer(allow_null=True))
+    def get_current_contract(self, elevator: Elevator) -> dict[str, Any] | None:
+        """The elevator's open contract line, if it has one.
+
+        "Open line" is the domain's own definition of cover — it is what
+        `add_elevators` checks before refusing a second contract, and what the
+        database constraint enforces. Terminating a contract closes its lines,
+        so a second condition on contract status would only add a way for the
+        two rules to disagree. A draft contract counts, which matches the fact
+        that adding an elevator to one already marks the elevator active.
+        """
+        line = next(
+            (
+                candidate
+                for candidate in elevator.contract_lines.all()
+                if candidate.removed_at is None
+            ),
+            None,
+        )
+        if line is None:
+            return None
+
+        # Through the serializer rather than returned raw. A SerializerMethodField
+        # hands its dict straight to the renderer, so a raw Decimal would reach
+        # the client as a JSON *number* — and money crossing the wire as a float
+        # is the one thing this API does not do.
+        block = CurrentContractSerializer(
+            {
+                "id": line.contract.id,
+                "contract_number": line.contract.contract_number,
+                "scope": line.contract.scope,
+                "end_date": line.contract.end_date,
+                "unit_price": line.unit_price,
+            }
+        ).data
+        # Dropped rather than nulled for roles that may not see money. `null`
+        # says the contract has no price on this line; absence says the reader
+        # is not entitled to ask. Hiding it in the client instead would be
+        # decoration — the value would still be in the response body.
+        request = self.context.get("request")
+        role = getattr(getattr(request, "user", None), "role", None)
+        if not may(role, "contract_financials", READ):
+            block.pop("unit_price", None)
+        return block
 
     class Meta:
         model = Elevator
@@ -77,6 +140,7 @@ class ElevatorDetailSerializer(serializers.ModelSerializer):
             "customer_id",
             "customer_name",
             "complex_name",
+            "current_contract",
             "registration_number",
             "internal_code",
             "name",
