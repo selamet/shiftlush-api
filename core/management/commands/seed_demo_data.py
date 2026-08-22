@@ -142,11 +142,16 @@ class Command(BaseCommand):
 
     def _customers(self, company: Any, rng: random.Random, areas: list[Any]) -> list[Customer]:
         created = []
-        for index, (name, kind, contact) in enumerate(CUSTOMERS):
+        for index, (name, kind, contact, tax_number) in enumerate(CUSTOMERS):
             customer = Customer.objects.create(
                 company=company,
                 type=kind,
                 legal_name=name,
+                # Every demo customer is an organisation, and an organisation
+                # needs its tax number — without one the seeded rows would be
+                # the one thing a demo must not contain: records the product
+                # refuses to save when somebody opens them.
+                tax_number=tax_number,
                 tax_office=rng.choice(DEMO["tax_offices"]),
                 phone=f"+90216{4000000 + index:07d}",
                 neighborhood=rng.choice(areas),

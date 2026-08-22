@@ -1606,6 +1606,75 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/customers/{id}/contacts/:
+    get:
+      operationId: customers_contacts_list
+      description: The contacts of this customer.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer.
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerContactReadList'
+          description: ''
+    post:
+      operationId: customers_contacts_create
+      description: Add a contact to this customer. The customer comes from the path.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer.
+        required: true
+      tags:
+      - customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerContactNestedWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerContactNestedWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerContactNestedWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContactRead'
+          description: ''
   /api/v1/districts/:
     get:
       operationId: districts_list
@@ -3585,6 +3654,39 @@ components:
       - last_name
       - phone
       - role
+    CustomerContactNestedWriteRequest:
+      type: object
+      description: |-
+        The same contact, created under `/customers/{id}/contacts`.
+
+        `customer` is gone from the field list rather than made read-only, so
+        `StrictMixin` refuses a body that names it. Two sources for one value is how
+        they come to disagree, and the path is the source.
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          allOf:
+          - $ref: '#/components/schemas/ContactRole'
+          default: other
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        is_primary:
+          type: boolean
+        notes:
+          type: string
+      required:
+      - full_name
     CustomerContactRead:
       type: object
       properties:
@@ -6019,6 +6121,7 @@ components:
       - INTERNAL_ERROR
       - THROTTLED
       - SERVICE_UNAVAILABLE
+      - CONSTRAINT_VIOLATION
       - API_VERSION_SUNSET
       - INVALID_TAX_NUMBER
       - INVALID_NATIONAL_ID
@@ -6029,6 +6132,8 @@ components:
       - RECORD_IN_USE
       - DUPLICATE_REGISTRATION_NUMBER
       - DUPLICATE_CONTRACT_NUMBER
+      - DUPLICATE_TAX_NUMBER
+      - DUPLICATE_NATIONAL_ID
       - EMAIL_ALREADY_REGISTERED
       - IDEMPOTENCY_KEY_REUSED
       - ELEVATOR_ALREADY_CONTRACTED
@@ -6037,6 +6142,8 @@ components:
       - CANNOT_DEACTIVATE_SELF
       - BUILDING_CUSTOMER_MISMATCH
       - TERMINATION_REASON_REQUIRED
+      - FIELD_REQUIRED_FOR_CUSTOMER_TYPE
+      - FIELD_NOT_VALID_FOR_CUSTOMER_TYPE
       - STATUS_NOT_USER_SELECTABLE
       - INVALID_CREDENTIALS
       - ACCOUNT_LOCKED
@@ -6056,6 +6163,7 @@ components:
         * `INTERNAL_ERROR` - Unexpected server error
         * `THROTTLED` - Rate limit exceeded
         * `SERVICE_UNAVAILABLE` - A required service is not available
+        * `CONSTRAINT_VIOLATION` - The request violates a database constraint
         * `API_VERSION_SUNSET` - This API version is no longer served
         * `INVALID_TAX_NUMBER` - Tax number failed its check digit
         * `INVALID_NATIONAL_ID` - National ID failed its check digit
@@ -6066,6 +6174,8 @@ components:
         * `RECORD_IN_USE` - Record is referenced by other records
         * `DUPLICATE_REGISTRATION_NUMBER` - Registration number already exists for this company
         * `DUPLICATE_CONTRACT_NUMBER` - Contract number already exists for this company
+        * `DUPLICATE_TAX_NUMBER` - Tax number already belongs to another customer of this company
+        * `DUPLICATE_NATIONAL_ID` - National ID already belongs to another customer of this company
         * `EMAIL_ALREADY_REGISTERED` - E-mail address is already registered
         * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
@@ -6074,6 +6184,8 @@ components:
         * `CANNOT_DEACTIVATE_SELF` - A user cannot deactivate their own account
         * `BUILDING_CUSTOMER_MISMATCH` - A building in a complex must share the complex's customer
         * `TERMINATION_REASON_REQUIRED` - A termination reason is required
+        * `FIELD_REQUIRED_FOR_CUSTOMER_TYPE` - This customer type requires this field
+        * `FIELD_NOT_VALID_FOR_CUSTOMER_TYPE` - This field does not apply to this customer type
         * `STATUS_NOT_USER_SELECTABLE` - This status is assigned by the system
         * `INVALID_CREDENTIALS` - E-mail or password is incorrect
         * `ACCOUNT_LOCKED` - Too many failed attempts; account is temporarily locked

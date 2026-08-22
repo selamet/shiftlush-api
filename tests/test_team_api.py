@@ -19,6 +19,7 @@ from apps.customers.models import Customer, CustomerType
 from apps.users.models import Invitation, Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
+from tests.identifiers import tax_number
 
 PASSWORD = "correct-horse-battery"
 
@@ -489,7 +490,7 @@ class TestVerificationGatesInvitations:
 
         response = api_for(owner).post(
             reverse("customer-list"),
-            {"type": CustomerType.CORPORATE, "legal_name": "Allowed"},
+            {"type": CustomerType.CORPORATE, "legal_name": "Allowed", "tax_number": tax_number(1)},
             format="json",
         )
         # The restriction is on inviting, not on using the product.
