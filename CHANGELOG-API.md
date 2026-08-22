@@ -34,6 +34,24 @@ carried as compatibility shims nobody will ever remove.
   `/invitations`. Accounts are created by invitation; there is no endpoint that
   sets somebody else's password, and no endpoint that deletes a user.
 - **Address lookup** — provinces, districts and neighbourhoods, read-only.
+- **Reverse geocoding** — `GET /geocode/reverse?lat=&lng=`, so the map picker
+  never calls a geocoder itself. It answers with the **ids** of the province,
+  district and neighbourhood the point resolved to, a `confidence` for each, and
+  an `unmatched` list naming the levels that did not resolve. Nothing from the
+  provider's own payload is forwarded, which is what keeps the provider
+  replaceable without a client change.
+
+  A level is either matched or explicitly not: below the similarity threshold,
+  on a tie between two equally good rows, or under a parent that did not match,
+  the answer is `null` and a name in `unmatched` rather than a best guess. A
+  client should treat that as "ask the user", not as "empty because nothing was
+  found yet".
+
+  Provider failures and timeouts answer `503 SERVICE_UNAVAILABLE` — an existing
+  code, deliberately, so no client has to learn a new one for a case whose
+  handling is the same as every other unavailable dependency. Exhausting the
+  rate limit answers `429 THROTTLED`, which is the first endpoint in this API to
+  do so.
 - **Customers**, **complexes and buildings**, **elevators**, **contracts** —
   full CRUD with soft delete. Contract state changes are their own endpoints
   (`terminate`, `renew`) rather than a status field, because they touch several

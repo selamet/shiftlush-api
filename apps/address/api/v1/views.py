@@ -3,6 +3,11 @@
 Three endpoints that narrow in sequence, because the data is too big to hand
 over whole: 81 provinces, around 970 districts, and roughly 50,000
 neighbourhoods.
+
+A fourth runs those same three levels backwards. Given a point on the map it
+answers with ids from the same tables, so the picker can drive the cascade from
+a dropped pin instead of asking a user to find their own neighbourhood in a
+list of fifty thousand.
 """
 
 from __future__ import annotations
@@ -11,9 +16,16 @@ from django.db.models import QuerySet
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, mixins
 
+from apps.address.geocoding import GeocoderUnavailable, reverse_geocode
+from apps.address.matching import match_place
 from apps.address.models import District, Neighborhood, Province
+from core.exceptions import ServiceUnavailable
 from core.text import normalize
 
 MAX_NEIGHBORHOOD_RESULTS = 20
@@ -115,3 +127,94 @@ class NeighborhoodViewSet(mixins.ListModelMixin, GenericViewSet):
             queryset = queryset.filter(name_normalized__contains=normalize(search))
 
         return queryset[:MAX_NEIGHBORHOOD_RESULTS]
+
+
+ADDRESS_LEVELS = ["province", "district", "neighborhood"]
+
+
+class GeocodeMatchSerializer(serializers.Serializer):
+    """One level of the address, resolved to a row the client can select."""
+
+    id = serializers.IntegerField(
+        read_only=True,
+        help_text="Feeds straight back into the province/district/neighborhood endpoints.",
+    )
+    name = serializers.CharField(read_only=True, help_text="The name as this API stores it.")
+    confidence = serializers.FloatField(
+        read_only=True,
+        help_text=(
+            "Trigram similarity between the provider's name and ours, 0-1. "
+            "1.0 means the two agree once folded; anything at or above the "
+            "server's threshold is a match, and anything below is reported as "
+            "no match rather than as a low score."
+        ),
+    )
+
+
+class ReverseGeocodeQuerySerializer(serializers.Serializer):
+    """The point to look up. Both are required; neither has a default."""
+
+    lat = serializers.FloatField(min_value=-90, max_value=90)
+    lng = serializers.FloatField(min_value=-180, max_value=180)
+
+
+class ReverseGeocodeSerializer(serializers.Serializer):
+    """What a dropped pin resolves to.
+
+    Ids rather than names, because the form the client is filling in is a
+    cascade of selects over the address tables — a name would only send it back
+    to look the row up, and would leave it guessing when the lookup found two.
+    """
+
+    province = GeocodeMatchSerializer(read_only=True, allow_null=True)
+    district = GeocodeMatchSerializer(read_only=True, allow_null=True)
+    neighborhood = GeocodeMatchSerializer(read_only=True, allow_null=True)
+    unmatched = serializers.ListField(
+        read_only=True,
+        child=serializers.ChoiceField(choices=ADDRESS_LEVELS),
+        help_text=(
+            "Levels that could not be resolved and must be chosen by the user. "
+            "Stated explicitly rather than left as three nulls: a client that "
+            "reads null as 'not filled in yet' behaves differently from one "
+            "that reads it as 'we looked and found nothing', and only one of "
+            "those asks the user."
+        ),
+    )
+
+
+class ReverseGeocodeView(APIView):
+    """`GET /geocode/reverse?lat=&lng=` — a point, as ids from our own tables.
+
+    The lookup goes through this API rather than from the browser so answers
+    can be cached, the provider's quota stays under one roof, and changing
+    provider is a change here (8.6). The throttle is the second half of that:
+    caching bounds repeat lookups, but nothing bounds a client walking the
+    coordinate space except a rate limit.
+
+    A level that could not be resolved comes back null and named in
+    `unmatched`. That is the whole point of the endpoint rather than a
+    shortcoming of it — see `apps.address.matching`.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "geocode"
+
+    @extend_schema(
+        parameters=[ReverseGeocodeQuerySerializer],
+        responses={200: ReverseGeocodeSerializer},
+        summary="Resolve a map point to province, district and neighborhood ids",
+    )
+    def get(self, request: Request) -> Response:
+        query = ReverseGeocodeQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+
+        try:
+            place = reverse_geocode(query.validated_data["lat"], query.validated_data["lng"])
+        except GeocoderUnavailable as exc:
+            # 503, not 500: nothing about the request was wrong and a retry may
+            # well work. The client's answer is to let the user pick the address
+            # by hand, which is a different screen from "something went wrong".
+            raise ServiceUnavailable() from exc
+
+        return Response(ReverseGeocodeSerializer(match_place(place)).data)

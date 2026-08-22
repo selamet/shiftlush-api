@@ -156,6 +156,42 @@ CACHES = {
 #: transport option.
 REDIS_QUEUE_URL = env("REDIS_QUEUE_URL", default="")
 
+# --------------------------------------------------------------------------
+# Reverse geocoding
+# --------------------------------------------------------------------------
+
+# Behind a settings entry rather than an import, so moving to a commercial
+# provider or to a self-hosted Nominatim is a deployment change. The
+# specification asks for the abstraction (9.4) and the public instance makes it
+# necessary: its usage policy is not something to run a product on for long.
+GEOCODING_PROVIDER = env("GEOCODING_PROVIDER", default="apps.address.geocoding.NominatimGeocoder")
+GEOCODING_URL = env("GEOCODING_URL", default="https://nominatim.openstreetmap.org/reverse")
+
+#: Nominatim's usage policy requires an identifying User-Agent with a way to
+#: reach whoever is sending the traffic, and blocks requests without one. The
+#: default names the repository; a deployment that means to keep using the
+#: public instance should point this at an address someone reads.
+GEOCODING_USER_AGENT = env(
+    "GEOCODING_USER_AGENT",
+    default="ShiftLush/1.0 (+https://github.com/selamet/shiftlush-api)",
+)
+
+#: Short on purpose. This runs inside a request the user is waiting on, with a
+#: perfectly good fallback — choosing the address by hand — so a slow provider
+#: should give up quickly rather than hold a worker.
+GEOCODING_TIMEOUT_SECONDS = env.float("GEOCODING_TIMEOUT_SECONDS", default=5.0)
+
+#: A month. Provincial and district boundaries change about once a year, and
+#: the address dataset behind them is refreshed on the same cadence, so a long
+#: window costs nothing in accuracy and is the main thing keeping traffic to
+#: the provider within a policy that allows one request a second.
+GEOCODING_CACHE_TTL_SECONDS = env.int("GEOCODING_CACHE_TTL_SECONDS", default=30 * 24 * 60 * 60)
+
+#: Specification 9.4. Below this the answer is "no match" rather than a low
+#: score: a wrong neighbourhood gets saved and never re-read, an empty one is a
+#: dropdown the user was going to touch anyway.
+GEOCODING_MATCH_THRESHOLD = env.float("GEOCODING_MATCH_THRESHOLD", default=0.4)
+
 # Every model declares a UUIDv7 primary key explicitly. This is set anyway so a
 # model that forgets fails loudly at `makemigrations` rather than silently
 # getting a sequential integer that would then leak in URLs.
@@ -316,6 +352,12 @@ REST_FRAMEWORK = {
     # touches it.
     "COERCE_DECIMAL_TO_STRING": True,
     "EXCEPTION_HANDLER": "core.exceptions.exception_handler",
+    # No default throttle: the rest of the API talks to our own database, and a
+    # blanket rate limit on it would only punish a busy office. Scopes are for
+    # the endpoints that spend something we do not own — today that is the one
+    # calling a third-party geocoder, whose usage policy allows one request a
+    # second across the whole deployment.
+    "DEFAULT_THROTTLE_RATES": {"geocode": env("GEOCODING_RATE_LIMIT", default="60/min")},
     "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
