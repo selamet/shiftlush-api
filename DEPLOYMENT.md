@@ -21,7 +21,8 @@ from it would mean one server with two conventions.
    thing it can say is which application to deploy.
 4. That script runs `deploy/shiftlush-api.sh`: `git pull --ff-only`, then
    `docker compose up -d --build`.
-5. The container's entrypoint applies migrations, then starts gunicorn.
+5. The container's entrypoint applies migrations, loads the address reference
+   data if it is absent, then starts gunicorn.
 6. The workflow polls `/health` for up to 150 seconds and **fails if it never
    answers**. A deploy that reports success while the container crash-loops is
    worse than no report.
@@ -104,6 +105,106 @@ holding a stolen access token. The login lockout does not reach it — that coun
 failures against a sign-in, and this caller is already signed in. Throttle state
 lives in the default cache, so without `REDIS_URL` the count is per process and
 several workers multiply the effective limit by their number.
+
+## Bringing up a new environment
+
+Everything here happens once, against a database and a box that have never run
+this application. An existing deployment needs none of it.
+
+**1. The database.** An empty database and a role that owns it, on the laboflush
+stack at `database.selamet.dev`. Nothing else — no schema, no seed. `migrate`
+creates the tables. The connection has to work with `sslmode=verify-full`
+against the system CA bundle; if it does not, the container will not boot and
+the reason will be a certificate rather than the application.
+
+**2. The repository.**
+
+```bash
+ssh selamet@91.98.233.170
+git clone https://github.com/selamet/shiftlush-api.git /opt/apps/shiftlush-api
+```
+
+**3. Secrets.** Every variable in the table above, none of them defaulted.
+
+```bash
+cd /opt/apps/shiftlush-api
+cp .env.example .env
+chmod 600 .env
+"$EDITOR" .env
+```
+
+**4. The deployment facts, which live in `vds-stack` and not here.** For another
+copy of *this* application they already exist and only the symlink is missing;
+for a genuinely new application all four are new.
+
+```bash
+ln -s /opt/vds-stack/overrides/shiftlush-api.override.yml \
+      /opt/apps/shiftlush-api/docker-compose.override.yml
+```
+
+- `/opt/vds-stack/overrides/shiftlush-api.override.yml` — container name, `.env`
+  and the loopback port
+- `/opt/vds-stack/deploy/shiftlush-api.sh` — what a deploy runs
+- `/opt/vds-stack/deploy/gh-deploy.sh` — the name has to appear in its `case`, or
+  the forced command refuses it
+- `/opt/vds-stack/Caddyfile` — the site block and its `reverse_proxy` port
+
+**5. First deploy.** The same script GitHub triggers, run by hand because there
+is nothing to trigger it yet.
+
+```bash
+/opt/vds-stack/deploy/shiftlush-api.sh
+```
+
+The container's entrypoint applies migrations **and loads the Turkish address
+data**, then starts gunicorn. Neither is a separate step, and neither is a
+command anyone has to remember: an empty `province` / `district` /
+`neighborhood` set is not a missing nicety but an API where creating a building,
+a complex or a customer fails.
+
+**6. Confirm the environment is usable.** `/ready` reports that the process can
+reach its dependencies. It does not report whether the address tables hold
+anything, and that is precisely the failure this section exists to prevent.
+
+```bash
+curl -s https://shiftlush-api.selamet.dev/ready
+
+docker exec shiftlush-api python manage.py shell -c \
+  "from apps.address.models import Province, District, Neighborhood; \
+   print(Province.objects.count(), District.objects.count(), Neighborhood.objects.count())"
+# 81 973 50437
+```
+
+**7. The first account.** `POST /auth/register` creates a company and its owner.
+Everyone after that arrives by invitation.
+
+### Address data, afterwards
+
+Once the data is present the load is skipped on every restart: three existence
+queries, no CSV parsing, no upserts, no write locks on a table the outgoing
+container is still serving reads from. That is what `--if-missing` in
+`entrypoint.sh` buys, and it is the reason the load can sit on the boot path at
+all.
+
+The consequence is that **the yearly refresh is a manual run.** New CSVs in the
+image change nothing by themselves — a deploy carrying them looks like any other
+deploy. After merging a data refresh:
+
+```bash
+ssh selamet@91.98.233.170
+docker exec shiftlush-api python manage.py load_address_data
+```
+
+Without the flag the command upserts all three files by primary key. It is
+idempotent — two consecutive runs leave the row counts identical, which the
+suite asserts against the real dataset — so re-running it is never the wrong
+thing to do. What it does not do is delete: a district that upstream has
+dissolved stays until someone removes it deliberately, because the buildings
+pointing at it would otherwise have nowhere to be.
+
+Demo data (`seed_demo_data`) is for development and demonstration environments
+only. It refuses to run twice, and it refuses to run at all before the address
+data exists.
 
 ## Checking a deployment
 

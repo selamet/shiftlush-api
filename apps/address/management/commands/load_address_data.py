@@ -4,6 +4,12 @@ Idempotent, so it can be re-run when the yearly refresh lands. Written as a
 command rather than a data migration on purpose: 50,000 rows in a migration
 would replay on every test database creation and turn a one-second setup into a
 minute.
+
+`--if-missing` is what the container entrypoint uses. Without the data no
+building, complex or customer can be created, so it has to load on a new
+environment; with the data already there, re-importing fifty thousand rows on
+every restart costs boot time and takes write locks on a table the running
+application is reading. The flag is the difference between those two.
 """
 
 from __future__ import annotations
@@ -32,13 +38,44 @@ class Command(BaseCommand):
             default=str(Path(__file__).resolve().parents[2] / "data"),
             help="Directory holding province.csv, district.csv and neighborhood.csv.",
         )
+        parser.add_argument(
+            "--if-missing",
+            action="store_true",
+            help="Do nothing if the tables already hold data. Used by the container entrypoint.",
+        )
 
-    @transaction.atomic
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["if_missing"] and self._already_loaded():
+            self.stdout.write("Address data already present; nothing to do.")
+            return
+
         directory = Path(options["path"])
         if not directory.exists():
             raise CommandError(f"{directory} does not exist.")
 
+        self._load(directory)
+
+    def _already_loaded(self) -> bool:
+        """Whether all three tables hold something.
+
+        Existence checks rather than counts: the question is whether anything is
+        there, and `LIMIT 1` answers it without reading fifty thousand rows.
+        Three cheap queries is the whole cost this adds to a normal restart.
+
+        A half-loaded database would defeat this, and cannot happen: `_load` is
+        atomic, so a load that dies partway leaves the tables exactly as it
+        found them. What the check cannot see is a *stale* dataset — the yearly
+        refresh is therefore a deliberate run without the flag, not something
+        that happens quietly on a deploy.
+        """
+        return (
+            Province.objects.exists()
+            and District.objects.exists()
+            and Neighborhood.objects.exists()
+        )
+
+    @transaction.atomic
+    def _load(self, directory: Path) -> None:
         self._load_provinces(directory / "province.csv")
         self._load_districts(directory / "district.csv")
         self._load_neighborhoods(directory / "neighborhood.csv")
