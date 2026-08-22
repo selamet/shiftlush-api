@@ -108,9 +108,18 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
     request = context.get("request")
     request_id = getattr(request, "request_id", "") if request else ""
 
+    # DRF converts Http404 too, but it does so on a local variable inside its
+    # own handler — so the status came out as 404 while the body below still
+    # read the original exception, found no `default_code` on it, and fell
+    # through to INTERNAL_ERROR. Every "another company's record" answer in the
+    # API said the server had broken rather than that the record was not there,
+    # which tells a client to retry something that will never succeed. Converted
+    # here, alongside the other three, so the code matches the status.
+    if isinstance(exc, Http404):
+        exc = exceptions.NotFound()
     # PROTECT raises this rather than deleting a row that others reference. The
     # message has to tell the user what to do, so the code is specific.
-    if isinstance(exc, ProtectedError):
+    elif isinstance(exc, ProtectedError):
         exc = RecordInUse()
     elif isinstance(exc, IntegrityError):
         # A last resort, not the intended path. Every constraint the API can
