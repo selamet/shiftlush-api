@@ -20,6 +20,13 @@ dependencies = [
     "django-storages[s3]>=1.14",
     "cryptography>=45.0",
     "qrcode[pil]>=8.2",
+    # Production only in practice, but a runtime dependency rather than a group:
+    # the image must not be able to build without the server that runs it.
+    "gunicorn>=23.0",
+    # Serves the admin's own static files. Putting nginx in front of Django for
+    # a handful of CSS files would add a container to every deployment for a
+    # problem this solves in one middleware.
+    "whitenoise>=6.8",
 ]
 
 [dependency-groups]

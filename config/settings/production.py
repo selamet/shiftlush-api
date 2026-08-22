@@ -14,6 +14,11 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 DATABASES = {"default": env.db("DATABASE_URL")}
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+# The frontend is a different origin on the same registrable domain, so the
+# refresh cookie is same-site and Lax works. CSRF still needs the origin listed
+# explicitly, because Django checks it against the Origin header for unsafe
+# methods regardless of CORS.
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
 # No default: booting without it would silently write national IDs in plaintext.
 FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY")
 
@@ -41,6 +46,9 @@ vars().update(EMAIL_CONFIG)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 FRONTEND_URL = env("FRONTEND_URL").rstrip("/")
 
+# Caddy terminates TLS and proxies to 127.0.0.1, so Django sees plain HTTP and
+# would otherwise redirect forever. The header is set by the proxy in front of
+# it; trusting it is only safe because nothing else can reach the port.
 SECURE_SSL_REDIRECT = True
 SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True

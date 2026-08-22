@@ -17,6 +17,7 @@ year keeps resolving through R2 after new uploads have moved elsewhere.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -28,6 +29,8 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.signals import setting_changed
 from django.dispatch import receiver
+
+logger = logging.getLogger(__name__)
 
 
 class ObjectNotFound(Exception):
@@ -176,9 +179,20 @@ def delete(backend: str, key: str) -> None:
 
 
 def reachable(backend: str) -> bool:
-    """For the readiness probe: can this process see the bucket at all."""
+    """For the readiness probe: can this process see the bucket at all.
+
+    Catches everything on purpose. A readiness check has exactly two useful
+    answers, and "it raised" is not one of them: an unreachable bucket is the
+    condition this exists to report, so letting the exception escape turns the
+    probe into a 500 and the orchestrator reads an HTML error page instead of
+    "not ready". The narrower list this used to catch missed
+    `EndpointConnectionError`, which is the most likely failure of all.
+
+    Logged rather than swallowed, so the reason is still in the record.
+    """
     try:
         _client(backend).head_bucket(Bucket=_bucket(backend))
-    except (ClientError, ImproperlyConfigured, OSError):
+    except Exception:
+        logger.warning("Storage backend %r is not reachable", backend, exc_info=True)
         return False
     return True

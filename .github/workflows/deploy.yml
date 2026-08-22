@@ -1,0 +1,53 @@
+name: Deploy
+
+# Only after CI passes on the same commit. A deploy that races the test run is
+# a deploy that can ship a red build, and the whole point of the contract and
+# tenant tests is that they run before anything reaches a customer.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+concurrency:
+  # One deploy at a time. Two `docker compose up --build` runs in the same
+  # directory race over the image and the container name.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy on VDS
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 91.98.233.170 >> ~/.ssh/known_hosts
+          # The key is restricted to /opt/vds-stack/deploy/gh-deploy.sh on the
+          # server, which dispatches on this argument. It cannot open a shell.
+          ssh -i ~/.ssh/id_ed25519 selamet@91.98.233.170 shiftlush-api
+
+      - name: Wait for the new container to answer
+        run: |
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://shiftlush-api.selamet.dev/health || true)
+            if [ "$code" = "200" ]; then
+              echo "healthy after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 5
+          done
+          # Deliberately fails the run. A deploy that reports success while the
+          # container is crash-looping is worse than no report at all.
+          echo "::error::/health never returned 200 — the deploy did not come up"
+          exit 1
+
+      - name: Report readiness
+        # Not a failure: /ready checks dependencies, and a database blip should
+        # not paint a good deploy red. It is worth seeing in the log.
+        run: |
+          echo "readiness:"
+          curl -s https://shiftlush-api.selamet.dev/ready || true
