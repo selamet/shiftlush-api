@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
@@ -36,17 +37,30 @@ class StrictSerializer(serializers.Serializer):
 
 
 class PasswordField(serializers.CharField):
+    """A password, checked against the project's validators.
+
+    The length comes from the settings rather than a number written here. It
+    used to be written in both places, which meant lowering the floor in the
+    settings changed the error message and nothing else — the serializer went
+    on refusing at the old length.
+
+    No composition rules: requiring a symbol mostly produces Parola1!.
+    """
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("write_only", True)
         kwargs.setdefault("style", {"input_type": "password"})
-        # Ten characters, no composition rules. Length is what makes a password
-        # hard to guess; requiring a symbol mostly produces Password1!
-        kwargs.setdefault("min_length", 10)
+        kwargs.setdefault("min_length", settings.MIN_PASSWORD_LENGTH)
         super().__init__(**kwargs)
 
     def run_validation(self, data: Any = serializers.empty) -> Any:
         value = super().run_validation(data)
-        validate_password(value)
+        # The owner, when the serializer can name one. Without it the
+        # similarity validator is configured but inert — it has nothing to
+        # compare against, so it silently permits a password that is just the
+        # person's own surname.
+        owner = getattr(self.parent, "password_owner", None)
+        validate_password(value, user=owner() if owner else None)
         return value
 
 
@@ -57,6 +71,20 @@ class RegisterSerializer(StrictSerializer):
     last_name = serializers.CharField(max_length=60)
     email = serializers.EmailField(max_length=150)
     password = PasswordField()
+
+    def password_owner(self) -> User:
+        """The person registering, for the similarity check.
+
+        Unsaved, and built from the raw payload because the password is
+        validated during field processing, before `validated_data` exists. Only
+        the attributes the validator reads are set.
+        """
+        raw = self.initial_data if isinstance(self.initial_data, dict) else {}
+        return User(
+            email=str(raw.get("email") or ""),
+            first_name=str(raw.get("first_name") or ""),
+            last_name=str(raw.get("last_name") or ""),
+        )
 
     def validate_email(self, value: str) -> str:
         return normalize_email(value)

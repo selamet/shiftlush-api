@@ -187,13 +187,21 @@ DOWNLOAD_URL_TTL_SECONDS = 5 * 60
 #: them. The row itself stays forever — the audit trail refers to it.
 ATTACHMENT_PURGE_AFTER_DAYS = 30
 
+#: The floor. Six by product decision, against the specification's ten — see the
+#: deviation note. It is low enough that the two validators below and the login
+#: lockout carry more of the weight than the length does.
+MIN_PASSWORD_LENGTH = 6
+
 AUTH_PASSWORD_VALIDATORS = [
-    # Length beats composition rules, so there is no upper/lower/digit/symbol
-    # requirement — only a floor of 10 and a common-password blocklist.
+    # Still no composition requirement — an upper/lower/digit/symbol rule pushes
+    # people towards Parola1! and buys nothing.
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-        "OPTIONS": {"min_length": 10},
+        "OPTIONS": {"min_length": MIN_PASSWORD_LENGTH},
     },
+    # These two matter more at six characters than they did at ten: the
+    # blocklist is what stops the handful of passwords most people would
+    # actually choose at this length.
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
 ]

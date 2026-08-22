@@ -78,19 +78,40 @@ class TestRegistration:
         assert response.status_code == 422
         assert response.data["error"]["code"] == "EMAIL_ALREADY_REGISTERED"
 
-    def test_short_password_is_rejected(self, client, db):
+    @pytest.mark.parametrize(
+        ("password", "accepted", "why"),
+        [
+            ("t7wq3z", True, "six characters, the floor"),
+            ("t7wq3", False, "five, one under"),
+            ("123456", False, "six, but on the common-password blocklist"),
+            ("parola", False, "six, but blocklisted"),
+            ("evebay", False, "six, but derived from the address"),
+        ],
+    )
+    def test_password_floor_is_six(self, client, db, password, accepted, why):
+        """Pin the floor exactly, and the two rules that carry it.
+
+        The old version of this test used a five-character password, which
+        fails against a floor of ten and a floor of six alike — so it passed
+        without ever proving where the line was. These cases fail if the floor
+        moves in either direction.
+
+        The last three matter more than the first: at six characters the
+        blocklist and the similarity check are most of the protection, and a
+        password reaching the floor is not the same as a password worth having.
+        """
         response = client.post(
             reverse("auth:register"),
             {
                 "legal_name": "Short Ltd",
                 "display_name": "Short",
                 "first_name": "Eve",
-                "last_name": "Owner",
-                "email": "eve@example.com",
-                "password": "short",
+                "last_name": "Bay",
+                "email": "evebay@example.com",
+                "password": password,
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == (201 if accepted else 400), why
 
     def test_unknown_field_is_rejected(self, client, db):
         # DRF would ignore it, and the value would silently never arrive.
