@@ -1,3 +1,5 @@
-{# A link styled as a button. Never an <input> or a form: some clients refuse
-   to submit them and the user is left with a mail that does nothing. #}
+{% comment %}
+A link styled as a button. Never an <input> or a form: some clients refuse to
+submit them and the user is left with a mail that does nothing.
+{% endcomment %}
 <a href="{{ url }}" style="display:inline-block;padding:11px 20px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:500;">{{ label }}</a>

@@ -1,6 +1,12 @@
-{# Inline styles only, and a single-column table layout. Mail clients strip
-   <style> blocks and ignore flexbox; this renders the same in Outlook as in
-   Gmail, which is the only test that matters here. #}
+{% comment %}
+Inline styles only, and a single-column table layout. Mail clients strip
+<style> blocks and ignore flexbox; this renders the same in Outlook as in
+Gmail, which is the only test that matters here.
+
+{% comment %} rather than {# #}: Django's hash comment is single-line only, and
+a multi-line one is not a comment at all — it is rendered, which is how three
+kinds of e-mail went out with this paragraph printed above the greeting.
+{% endcomment %}
 <!doctype html>
 <html lang="tr">
   <body style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#18181b;">
