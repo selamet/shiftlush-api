@@ -13,6 +13,7 @@ from apps.contracts.models import (
     ContractStatus,
     PricingType,
     Scope,
+    VatStatus,
 )
 from core.error_codes import ErrorCode
 
@@ -24,6 +25,7 @@ FINANCIAL_FIELDS = (
     "monthly_fee",
     "currency",
     "vat_rate",
+    "vat_status",
     "billing_period",
     "monthly_subtotal",
     "vat_amount",
@@ -69,6 +71,7 @@ class ContractReadSerializer(serializers.ModelSerializer):
         source="previous_contract.contract_number", read_only=True, default=""
     )
     monthly_subtotal = serializers.SerializerMethodField()
+    vat_status = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
     monthly_total = serializers.SerializerMethodField()
 
@@ -96,9 +99,26 @@ class ContractReadSerializer(serializers.ModelSerializer):
     def get_monthly_subtotal(self, contract: Contract) -> str:
         return f"{self._subtotal(contract):.2f}"
 
-    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
-    def get_vat_amount(self, contract: Contract) -> str:
-        rate = contract.vat_rate or Decimal("0")
+    @extend_schema_field(serializers.ChoiceField(choices=VatStatus.choices))
+    def get_vat_status(self, contract: Contract) -> str:
+        """What a screen switches on to explain the two fields below.
+
+        `vat_rate` being `null` already distinguishes the cases in principle,
+        but only to a reader who knows that a null there is not a zero. This
+        names it, so the hint beside the total is read off the response instead
+        of being inferred — and the name is a code, not a sentence, because the
+        Turkish for it lives in the frontend's translation file.
+        """
+        return contract.vat_status
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True))
+    def get_vat_amount(self, contract: Contract) -> str | None:
+        rate = contract.vat_rate
+        if rate is None:
+            # Null, not "0.00". Nobody stated a rate, so there is no VAT figure
+            # to state — and a zero here is indistinguishable from a contract
+            # that really is zero-rated, which is a different fact entirely.
+            return None
         # Rounded once, here, rather than per line. Rounding each line and then
         # adding them drifts by a hundredth per line, which is exactly the kind of
         # difference an accountant notices and nobody can explain.
@@ -107,9 +127,17 @@ class ContractReadSerializer(serializers.ModelSerializer):
         )
         return f"{amount:.2f}"
 
-    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
-    def get_monthly_total(self, contract: Contract) -> str:
-        total = self._subtotal(contract) + Decimal(self.get_vat_amount(contract))
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True))
+    def get_monthly_total(self, contract: Contract) -> str | None:
+        vat = self.get_vat_amount(contract)
+        if vat is None:
+            # It refuses rather than computing the subtotal again under another
+            # name. A number here is short by the VAT and looks finished; that
+            # is the whole failure, and it only shows up at reconciliation
+            # months later, across every invoice raised from this contract.
+            # `monthly_subtotal` is still answered — that part is known.
+            return None
+        total = self._subtotal(contract) + Decimal(vat)
         return f"{total:.2f}"
 
     class Meta:
@@ -141,6 +169,9 @@ class ContractReadSerializer(serializers.ModelSerializer):
             # into floats, and a contract worth 4,750.00 renders as
             # 4,749.999999999999.
             "monthly_subtotal",
+            # `vat_amount` and `monthly_total` are null when no rate was ever
+            # stated. `vat_status` says which of the three cases that is.
+            "vat_status",
             "vat_amount",
             "monthly_total",
             "lines",
@@ -167,6 +198,23 @@ class ContractWriteSerializer(StrictMixin, serializers.ModelSerializer):
     scope = serializers.ChoiceField(choices=Scope.choices)
     pricing_type = serializers.ChoiceField(choices=PricingType.choices)
     billing_period = serializers.ChoiceField(choices=BillingPeriod.choices, required=False)
+    # Required on create, and never nullable. Elevator maintenance is
+    # VAT-liable in Turkey, so a blank rate is an omission far more often than
+    # a decision — and the decision has its own way of saying itself: 0.00.
+    # This is the one place a person leaves the field empty, so it is the one
+    # place worth closing.
+    #
+    # PATCH stays partial, so an existing contract can have its notes edited
+    # without restating its rate; `allow_null=False` means it cannot have the
+    # rate cleared either. Bounded here as well as in the database so the
+    # answer is a 400 on a named field rather than an integrity error.
+    vat_rate = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        allow_null=False,
+    )
 
     class Meta:
         model = Contract

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from core.models import CompanyOwnedModel
@@ -31,6 +34,22 @@ class BillingPeriod(models.TextChoices):
     ANNUAL = "annual", "Annual"
 
 
+class VatStatus(models.TextChoices):
+    """Which of three different things a contract's VAT position is.
+
+    Derived from `vat_rate`, never stored — the rate is the fact and this is
+    how the fact reads. It exists because the column alone cannot say which of
+    two very different situations it is in. A rate of `0.00` is a decision
+    somebody made; a rate of `NULL` is a field nobody filled in. Treating the
+    second as the first produces a total that is short by the VAT and looks
+    complete, and nobody re-reads a number that filled itself in.
+    """
+
+    APPLIED = "applied", "A rate is stated and charged"
+    ZERO_RATED = "zero_rated", "The rate is stated and it is zero"
+    UNSET = "unset", "No rate has been stated, so the VAT cannot be computed"
+
+
 class Contract(CompanyOwnedModel):
     """Attached to the customer, never to a building."""
 
@@ -51,7 +70,23 @@ class Contract(CompanyOwnedModel):
     # cannot reconcile.
     monthly_fee = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, default="TRY")
-    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # Nullable, and no default. Nullable because "terms not agreed yet" is a
+    # real state of a draft — `renew(copy_terms=False)` produces one on
+    # purpose — and a NOT NULL column would force those paths to invent a rate,
+    # which is the exact failure this field is guarded against. No default
+    # because a default *is* an invented rate: 20 is right for most Turkish
+    # maintenance work and wrong for the contracts that matter.
+    #
+    # The API requires it on create (ContractWriteSerializer), which is where a
+    # human leaves it blank. Everything below is what keeps the states the API
+    # can no longer produce from being read as a rate of zero.
+    vat_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+    )
     billing_period = models.CharField(
         max_length=20, choices=BillingPeriod.choices, default=BillingPeriod.MONTHLY
     )
@@ -98,10 +133,31 @@ class Contract(CompanyOwnedModel):
                 | models.Q(terminated_at__isnull=False),
                 name="contract_terminated_requires_date",
             ),
+            # A percentage, or nothing at all. `decimal(5, 2)` on its own
+            # accepts 999.99, so "2000" typed for 20% fits the column and
+            # invoices twenty times the agreed amount. Nothing in a percentage
+            # is negative either.
+            models.CheckConstraint(
+                condition=models.Q(vat_rate__isnull=True)
+                | models.Q(vat_rate__gte=0, vat_rate__lte=100),
+                name="contract_vat_rate_within_bounds",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.contract_number
+
+    @property
+    def vat_status(self) -> str:
+        """Whether the VAT position was stated, and what it says.
+
+        One rule, one place. The serializer reports it and anything that later
+        raises an invoice can refuse on it, rather than each caller reinventing
+        `vat_rate is None` and getting it subtly different.
+        """
+        if self.vat_rate is None:
+            return VatStatus.UNSET
+        return VatStatus.ZERO_RATED if self.vat_rate == 0 else VatStatus.APPLIED
 
 
 class ContractElevator(CompanyOwnedModel):

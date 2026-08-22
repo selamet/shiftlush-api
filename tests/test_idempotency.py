@@ -57,6 +57,7 @@ def payload(customer_id) -> dict:
         "end_date": str(TODAY + timedelta(days=365)),
         "pricing_type": PricingType.FLAT,
         "monthly_fee": "1000.00",
+        "vat_rate": "20.00",
     }
 
 

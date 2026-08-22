@@ -61,6 +61,7 @@ okunduğunda kod yanlış görünür, o yüzden gerekçesiyle birlikte buraya ya
 | `/ready` | Veritabanı + S3 (8.6) | Aynı; depo erişilemezse **503** | Bucket'a ulaşamayan sunucu, onay adımında patlayan yükleme URL'leri dağıtır. Kullanıcı bunu "dosyam kayboldu" diye okur |
 | Redis | Faz 1'de kurulmayacak (2.4, 18) | **Kurulu ve önbellek olarak kullanılıyor** | Reverse geocoding'in backend'den geçmesinin üç gerekçesinden biri sonucu önbelleğe almak (8.6). Süreç içi bellek önbelleği bunu karşılamıyor: her worker kendi kopyasını tutar, yani sağlayıcıya giden istek worker sayısıyla çarpılır — Nominatim'in saniyede bir istek sınırı için yanlış taraf. Redis zaten bağlıydı; bu, yeni bir bağımlılık değil var olanın ilk kullanıcısı. Yasağın gerisi (Celery, async view, WebSocket) yerinde duruyor |
 | Trigram benzerliği | 9.4 — eşik veriliyor, `pg_trgm` ima ediliyor | Aynı ölçü, **Python'da hesaplanıyor** | Yerel çalıştırma SQLite üzerinde: `TrigramSimilarity` orada yok, dolayısıyla eşleştirme yalnızca CI'ın koştuğu ikinci bir kod yoluna dönüşürdü — hem de en sessiz şekilde yanlış davranabilecek yerde. Kademe adayları zaten tek bir ilçenin mahallelerine indirdiği için kazanılacak indeks de yok. `pg_trgm` erişilebilir olduğunda test, Python sonucunu gerçek `similarity()` ile karşılaştırıyor |
+| `contract.vat_rate` | 5.11'de alan listesinde, zorunlu olduğu belirtilmemiş | **Oluşturmada zorunlu** (API), kolon NULL kalıyor; `0..100` `CheckConstraint`; türetilmiş `vat_status` alanı; oran yoksa `vat_amount` ve `monthly_total` `null` | Şartname alanı yalnızca listeliyordu, dolayısıyla kod da şartnameye uyuyordu — sorgulanan şey şartnamenin kendisiydi. Asansör bakımı KDV'ye tabidir; boş oran karar değil unutmadır, ve kararın kendi ifade biçimi zaten var: `0.00`. Zorunluluk yalnızca API'de, çünkü alanın boş bırakıldığı yer insanın doldurduğu formdur. Kolon NULL kalmalı: şartları henüz konuşulmamış taslak gerçek bir durum ve `renew(copy_terms=False)` bunu bilerek üretiyor — NOT NULL olsaydı o yollar oran uydurmak zorunda kalırdı, yani kaçınılmak istenen hatanın ta kendisi. `null` ile `0.00`'ın toplamda aynı görünmesi de kaldırıldı: eskisi KDV'siz ama tam görünen bir toplam üretiyordu, kimse kendiliğinden dolan bir sayıyı bir daha okumuyor ve fark aylar sonra, o sözleşmeden kesilen her faturada birden çıkıyordu |
 
 **Uygulama sırasında bulunan güvenlik açıkları**
 
@@ -683,7 +684,7 @@ En kritik tablo. Alanların çoğu opsiyoneldir ama **şemada bulunmalıdır** �
 | pricing_type | choices | `per_elevator`, `flat` |
 | monthly_fee | decimal(12,2) | |
 | currency | char(3), varsayılan `TRY` | |
-| vat_rate | decimal(5,2) | |
+| vat_rate | decimal(5,2), NULL | Oluşturmada **zorunlu** (API katmanında). Kolon NULL kalır: şartları henüz konuşulmamış taslak gerçek bir durumdur, `renew(copy_terms=False)` bilerek üretir. Oran yoksa `vat_amount` ve `monthly_total` yanıtta `null` döner — sıfır değil |
 | billing_period | choices | `monthly`, `quarterly`, `semiannual`, `annual` |
 | auto_renew | boolean | |
 | renewal_notice_days | smallint, varsayılan 60 | |
@@ -693,7 +694,9 @@ En kritik tablo. Alanların çoğu opsiyoneldir ama **şemada bulunmalıdır** �
 | signed_document | FK → attachment | |
 | notes | text | |
 
-**Kısıtlar:** `end_date > start_date`. `status = terminated` ise `terminated_at` zorunlu. İkisi de `CheckConstraint` olarak veritabanına yazılır.
+**Kısıtlar:** `end_date > start_date`. `status = terminated` ise `terminated_at` zorunlu. `vat_rate` ya NULL'dır ya da `0 ≤ vat_rate ≤ 100` aralığındadır — `decimal(5,2)` tek başına 999.99'u kabul eder, yani %20 için yazılan "2000" kolona sığar ve yirmi katı fatura üretir. Üçü de `CheckConstraint` olarak veritabanına yazılır.
+
+**KDV durumu.** Yanıtta türetilmiş `vat_status` alanı bulunur: `applied` (oran var ve uygulanıyor), `zero_rated` (oran açıkça sıfır), `unset` (oran hiç girilmemiş). `null` tek başına bu ikincisiyle üçüncüsünü ayırt ettiremez; ekranın tahmin yürütmemesi için sunucu hangi durumda olduğunu söyler. `unset` durumunda `monthly_subtotal` yine hesaplanır, `vat_amount` ve `monthly_total` `null` döner: KDV'siz ama tam görünen bir toplam, kimsenin bir daha okumadığı ve aylar sonra mutabakatta çıkan bir hatadır.
 
 ### 5.12 `contract_elevator`
 
