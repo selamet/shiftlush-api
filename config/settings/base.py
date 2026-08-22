@@ -354,10 +354,18 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.exceptions.exception_handler",
     # No default throttle: the rest of the API talks to our own database, and a
     # blanket rate limit on it would only punish a busy office. Scopes are for
-    # the endpoints that spend something we do not own — today that is the one
-    # calling a third-party geocoder, whose usage policy allows one request a
-    # second across the whole deployment.
-    "DEFAULT_THROTTLE_RATES": {"geocode": env("GEOCODING_RATE_LIMIT", default="60/min")},
+    # the endpoints that spend something we do not own — the geocoder, whose
+    # usage policy allows one request a second across the whole deployment — and
+    # for the one that answers a guess about a secret.
+    "DEFAULT_THROTTLE_RATES": {
+        "geocode": env("GEOCODING_RATE_LIMIT", default="60/min"),
+        # Keyed on the user, since the endpoint is authenticated. Changing a
+        # password takes one request and a mistyped current password takes two
+        # or three; ten an hour is generous for that and useless for a wordlist.
+        # The login lockout does not reach here — it counts failures against a
+        # sign-in, and this caller is already signed in.
+        "password_change": env("PASSWORD_CHANGE_RATE_LIMIT", default="10/hour"),
+    },
     "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
     "TEST_REQUEST_DEFAULT_FORMAT": "json",

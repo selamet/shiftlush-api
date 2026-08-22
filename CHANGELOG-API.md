@@ -153,6 +153,82 @@ carried as compatibility shims nobody will ever remove.
   reaches the client without a rule of its own having caught it first. It
   replaces the `INTERNAL_ERROR` such a case used to produce, which told clients
   to retry something that could never succeed.
+- **`POST /auth/password`** — change a password from inside a live session. Takes
+  `current_password` and `new_password`, and answers with the same
+  `TokenResponse` sign-in does. Backwards compatible: a new endpoint, no existing
+  one changes. No new error code — a wrong current password is `422
+  INVALID_CREDENTIALS`, deliberately distinct from the `400 VALIDATION_ERROR`
+  that a password failing the policy gives, because the screen puts those two
+  messages under different fields.
+
+  Until now the only route to a new password was the reset link, which is the
+  flow for somebody locked out and which ends every session — including the one
+  the person was using. The settings screen had to ship a reset-link button
+  behind a confirmation naming that consequence; it can stop.
+
+  **Sessions on a voluntary change: every other session ends, the caller's does
+  not.** §7.3 ends all sessions on a *reset*, and that is right there — a reset
+  is completed by whoever holds the mailbox, and nothing in it proves the person
+  at the keyboard is the one already signed in. A voluntary change is the
+  opposite on both counts: possession of the current password was just proved, so
+  the caller's session is the one known not to be the problem, and it is the
+  session in their hand. Every other session is exactly what somebody changing
+  their password wants gone.
+
+  A client should treat the response the way it treats a sign-in: replace the
+  access token it holds in memory. The refresh cookie is replaced too — the
+  caller's old refresh token is revoked with all the others, so a change also
+  retires it if it had leaked. The access token already issued stays valid until
+  it expires, at most fifteen minutes, which is inherent to a stateless JWT.
+
+  Rate limited per user, `429 THROTTLED` on exhaustion. Unthrottled the endpoint
+  answers guesses about a secret.
+
+- **`GET /auth/sessions`, `DELETE /auth/sessions/{id}`, `POST
+  /auth/sessions/revoke-others`** — see and end the sessions on your own account.
+  Somebody who signed in on a phone they no longer have had no way to end that
+  session, or to know it existed.
+
+  **One entry per device, not per refresh token.** Refresh rotation writes a new
+  row every fifteen minutes, so a listing built on rows would show one browser as
+  three thousand devices in a month. `id` names the session, is stable for its
+  whole life, and is what `DELETE` takes — a row id would often have rotated away
+  between the client rendering the list and the user clicking. Each entry carries
+  `signed_in_at` (when the sign-in happened, not the last rotation),
+  `last_used_at`, `expires_at`, `user_agent`, `ip_address` and `is_current`.
+
+  `is_current` is answered from the refresh cookie, which is why these live under
+  `/auth`: the cookie is path-scoped there, and the access token says who is
+  calling but never from which device. Exactly one entry is current, unless the
+  request carried no usable refresh cookie — then none is, and
+  `revoke-others` ends everything including the caller's own session, because
+  "all but this one" has no meaning when this one cannot be named.
+
+  **Scoped to the caller and to nobody else.** There is no parameter that widens
+  it and no role that does either: an owner administering the firm can deactivate
+  a leaver, which ends that person's sessions, but cannot read which devices a
+  colleague carries or pick one off. Another user's session id answers `404`, the
+  same as an id that never existed — a `403` would confirm the id names a real
+  session.
+
+  The list is a plain array, the one list endpoint in this API without the
+  pagination envelope. The collection is bounded by the number of devices one
+  person is signed in on.
+
+### Changed since the first draft
+
+- **A revoked refresh token no longer always revokes every session.** Replaying a
+  token that rotation superseded still does, unchanged: that chain has a live
+  successor, two parties hold tokens for one live session, and there is no way to
+  tell which is which. A token from a session somebody deliberately *ended* is
+  now simply refused with `422 TOKEN_INVALID`.
+
+  Without the distinction the sessions endpoints could not work: the evicted
+  phone refreshes fifteen minutes later, that read as a replay, and ending the
+  old device signed the user out of the laptop in their hand. Nothing is
+  weakened — a token from an ended session cannot be exchanged for anything, so
+  the blanket revocation it used to trigger was taking out sessions the replay
+  had never reached.
 
 ### Corrected
 

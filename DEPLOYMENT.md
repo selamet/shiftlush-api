@@ -76,6 +76,14 @@ commercial provider at `GEOCODING_URL`, not a larger rate limit. Responses are
 cached in Redis for a month; that cache is what keeps the current traffic inside
 the policy, and losing it costs quota rather than correctness.
 
+**`PASSWORD_CHANGE_RATE_LIMIT`** also has a working default (`10/hour`, per
+user). It bounds `POST /auth/password`, which reports whether a guess at the
+current password was right and is therefore a guessing oracle for anybody
+holding a stolen access token. The login lockout does not reach it — that counts
+failures against a sign-in, and this caller is already signed in. Throttle state
+lives in the default cache, so without `REDIS_URL` the count is per process and
+several workers multiply the effective limit by their number.
+
 ## Checking a deployment
 
 ```bash

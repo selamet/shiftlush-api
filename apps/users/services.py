@@ -12,6 +12,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.utils import timezone
@@ -64,8 +65,20 @@ class TokenPair:
     refresh_expires_at: object
 
 
-def issue_tokens(user: User, *, user_agent: str = "", ip: str | None = None) -> TokenPair:
-    """Mint an access token and open a refresh session."""
+def issue_tokens(
+    user: User,
+    *,
+    user_agent: str = "",
+    ip: str | None = None,
+    continues: RefreshSession | None = None,
+) -> TokenPair:
+    """Mint an access token and open a refresh session.
+
+    `continues` names the row this one replaces, when there is one. The new row
+    inherits its chain and its sign-in time, so a rotation extends the session a
+    person is already in rather than appearing to be a second device. Left None,
+    this is a sign-in and a new chain starts.
+    """
     access = AccessToken.for_user(user)
     access.set_exp(lifetime=ACCESS_TOKEN_LIFETIME)
     # The company travels in the token so the tenant middleware does not have to
@@ -77,6 +90,8 @@ def issue_tokens(user: User, *, user_agent: str = "", ip: str | None = None) -> 
     expires_at = timezone.now() + REFRESH_TOKEN_LIFETIME
     RefreshSession.objects.create(
         user=user,
+        chain_id=continues.chain_id if continues else uuid4(),
+        signed_in_at=continues.signed_in_at if continues else timezone.now(),
         token_hash=_hash(refresh),
         expires_at=expires_at,
         user_agent=user_agent[:255],
@@ -173,6 +188,20 @@ def rotate_refresh_token(
     for that user is revoked and both are forced to sign in again. Logging the
     victim out is the cheap outcome; leaving the attacker with a live session is
     not.
+
+    "Already revoked" alone is no longer enough to call that, now that a person
+    can end a session deliberately. The device that was ended keeps its token
+    until it next tries to refresh, and that attempt is expected rather than
+    suspicious — treating it as a replay would mean ending the old phone signs
+    the user out of the laptop they are holding within fifteen minutes, which is
+    the opposite of what they asked for.
+
+    What separates the two is whether the chain the token came from still has a
+    live successor. A rotated token has one, and that successor is the live
+    credential a replay is trying to run alongside — so the alarm fires and
+    protects it. A token from a chain that was ended has none: there is nothing
+    left in it to protect, the token cannot be exchanged for anything, and a
+    blanket revocation would only take out sessions the replay never reached.
     """
     token_hash = _hash(refresh_token)
     with system_context():
@@ -182,15 +211,20 @@ def rotate_refresh_token(
             raise BusinessRuleError(ErrorCode.TOKEN_INVALID)
 
         if session.revoked_at is not None:
-            # The revocation gets its own transaction, which has to commit
-            # before the error is raised. Wrapping the whole function in
-            # atomic() would roll the revocation back on the way out — the
-            # sessions would stay open and the defence would do nothing, while
-            # every test that only checked the status code still passed.
-            with transaction.atomic():
-                RefreshSession.objects.filter(
-                    user_id=session.user_id, revoked_at__isnull=True
-                ).update(revoked_at=timezone.now())
+            superseded = RefreshSession.objects.filter(
+                user_id=session.user_id, chain_id=session.chain_id, revoked_at__isnull=True
+            ).exists()
+            if superseded:
+                # The revocation gets its own transaction, which has to commit
+                # before the error is raised. Wrapping the whole function in
+                # atomic() would roll the revocation back on the way out — the
+                # sessions would stay open and the defence would do nothing,
+                # while every test that only checked the status code still
+                # passed.
+                with transaction.atomic():
+                    RefreshSession.objects.filter(
+                        user_id=session.user_id, revoked_at__isnull=True
+                    ).update(revoked_at=timezone.now())
             raise BusinessRuleError(ErrorCode.TOKEN_INVALID)
 
         if session.expires_at <= timezone.now():
@@ -205,7 +239,10 @@ def rotate_refresh_token(
         with transaction.atomic():
             session.revoked_at = timezone.now()
             session.save(update_fields=["revoked_at"])
-            return issue_tokens(user, user_agent=user_agent, ip=ip)
+            # Same chain: this is the same person on the same device, still
+            # inside the session they started. A new chain here would make the
+            # session list grow a row every fifteen minutes.
+            return issue_tokens(user, user_agent=user_agent, ip=ip, continues=session)
 
 
 def revoke_refresh_token(refresh_token: str) -> None:
@@ -221,6 +258,132 @@ def revoke_all_sessions(user: User) -> None:
         RefreshSession.objects.filter(user=user, revoked_at__isnull=True).update(
             revoked_at=timezone.now()
         )
+
+
+# --------------------------------------------------------------------------
+# Sessions a person can see and end
+# --------------------------------------------------------------------------
+
+
+def session_for_refresh_token(user: User, refresh_token: str | None) -> RefreshSession | None:
+    """The row the caller's own refresh cookie points at, if any.
+
+    Scoped to the user on purpose. A cookie belonging to somebody else must not
+    be able to mark one of *their* chains as "yours", and filtering here means
+    that is true by construction rather than by a comparison somewhere later.
+    """
+    if not refresh_token:
+        return None
+    with system_context():
+        return RefreshSession.objects.filter(user=user, token_hash=_hash(refresh_token)).first()
+
+
+def live_sessions(user: User) -> list[RefreshSession]:
+    """The devices this account is currently signed in on — one entry each.
+
+    Rotation means the table holds a row per refresh, not per device. Only one
+    row per chain is ever live at a time (rotation revokes the row it replaces
+    in the same transaction), so filtering to the live ones already collapses a
+    month of rotations into a single entry.
+
+    The de-duplication below does not trust that. It is one dictionary over a
+    handful of rows, and it makes "one row per device" a property of this
+    function rather than of an invariant maintained three functions away —
+    where a future bug would show up as a settings screen listing the same
+    phone ninety times.
+    """
+    newest_per_chain: dict[UUID, RefreshSession] = {}
+    with system_context():
+        rows = RefreshSession.objects.filter(
+            user=user, revoked_at__isnull=True, expires_at__gt=timezone.now()
+        ).order_by("-created_at")
+        for row in rows:
+            newest_per_chain.setdefault(row.chain_id, row)
+    return list(newest_per_chain.values())
+
+
+def revoke_session(*, user: User, chain_id: UUID) -> bool:
+    """End one session, whichever rotation of it is currently live.
+
+    Returns False when the caller's account has no live session with that id —
+    it belongs to somebody else, or it already ended. The two look identical
+    from outside, which is the point: a distinguishable answer would let one
+    user confirm that a session id belongs to another.
+    """
+    with system_context():
+        revoked = RefreshSession.objects.filter(
+            user=user, chain_id=chain_id, revoked_at__isnull=True
+        ).update(revoked_at=timezone.now())
+    return revoked > 0
+
+
+def revoke_other_sessions(*, user: User, keep: RefreshSession | None) -> int:
+    """End every session except the one the caller is using.
+
+    `keep` is None when the request arrived without a usable refresh cookie, and
+    then every session goes — including whatever the caller is on. "All but this
+    one" has no meaning when this one cannot be named, and of the two ways to
+    guess, leaving a session alive is the one that fails the request the user
+    actually made. Signing them out here costs a sign-in; the other way leaves
+    the device they were trying to evict still signed in.
+    """
+    with system_context():
+        sessions = RefreshSession.objects.filter(user=user, revoked_at__isnull=True)
+        if keep is not None:
+            sessions = sessions.exclude(chain_id=keep.chain_id)
+        return sessions.update(revoked_at=timezone.now())
+
+
+@transaction.atomic
+def change_password(
+    *,
+    user: User,
+    current_password: str,
+    new_password: str,
+    current_session: RefreshSession | None = None,
+    user_agent: str = "",
+    ip: str | None = None,
+) -> TokenPair:
+    """Change a password from inside a live session, and hand back a new pair.
+
+    **Other sessions end; the caller's does not.** Spec 7.3 ends every session
+    on a *reset*, and that is right there: a reset is completed by whoever holds
+    the mailbox, and the usual reason to want one is that somebody else may hold
+    the account. Nothing in that flow proves the person at the keyboard is the
+    one who was already signed in.
+
+    A voluntary change is the opposite case on both counts. The caller proved
+    possession of the current password a line ago, so their own session is the
+    one session known not to be the problem — and it is the session in their
+    hand. Ending it teaches people that changing a password is disruptive, which
+    is how a password stops getting changed. Every *other* session is exactly
+    what someone changing their password wants gone, and leaving them alive
+    would make the change decorative: the phone in the taxi keeps refreshing on
+    a credential the new password was supposed to retire.
+
+    So: revoke everything, then re-open the caller's session on the same chain.
+    Their old refresh token dies with the rest — if it had leaked, the change
+    retires it too — and the replacement continues the same session in the list
+    rather than appearing as a new device. The access token they are holding
+    stays valid until it expires, at most fifteen minutes; that is inherent to a
+    stateless JWT and it is their own token, not an attacker's.
+    """
+    if not user.check_password(current_password):
+        # INVALID_CREDENTIALS, not a field error. "The password you typed is
+        # wrong" and "the password you chose is unacceptable" are different
+        # answers and the screen has to say different things.
+        raise BusinessRuleError(ErrorCode.INVALID_CREDENTIALS)
+
+    user.set_password(new_password)
+    # A password one knows well enough to change is not a password one is locked
+    # out of. Clearing these here means a lockout in progress does not outlive
+    # the credential that caused it.
+    user.failed_login_count = 0
+    user.locked_until = None
+    user.save(update_fields=["password", "failed_login_count", "locked_until", "updated_at"])
+
+    revoke_all_sessions(user)
+    return issue_tokens(user, user_agent=user_agent, ip=ip, continues=current_session)
 
 
 # --------------------------------------------------------------------------
