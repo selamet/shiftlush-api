@@ -50,6 +50,25 @@ carried as compatibility shims nobody will ever remove.
   `core/error_codes.py`. Every code the API can return is in the contract, and
   the frontend's CI fails if one of them has no Turkish message.
 
+### Corrected
+
+- **Pagination envelope.** The contract declared DRF's default
+  `{count, next, previous, results}` on every list endpoint. The server has
+  always sent `{results, pagination: {page, page_size, total, total_pages}}` —
+  `StandardPagination` overrode `get_paginated_response` but not
+  `get_paginated_response_schema`, and the generator reads the second.
+
+  Not a behaviour change: no server response changes shape, and no client can
+  have depended on the documented fields because they were never sent. It is
+  breaking against the *document*, which is why it is recorded here rather than
+  in the added list. A client generated from the old contract read `count` as
+  undefined and rendered a row count of zero — the types compiled and the build
+  passed, which is why it survived this long.
+
+  Regenerate the client. There is now a test that compares a real list response
+  against the schema, so this class of drift fails the build rather than
+  reaching a screen.
+
 ### Notes for clients
 
 - Every response body is the resource itself. There is no success envelope: the
