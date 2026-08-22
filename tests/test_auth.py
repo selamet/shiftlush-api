@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 from django.urls import reverse
 from django.utils import timezone
@@ -395,3 +397,66 @@ class TestInfrastructureEndpointsAreReachableWithoutTls:
 
         # The exemption is two paths, not a hole in the policy.
         assert client.get("/api/v1/customers").status_code == 301
+
+
+class TestMailMustBeEncrypted:
+    """A misconfigured EMAIL_URL leaks the SMTP password, it does not just fail.
+
+    django-environ takes TLS from the scheme and ignores `?tls=True`, which is
+    the form most documentation suggests. Without TLS, SMTP AUTH sends the
+    provider's API key across the internet in clear text. Resend happens to
+    refuse the unencrypted session, so it surfaced at the first send; a provider
+    that accepted it would have leaked the credential on every message.
+
+    Loads the real production settings module, so the test fails if the guard is
+    removed rather than asserting a copy of it.
+    """
+
+    REQUIRED: ClassVar[dict[str, str]] = {
+        "DJANGO_SECRET_KEY": "x",
+        "DJANGO_ALLOWED_HOSTS": "example.com",
+        "DATABASE_URL": "postgres://u:p@localhost/db",
+        "CORS_ALLOWED_ORIGINS": "https://example.com",
+        "CSRF_TRUSTED_ORIGINS": "https://example.com",
+        "FIELD_ENCRYPTION_KEY": "x",
+        "FRONTEND_URL": "https://example.com",
+        "DEFAULT_FROM_EMAIL": "a@example.com",
+        "R2_ENDPOINT_URL": "https://example.com",
+        "R2_ACCESS_KEY_ID": "x",
+        "R2_SECRET_ACCESS_KEY": "x",
+        "R2_BUCKET_NAME": "x",
+    }
+
+    def _load(self, monkeypatch, email_url: str):
+        import importlib
+
+        for key, value in self.REQUIRED.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.setenv("EMAIL_URL", email_url)
+        return importlib.reload(importlib.import_module("config.settings.production"))
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "smtp://resend:key@smtp.example.com:587",
+            # The form most documentation suggests, and the one that looks
+            # obviously right. It is silently ignored.
+            "smtp://resend:key@smtp.example.com:587/?tls=True",
+        ],
+    )
+    def test_it_refuses_to_boot(self, monkeypatch, url):
+        from django.core.exceptions import ImproperlyConfigured
+
+        with pytest.raises(ImproperlyConfigured, match="TLS"):
+            self._load(monkeypatch, url)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "smtp+tls://resend:key@smtp.example.com:587",
+            "smtp+ssl://resend:key@smtp.example.com:465",
+        ],
+    )
+    def test_the_documented_schemes_boot(self, monkeypatch, url):
+        settings_module = self._load(monkeypatch, url)
+        assert settings_module.EMAIL_USE_TLS or settings_module.EMAIL_USE_SSL

@@ -5,6 +5,8 @@ process at boot, not silently fall back to something insecure that nobody
 notices until it is exploited.
 """
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *
 from .base import env
 
@@ -43,6 +45,24 @@ STORAGE_BACKENDS = {
 # deployment. No default: it fails at boot rather than at the first invitation.
 EMAIL_CONFIG = env.email_url("EMAIL_URL")
 vars().update(EMAIL_CONFIG)
+
+# django-environ selects TLS from the *scheme* — `smtp+tls://` — and silently
+# ignores a `?tls=True` query parameter, which is the form most documentation
+# suggests and the one that looks obviously correct. Getting it wrong does not
+# merely break mail: SMTP AUTH would send the provider's API key across the
+# internet in clear text. Resend refuses the unencrypted session, so the failure
+# surfaced at the first send; a provider that accepted it would have leaked the
+# credential on every message.
+#
+# Refused at boot rather than at the first invitation, because the first
+# invitation is somebody's real account.
+if not (EMAIL_CONFIG.get("EMAIL_USE_TLS") or EMAIL_CONFIG.get("EMAIL_USE_SSL")):
+    raise ImproperlyConfigured(
+        "EMAIL_URL must enable TLS. Use the scheme smtp+tls:// (STARTTLS, port "
+        "587) or smtp+ssl:// (implicit TLS, port 465). A `?tls=True` query "
+        "parameter is ignored, and without encryption the SMTP password is "
+        "sent in clear text."
+    )
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 FRONTEND_URL = env("FRONTEND_URL").rstrip("/")
 
