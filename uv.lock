@@ -161,6 +161,15 @@ wheels = [
 ]
 
 [[package]]
+name = "certifi"
+version = "2026.7.22"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+]
+
+[[package]]
 name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -888,6 +897,24 @@ wheels = [
 ]
 
 [[package]]
+name = "sentry-sdk"
+version = "2.68.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/94/23b7dd072acb9628907bd3f4fbf61794a7b12a9db8f33c1276f70ae5ac92/sentry_sdk-2.68.0.tar.gz", hash = "sha256:648c58e9887311a03470a41539e24bdbbf64a30ca4f5336f7e3dcc87276400b3", size = 1008854, upload-time = "2026-08-13T09:06:21.268Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/9b/e2421d08956d0bc4691d995393d835e563886bff499d8fb10fdefae85a8d/sentry_sdk-2.68.0-py3-none-any.whl", hash = "sha256:538e56c2d03679d42f7c0cb5f1af73a7a510b00abc7e296c13ac49b107b713a4", size = 518670, upload-time = "2026-08-13T09:06:19.735Z" },
+]
+
+[package.optional-dependencies]
+django = [
+    { name = "django" },
+]
+
+[[package]]
 name = "shiftlush-api"
 version = "0.1.0"
 source = { virtual = "." }
@@ -906,6 +933,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "qrcode", extra = ["pil"] },
     { name = "redis" },
+    { name = "sentry-sdk", extra = ["django"] },
     { name = "uuid-utils" },
     { name = "whitenoise" },
 ]
@@ -942,6 +970,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "qrcode", extras = ["pil"], specifier = ">=8.2" },
     { name = "redis", specifier = ">=5.2" },
+    { name = "sentry-sdk", extras = ["django"], specifier = ">=2.20" },
     { name = "uuid-utils", specifier = ">=0.11" },
     { name = "whitenoise", specifier = ">=6.8" },
 ]

@@ -282,6 +282,20 @@ ATTACHMENT_PURGE_AFTER_DAYS = 30
 #: lockout carry more of the weight than the length does.
 MIN_PASSWORD_LENGTH = 6
 
+# Error reporting. Unset here on purpose: local development and the test suite
+# report nothing, because a developer's mistakes are not production incidents
+# and a test run that reported its own deliberate failures would bury the real
+# ones. See core/observability.py for what is and is not sent.
+SENTRY_DSN = env("SENTRY_DSN", default="")
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="development")
+#: Stamped on every event so a regression can be traced to the deploy that
+#: introduced it. The deploy script passes the commit.
+SENTRY_RELEASE = env("SENTRY_RELEASE", default="")
+#: Performance tracing off by default. It samples ordinary requests rather than
+#: errors, so it costs quota continuously and answers a question nobody has
+#: asked yet.
+SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0)
+
 AUTH_PASSWORD_VALIDATORS = [
     # Still no composition requirement — an upper/lower/digit/symbol rule pushes
     # people towards Parola1! and buys nothing.

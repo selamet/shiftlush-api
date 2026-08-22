@@ -31,6 +31,7 @@ dependencies = [
     # a handful of CSS files would add a container to every deployment for a
     # problem this solves in one middleware.
     "whitenoise>=6.8",
+    "sentry-sdk[django]>=2.20",
 ]
 
 [dependency-groups]

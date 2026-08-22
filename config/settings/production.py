@@ -7,6 +7,8 @@ notices until it is exploited.
 
 from django.core.exceptions import ImproperlyConfigured
 
+from core.observability import init_sentry
+
 from .base import *
 from .base import env
 
@@ -115,3 +117,13 @@ REFERRER_POLICY = "same-origin"
 # The schema names every field and business rule in the system, so the docs
 # endpoint is closed here and served only behind an IP restriction.
 SPECTACULAR_SETTINGS = {**SPECTACULAR_SETTINGS, "SERVE_PUBLIC": False}
+
+# Reporting starts here rather than in `base`, so that importing the settings in
+# a test or a shell never opens a connection to a third party.
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="production")
+init_sentry(
+    dsn=SENTRY_DSN,
+    environment=SENTRY_ENVIRONMENT,
+    release=SENTRY_RELEASE,
+    traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+)
