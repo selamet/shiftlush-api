@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.users.api.v1 import views
+from apps.users.api.v1 import account_views, views
 
 app_name = "auth"
 
@@ -18,4 +18,19 @@ urlpatterns = [
     path("email/verify", views.EmailVerifyView.as_view(), name="email-verify"),
     path("email/resend", views.EmailVerifyResendView.as_view(), name="email-resend"),
     path("me", views.MeView.as_view(), name="me"),
+    # Under /auth rather than /account: the refresh cookie is path-scoped to
+    # /api/v1/auth, and these three need it to know which session is the
+    # caller's own. See account_views._current_session.
+    path("password", account_views.PasswordChangeView.as_view(), name="password-change"),
+    path("sessions", account_views.SessionListView.as_view(), name="sessions"),
+    path(
+        "sessions/revoke-others",
+        account_views.SessionRevokeOthersView.as_view(),
+        name="sessions-revoke-others",
+    ),
+    path(
+        "sessions/<uuid:session_id>",
+        account_views.SessionRevokeView.as_view(),
+        name="session-revoke",
+    ),
 ]

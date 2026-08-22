@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 from core.fields import EncryptedCharField
 from core.models import CompanyOwnedModel, SoftDeleteModel
@@ -184,10 +186,23 @@ class RefreshSession(models.Model):
 
     Not soft-deleted: `revoked_at` already carries that meaning, and an
     is_deleted column would give the same fact two sources of truth.
+
+    A row is *not* a session in the sense a person means by the word. Rotation
+    writes a new row every time the access token is refreshed, so one phone left
+    signed in for a month is roughly three thousand rows. `chain_id` is what a
+    person calls a session: it is minted at sign-in and carried forward by every
+    rotation, so all the rows one device produced share it. `signed_in_at`
+    travels the same way and records when the chain began, which `created_at`
+    cannot — on every row after the first, `created_at` is the last rotation.
     """
 
     id = models.BigAutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="refresh_sessions")
+    # Not unique: sharing it is the point. It is what the API exposes as the
+    # session id, so the id a client sees survives the rotation that happens
+    # while it is looking at the screen.
+    chain_id = models.UUIDField(default=uuid4, editable=False)
+    signed_in_at = models.DateTimeField(default=timezone.now)
     token_hash = models.CharField(max_length=255, unique=True)
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
@@ -198,7 +213,12 @@ class RefreshSession(models.Model):
     class Meta:
         db_table = "refresh_session"
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["user", "revoked_at"])]
+        indexes = [
+            models.Index(fields=["user", "revoked_at"]),
+            # Revoking a session means revoking every row in its chain, and the
+            # listing reads the live row of each chain. Both are user+chain.
+            models.Index(fields=["user", "chain_id"]),
+        ]
 
     def __str__(self) -> str:
         return f"session {self.pk} for {self.user_id}"
