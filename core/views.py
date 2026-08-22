@@ -8,6 +8,7 @@ take the health check with it.
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import connection
 from django.http import HttpRequest, JsonResponse
 
@@ -51,6 +52,19 @@ def ready(request: HttpRequest) -> JsonResponse:
     else:
         checks["storage"] = "unreachable"
         healthy = False
+
+    # Reported, but never fatal. Nothing depends on the cache yet, so taking a
+    # working instance out of rotation over it would be the wrong trade. It is
+    # still worth answering, because the two ways this connection breaks are
+    # both silent: the shared Redis refuses any key outside the `shiftlush:`
+    # namespace, and the credential belongs to a server several other
+    # applications also use. Without this line the first symptom would be a
+    # NOPERM from whichever feature starts using the cache first.
+    try:
+        cache.set("ready-probe", "ok", timeout=10)
+        checks["cache"] = "ok" if cache.get("ready-probe") == "ok" else "error: read-back"
+    except Exception as exc:
+        checks["cache"] = f"error: {exc.__class__.__name__}"
 
     return JsonResponse(
         {"status": "ready" if healthy else "not_ready", "checks": checks},

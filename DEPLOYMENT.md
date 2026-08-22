@@ -56,6 +56,8 @@ it is exploited. `.env` on the server is the only place they exist.
 | `DJANGO_SECRET_KEY` | |
 | `DJANGO_ALLOWED_HOSTS` | `shiftlush-api.selamet.dev` |
 | `DATABASE_URL` | `sslmode=verify-full`; the image points libpq at the system CA bundle |
+| `REDIS_URL` | the cache, `rediss://` on port 6379. Keys are namespaced with the `shiftlush:` prefix — the shared server's ACL refuses anything outside it |
+| `REDIS_QUEUE_URL` | the queue broker, `rediss://` on port 6380 — a second instance because it never evicts. The only optional variable here: nothing reads it until background work exists |
 | `CORS_ALLOWED_ORIGINS` | the frontend origin |
 | `CSRF_TRUSTED_ORIGINS` | the same origin — Django checks it separately from CORS |
 | `FIELD_ENCRYPTION_KEY` | **Rotating this without re-encrypting makes every stored national ID unreadable.** |
@@ -74,6 +76,11 @@ curl https://shiftlush-api.selamet.dev/ready    # readiness: can it serve
 when a dependency is down gets the container killed and restarted, which fixes
 nothing and removes the instance that could still have served cached reads.
 `/ready` is the one that checks, and it is what a load balancer should ask.
+
+It reports the cache too, but never fails on it: nothing depends on Redis
+yet, so a broken cache is worth seeing and not worth pulling a working
+instance out of rotation for. `"cache": "ok"` in the response is how you
+confirm the Redis credential and key prefix are right after a deploy.
 
 ## Rolling back
 

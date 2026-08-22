@@ -14,6 +14,10 @@ dependencies = [
     "argon2-cffi>=25.1",
     "psycopg[binary]>=3.2",
     "django-environ>=0.12",
+    # Django's own cache backend talks to Redis through redis-py. Production
+    # only in practice — locally the cache is in memory — but a runtime
+    # dependency for the same reason psycopg is one.
+    "redis>=5.2",
     # uuid7 is not in the standard library; uuid4 would fragment the B-tree
     # index on tables that grow to hundreds of thousands of rows.
     "uuid-utils>=0.11",
