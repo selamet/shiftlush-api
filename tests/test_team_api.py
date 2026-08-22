@@ -39,6 +39,11 @@ def firm(db):
         email="owner@example.com",
         password=PASSWORD,
     )
+    # Verified, because these tests are about invitations rather than about the
+    # gate in front of them — TestVerificationGatesInvitations covers that.
+    with system_context():
+        owner.is_email_verified = True
+        owner.save(update_fields=["is_email_verified"])
     django_mail.outbox.clear()
     return company, owner
 
@@ -431,3 +436,123 @@ class TestPasswordResetMail:
         # Confirming which addresses exist would make the form an account
         # enumeration tool; sending no mail is the other half of that.
         assert django_mail.outbox == []
+
+
+class TestVerificationGatesInvitations:
+    """Specification 7.1: data entry is allowed before verification, inviting is not.
+
+    An unverified account may have been opened with an address its owner does
+    not control. Entering data harms nobody; sending an invitation puts a real
+    message in front of a real person, which is a different kind of act.
+    """
+
+    def test_registration_sends_a_verification_mail(self, db, deliver):
+        with deliver():
+            register_company(
+                legal_name="Fresh Ltd",
+                display_name="Fresh",
+                first_name="F",
+                last_name="Resh",
+                email="fresh@example.com",
+                password=PASSWORD,
+            )
+
+        assert len(django_mail.outbox) == 1
+        assert django_mail.outbox[0].to == ["fresh@example.com"]
+        assert "/verify-email/" in django_mail.outbox[0].body
+
+    def test_an_unverified_owner_cannot_invite(self, db):
+        _, owner = register_company(
+            legal_name="Unverified Ltd",
+            display_name="Unverified",
+            first_name="U",
+            last_name="Nverified",
+            email="unverified@example.com",
+            password=PASSWORD,
+        )
+        assert not owner.is_email_verified
+
+        response = api_for(owner).post(reverse("invitation-list"), INVITEE, format="json")
+
+        assert response.status_code == 422
+        assert response.data["error"]["code"] == "EMAIL_NOT_VERIFIED"
+
+    def test_but_they_can_still_enter_data(self, db):
+        _, owner = register_company(
+            legal_name="Unverified Ltd",
+            display_name="Unverified",
+            first_name="U",
+            last_name="Nverified",
+            email="unverified@example.com",
+            password=PASSWORD,
+        )
+
+        response = api_for(owner).post(
+            reverse("customer-list"),
+            {"type": CustomerType.CORPORATE, "legal_name": "Allowed"},
+            format="json",
+        )
+        # The restriction is on inviting, not on using the product.
+        assert response.status_code == 201
+
+    def test_verifying_the_address_opens_it(self, db, deliver):
+        with deliver():
+            _, owner = register_company(
+                legal_name="Verifying Ltd",
+                display_name="Verifying",
+                first_name="V",
+                last_name="Erify",
+                email="verify@example.com",
+                password=PASSWORD,
+            )
+        token = link_token(0, "verify-email")
+
+        assert APIClient().post(reverse("auth:email-verify"), {"token": token}).status_code == 204
+
+        owner.refresh_from_db()
+        assert owner.is_email_verified
+        assert (
+            api_for(owner).post(reverse("invitation-list"), INVITEE, format="json").status_code
+            == 201
+        )
+
+    def test_the_link_works_once(self, db, deliver):
+        with deliver():
+            register_company(
+                legal_name="Once Ltd",
+                display_name="Once",
+                first_name="O",
+                last_name="Nce",
+                email="once@example.com",
+                password=PASSWORD,
+            )
+        token = link_token(0, "verify-email")
+        client = APIClient()
+
+        client.post(reverse("auth:email-verify"), {"token": token})
+        again = client.post(reverse("auth:email-verify"), {"token": token})
+
+        # A verification link is a credential. Reusable ones stay valid in an
+        # inbox forever.
+        assert again.status_code == 422
+
+    def test_resending_invalidates_the_previous_link(self, db, deliver):
+        with deliver():
+            _, owner = register_company(
+                legal_name="Resend Ltd",
+                display_name="Resend",
+                first_name="R",
+                last_name="Esend",
+                email="resend@example.com",
+                password=PASSWORD,
+            )
+        first = link_token(0, "verify-email")
+
+        with deliver():
+            api_for(owner).post(reverse("auth:email-resend"))
+        second = link_token(1, "verify-email")
+
+        assert first != second
+        client = APIClient()
+        assert client.post(reverse("auth:email-verify"), {"token": first}).status_code == 422
+        assert client.post(reverse("auth:email-verify"), {"token": second}).status_code == 204

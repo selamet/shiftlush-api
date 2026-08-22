@@ -187,6 +187,28 @@ class InvitationAcceptView(APIView):
         return response
 
 
+class EmailVerifyResendView(APIView):
+    """Send the verification link again.
+
+    The only way out for somebody who mistyped their address at registration or
+    lost the message. Answers the same way whether or not there was anything to
+    send: an authenticated caller asking about their own address learns nothing
+    either way, and a verified account should not be told it is verified by a
+    different status code.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={204: None})
+    def post(self, request: Request) -> Response:
+        if not request.user.is_email_verified:
+            # Issuing a new token invalidates the previous one, which is what
+            # should happen: two live links for one address is one more than
+            # anybody needs.
+            services.request_email_verification(request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -115,6 +115,11 @@ def register_company(
             last_name=last_name,
             role=Role.OWNER,
         )
+
+    # After the transaction, not inside it. A mail server that is briefly
+    # unreachable must not roll back a firm's registration — the account exists
+    # either way, and the verification can be requested again.
+    request_email_verification(owner)
     return company, owner
 
 
