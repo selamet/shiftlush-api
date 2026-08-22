@@ -50,6 +50,48 @@ carried as compatibility shims nobody will ever remove.
   `core/error_codes.py`. Every code the API can return is in the contract, and
   the frontend's CI fails if one of them has no Turkish message.
 
+### Changed
+
+- **`POST /customers` now requires the identifier that matches the type.** An
+  `individual` needs `national_id` and may not carry `tax_number` or
+  `tax_office`; the four organisation types need `tax_number` and may not carry
+  `national_id`. Refused with 400 and a per-field code —
+  `FIELD_REQUIRED_FOR_CUSTOMER_TYPE` or `FIELD_NOT_VALID_FOR_CUSTOMER_TYPE`.
+
+  Breaking: a field that was optional is now required. Made in place because v1
+  is unreleased. The schema still lists both as optional, because OpenAPI cannot
+  express "required depending on the value of another field" without splitting
+  the model into a union — so a client that omits one gets a 400 rather than a
+  type error, and the form has to show it.
+
+  `PATCH` is deliberately narrower: the requirement is checked when the request
+  carries the field or changes the type, never otherwise. A customer created
+  before this change can still have its notes edited; it cannot have its
+  identifier cleared, and it cannot be moved to a type it does not fit.
+
+- **A tax number or national ID is unique within a company.** A second customer
+  with one already in use is refused with 409 `DUPLICATE_TAX_NUMBER` or
+  `DUPLICATE_NATIONAL_ID`. Soft-deleted customers release theirs, and two
+  different companies may of course hold the same one.
+
+- **`?search=` on `/customers` folds Turkish.** `sisli`, `şişli` and `ŞİŞLİ` all
+  find `Şişli Site Yönetimi`; before, none of them did. No request or response
+  field changes — the same query now returns the rows it always should have.
+
+- **Marking a second contact primary succeeds** and moves the flag off the
+  previous one, rather than answering 500. No client change is needed; a client
+  that worked around it by clearing the old flag first can stop.
+
+### Added since the first draft
+
+- **`GET, POST /customers/{id}/contacts`** — specification §8.6, previously
+  routed only as the flat `/customer-contacts`. The customer comes from the
+  path; naming it in the body is a 400. `Idempotency-Key` is honoured.
+- **`CONSTRAINT_VIOLATION`**, 409. A last resort for a database constraint that
+  reaches the client without a rule of its own having caught it first. It
+  replaces the `INTERNAL_ERROR` such a case used to produce, which told clients
+  to retry something that could never succeed.
+
 ### Corrected
 
 - **Pagination envelope.** The contract declared DRF's default

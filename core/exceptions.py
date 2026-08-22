@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.db import IntegrityError
 from django.db.models import ProtectedError
 from django.http import Http404
 from rest_framework import exceptions, status
@@ -38,11 +39,27 @@ class BusinessRuleError(exceptions.APIException):
         super().__init__(detail or code.label, code=code.value)
 
 
-class RecordInUse(exceptions.APIException):
+class Conflict(exceptions.APIException):
+    """The request cannot be applied to the world as it currently stands."""
+
     status_code = status.HTTP_409_CONFLICT
 
-    def __init__(self, code: ErrorCode = ErrorCode.RECORD_IN_USE) -> None:
+    def __init__(self, code: ErrorCode) -> None:
         super().__init__(code.label, code=code.value)
+
+
+class RecordInUse(Conflict):
+    def __init__(self, code: ErrorCode = ErrorCode.RECORD_IN_USE) -> None:
+        super().__init__(code)
+
+
+class DuplicateRecord(Conflict):
+    """A business key this company already uses.
+
+    409 rather than 400: the payload is well formed and would have been accepted
+    a moment ago. What is wrong is the state of the world, and the client's
+    remedy is to open the existing record rather than to fix the form.
+    """
 
 
 class ServiceUnavailable(exceptions.APIException):
@@ -95,6 +112,15 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
     # message has to tell the user what to do, so the code is specific.
     if isinstance(exc, ProtectedError):
         exc = RecordInUse()
+    elif isinstance(exc, IntegrityError):
+        # A last resort, not the intended path. Every constraint the API can
+        # provoke is also checked above it, where the answer can name the field
+        # — but a constraint reaching here used to surface as INTERNAL_ERROR,
+        # which tells the client to retry something that will never succeed. The
+        # detail stays out of the response and goes to the log: constraint names
+        # describe the schema, and the schema is not the client's business.
+        logger.warning("Constraint violation", extra={"request_id": request_id}, exc_info=exc)
+        exc = Conflict(ErrorCode.CONSTRAINT_VIOLATION)
     elif isinstance(exc, DjangoPermissionDenied):
         exc = exceptions.PermissionDenied()
 

@@ -23,6 +23,7 @@ class ErrorCode(models.TextChoices):
     INTERNAL_ERROR = "INTERNAL_ERROR", "Unexpected server error"
     THROTTLED = "THROTTLED", "Rate limit exceeded"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE", "A required service is not available"
+    CONSTRAINT_VIOLATION = "CONSTRAINT_VIOLATION", "The request violates a database constraint"
     API_VERSION_SUNSET = "API_VERSION_SUNSET", "This API version is no longer served"
 
     # Field level -----------------------------------------------------------
@@ -48,6 +49,14 @@ class ErrorCode(models.TextChoices):
     DUPLICATE_CONTRACT_NUMBER = (
         "DUPLICATE_CONTRACT_NUMBER",
         "Contract number already exists for this company",
+    )
+    DUPLICATE_TAX_NUMBER = (
+        "DUPLICATE_TAX_NUMBER",
+        "Tax number already belongs to another customer of this company",
+    )
+    DUPLICATE_NATIONAL_ID = (
+        "DUPLICATE_NATIONAL_ID",
+        "National ID already belongs to another customer of this company",
     )
     EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED", "E-mail address is already registered"
     IDEMPOTENCY_KEY_REUSED = (
@@ -79,6 +88,14 @@ class ErrorCode(models.TextChoices):
     TERMINATION_REASON_REQUIRED = (
         "TERMINATION_REASON_REQUIRED",
         "A termination reason is required",
+    )
+    FIELD_REQUIRED_FOR_CUSTOMER_TYPE = (
+        "FIELD_REQUIRED_FOR_CUSTOMER_TYPE",
+        "This customer type requires this field",
+    )
+    FIELD_NOT_VALID_FOR_CUSTOMER_TYPE = (
+        "FIELD_NOT_VALID_FOR_CUSTOMER_TYPE",
+        "This field does not apply to this customer type",
     )
     STATUS_NOT_USER_SELECTABLE = (
         "STATUS_NOT_USER_SELECTABLE",

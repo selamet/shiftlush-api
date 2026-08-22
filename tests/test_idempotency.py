@@ -19,6 +19,7 @@ from apps.users.models import User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context
 from core.models import IdempotencyKey
+from tests.identifiers import tax_number
 
 PASSWORD = "correct-horse-battery"
 TODAY = date.today()
@@ -199,7 +200,11 @@ class TestEveryCreateIsProtected:
     def test_a_second_customer_is_not_created(self, firm):
         company, owner, _ = firm
         client = api_for(owner)
-        body = {"type": CustomerType.CORPORATE, "legal_name": "Only once"}
+        body = {
+            "type": CustomerType.CORPORATE,
+            "legal_name": "Only once",
+            "tax_number": tax_number(1),
+        }
 
         first = client.post(reverse("customer-list"), body, format="json", HTTP_IDEMPOTENCY_KEY=KEY)
         second = client.post(
@@ -234,27 +239,42 @@ class TestEveryCreateIsProtected:
         client = api_for(owner)
         client.post(
             reverse("customer-list"),
-            {"type": CustomerType.CORPORATE, "legal_name": "First"},
+            {"type": CustomerType.CORPORATE, "legal_name": "First", "tax_number": tax_number(2)},
             format="json",
             HTTP_IDEMPOTENCY_KEY=KEY,
         )
 
         response = client.post(
             reverse("customer-list"),
-            {"type": CustomerType.CORPORATE, "legal_name": "Different"},
+            {
+                "type": CustomerType.CORPORATE,
+                "legal_name": "Different",
+                "tax_number": tax_number(3),
+            },
             format="json",
             HTTP_IDEMPOTENCY_KEY=KEY,
         )
         assert response.status_code == 409
 
     def test_a_client_that_sends_no_key_is_unaffected(self, firm):
-        company, owner, _ = firm
-        client = api_for(owner)
-        body = {"type": CustomerType.CORPORATE, "legal_name": "No key"}
+        from apps.properties.models import Building, BuildingType
 
-        client.post(reverse("customer-list"), body, format="json")
-        client.post(reverse("customer-list"), body, format="json")
+        company, owner, customer = firm
+        client = api_for(owner)
+        # A building rather than a customer: a customer now carries a unique tax
+        # number, so two identical ones are refused by that rule and the header
+        # never gets a chance to be the reason. The claim under test is about
+        # the header, so it needs a resource where the duplicate is legal.
+        body = {
+            "customer": str(customer.id),
+            "name": "No key",
+            "type": BuildingType.RESIDENTIAL,
+            "address_note": "Test",
+        }
+
+        client.post(reverse("building-list"), body, format="json")
+        client.post(reverse("building-list"), body, format="json")
 
         # The header is optional and stays optional.
         with company_context(company.id):
-            assert Customer.objects.filter(legal_name="No key").count() == 2
+            assert Building.objects.filter(name="No key").count() == 2

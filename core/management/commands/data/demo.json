@@ -12,16 +12,16 @@
     ["Emre", "Şahin", "technician"]
   ],
   "customers": [
-    ["Çamlıca Konakları Site Yönetimi", "complex_management", "Ayşe Demir"],
-    ["Ataşehir Ofis Kule A.Ş.", "corporate", "Hakan Çelik"],
-    ["Bahçelievler Belediyesi", "public", "Zeynep Kaya"],
-    ["Nurtepe Sitesi Yönetimi", "complex_management", "Emre Şahin"],
-    ["Yıldız Apartmanı Yönetimi", "building_management", "Fatma Aydın"],
-    ["Kayaşehir 24. Bölge Yönetimi", "complex_management", "Murat Doğan"],
-    ["Levent İş Merkezi A.Ş.", "corporate", "Selin Yıldırım"],
-    ["Beşiktaş Belediyesi", "public", "Kerem Arslan"],
-    ["Fenerbahçe Rezidans Yönetimi", "complex_management", "Deniz Koç"],
-    ["Merkez Plaza İşletmeleri", "corporate", "Burak Öztürk"]
+    ["Çamlıca Konakları Site Yönetimi", "complex_management", "Ayşe Demir", "7000000007"],
+    ["Ataşehir Ofis Kule A.Ş.", "corporate", "Hakan Çelik", "7000000015"],
+    ["Bahçelievler Belediyesi", "public", "Zeynep Kaya", "7000000023"],
+    ["Nurtepe Sitesi Yönetimi", "complex_management", "Emre Şahin", "7000000031"],
+    ["Yıldız Apartmanı Yönetimi", "building_management", "Fatma Aydın", "7000000048"],
+    ["Kayaşehir 24. Bölge Yönetimi", "complex_management", "Murat Doğan", "7000000056"],
+    ["Levent İş Merkezi A.Ş.", "corporate", "Selin Yıldırım", "7000000064"],
+    ["Beşiktaş Belediyesi", "public", "Kerem Arslan", "7000000072"],
+    ["Fenerbahçe Rezidans Yönetimi", "complex_management", "Deniz Koç", "7000000080"],
+    ["Merkez Plaza İşletmeleri", "corporate", "Burak Öztürk", "7000000099"]
   ],
   "brands": [
     ["Schindler", "3300 AP"],

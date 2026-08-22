@@ -11,13 +11,15 @@ What this deliberately does not provide is searchability. GCM uses a fresh
 nonce per write, so the same national ID encrypts differently every time and
 `WHERE national_id = ?` cannot work. That is the correct trade: a deterministic
 scheme would let anyone with read access confirm whether a given person is in
-the database. If lookup by national ID is ever needed, it wants a separate
-blind-index column holding an HMAC of the value, not a weaker cipher here.
+the database. Equality, where it is genuinely needed, is answered by
+``fingerprint()`` below and a column of its own, not by weakening the cipher.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import os
 
 from cryptography.exceptions import InvalidTag
@@ -55,6 +57,34 @@ def _key() -> bytes:
 def generate_key() -> str:
     """A fresh base64 key, for the management command and for tests."""
     return base64.urlsafe_b64encode(os.urandom(_KEY_BYTES)).decode()
+
+
+def _fingerprint_key() -> bytes:
+    """A separate key for the blind index, derived from the encryption key.
+
+    Derived rather than configured so there is one secret to rotate, and
+    separated rather than reused so that a fingerprint can never be mistaken for
+    key material belonging to the cipher.
+    """
+    return hmac.new(_key(), b"shiftlush-blind-index-v1", hashlib.sha256).digest()
+
+
+def fingerprint(value: str) -> str:
+    """A keyed digest, for asking whether two encrypted values are the same.
+
+    This is what makes a uniqueness constraint on an encrypted column possible.
+    It is keyed rather than a bare SHA-256 on purpose: the space of national IDs
+    is small enough to enumerate, so an unkeyed digest would be reversible by
+    anyone who obtained the column.
+
+    It still leaks equality — that is the entire point, and it is the reason
+    this is used only where a duplicate has to be refused.
+    """
+    if value == "":
+        # No value is not a value. Fingerprinting the empty string would make
+        # every customer without a national ID collide with every other.
+        return ""
+    return hmac.new(_fingerprint_key(), value.encode(), hashlib.sha256).hexdigest()
 
 
 def encrypt(plaintext: str) -> str:
