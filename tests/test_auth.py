@@ -368,3 +368,30 @@ class TestReadinessNeverRaises:
         # credentials for should be reported, not raised.
         assert response.status_code == 503
         assert response.json()["checks"]["storage"] == "unreachable"
+
+
+class TestInfrastructureEndpointsAreReachableWithoutTls:
+    """Docker's healthcheck and a load balancer talk to the container directly.
+
+    Both speak plain HTTP on the loopback inside the host, and neither sets
+    X-Forwarded-Proto. With the SSL redirect applying to them they got a 301 to
+    an https port that does not exist, so the container reported itself
+    unhealthy for its whole life while serving traffic correctly through Caddy.
+    """
+
+    @pytest.mark.parametrize("path", ["/health", "/ready"])
+    def test_no_redirect_on_a_plain_http_request(self, client, db, settings, path):
+        settings.SECURE_SSL_REDIRECT = True
+        settings.SECURE_REDIRECT_EXEMPT = [r"^health$", r"^ready$"]
+
+        response = client.get(path)
+
+        # Any 3xx here is the bug: the caller has nowhere to follow it to.
+        assert response.status_code in (200, 503), response.status_code
+
+    def test_a_normal_endpoint_still_redirects(self, client, db, settings):
+        settings.SECURE_SSL_REDIRECT = True
+        settings.SECURE_REDIRECT_EXEMPT = [r"^health$", r"^ready$"]
+
+        # The exemption is two paths, not a hole in the policy.
+        assert client.get("/api/v1/customers").status_code == 301

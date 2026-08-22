@@ -50,6 +50,14 @@ FRONTEND_URL = env("FRONTEND_URL").rstrip("/")
 # would otherwise redirect forever. The header is set by the proxy in front of
 # it; trusting it is only safe because nothing else can reach the port.
 SECURE_SSL_REDIRECT = True
+
+# The two infrastructure endpoints are exempt, because the things that call
+# them are inside the host and speak plain HTTP on the loopback: Docker's own
+# healthcheck and anything a load balancer runs against the container directly.
+# Neither sets X-Forwarded-Proto, so both were redirected to an https port that
+# does not exist — the container reported itself unhealthy for its entire life
+# while serving traffic perfectly well through Caddy.
+SECURE_REDIRECT_EXEMPT = [r"^health$", r"^ready$"]
 SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
