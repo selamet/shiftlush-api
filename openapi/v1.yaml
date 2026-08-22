@@ -4785,7 +4785,7 @@ components:
         password:
           type: string
           writeOnly: true
-          minLength: 10
+          minLength: 6
       required:
       - password
       - token
@@ -5262,7 +5262,7 @@ components:
         password:
           type: string
           writeOnly: true
-          minLength: 10
+          minLength: 6
       required:
       - password
       - token
@@ -5779,7 +5779,7 @@ components:
         password:
           type: string
           writeOnly: true
-          minLength: 10
+          minLength: 6
       required:
       - display_name
       - email
