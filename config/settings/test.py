@@ -23,3 +23,8 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # which also proves nothing in the tests depends on a fixed key. Built inline
 # rather than imported from core.crypto, so settings stay free of app imports.
 FIELD_ENCRYPTION_KEY = base64.urlsafe_b64encode(os.urandom(32)).decode()
+
+# In memory even when REDIS_URL is exported in the shell. The suite must not
+# need a service running, and a shared instance would carry state from one run
+# into the next.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}

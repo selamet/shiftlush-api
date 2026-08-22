@@ -40,6 +40,22 @@ STORAGE_BACKENDS = {
     },
 }
 
+# The cache is the shared Redis at redis.selamet.dev. No default: the in-memory
+# fallback would boot happily and then quietly diverge between gunicorn workers,
+# which is exactly the class of bug nobody finds until it matters.
+REDIS_URL = env("REDIS_URL")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "KEY_PREFIX": REDIS_KEY_PREFIX,
+    }
+}
+
+# Optional, unlike everything else here, because nothing reads it yet. Making it
+# required now would stop a deployment over a value that has no effect.
+REDIS_QUEUE_URL = env("REDIS_QUEUE_URL", default="")
+
 # Invitations and password resets are the only way anyone but the founder gets
 # into the system, so a deployment without a working mail route is not a
 # deployment. No default: it fails at boot rather than at the first invitation.

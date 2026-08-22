@@ -110,6 +110,52 @@ TEMPLATES = [
 # constraints — is supported by both.
 DATABASES = {"default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}")}
 
+# --------------------------------------------------------------------------
+# Cache and queue
+# --------------------------------------------------------------------------
+
+# Both Redis endpoints are shared with other applications on the same server,
+# and Redis ACLs are not database-aware — a key pattern matches in all sixteen
+# numbered databases — so the credential is confined to keys beginning with
+# `shiftlush:` and is refused SELECT. KEY_PREFIX below is what keeps every key
+# inside that namespace; without it the connection authenticates and then fails
+# on the first write with NOPERM.
+REDIS_KEY_PREFIX = "shiftlush"
+
+REDIS_URL = env("REDIS_URL", default="")
+
+# Left unset locally, for the same reason the database defaults to SQLite:
+# nothing has to be running first. The in-memory cache is per-process, so
+# anything that has to be shared between workers — a rate limit, a lock — does
+# not behave here the way it will in production and has to be checked against
+# Redis before release.
+CACHES = {
+    "default": (
+        {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": REDIS_KEY_PREFIX,
+        }
+        if REDIS_URL
+        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    )
+}
+
+#: The broker for background work. Nothing reads it yet — it is provisioned
+#: alongside REDIS_URL so that adding Celery is a code change rather than
+#: another pass over the server's environment.
+#:
+#: It is a second Redis instance, not another database on the first one, because
+#: `maxmemory-policy` belongs to the server: the cache endpoint evicts under
+#: memory pressure and would drop queued tasks along with cache entries. The
+#: queue endpoint never evicts, so a full queue fails loudly instead.
+#:
+#: Kombu writes unprefixed keys (`celery`, `unacked`, `_kombu.binding.*`) unless
+#: told otherwise, and the ACL refuses every one of them, so whatever wires the
+#: broker up must pass `{"global_keyprefix": f"{REDIS_KEY_PREFIX}:"}` as a
+#: transport option.
+REDIS_QUEUE_URL = env("REDIS_QUEUE_URL", default="")
+
 # Every model declares a UUIDv7 primary key explicitly. This is set anyway so a
 # model that forgets fails loudly at `makemigrations` rather than silently
 # getting a sequential integer that would then leak in URLs.

@@ -308,7 +308,27 @@ class TestInfrastructureEndpoints:
 
         response = client.get("/ready")
         assert response.status_code == 200
-        assert response.json()["checks"] == {"database": "ok", "storage": "ok"}
+        assert response.json()["checks"] == {"database": "ok", "storage": "ok", "cache": "ok"}
+
+    def test_a_broken_cache_is_reported_without_taking_the_instance_out(
+        self, client, db, monkeypatch
+    ):
+        from django.core.cache import cache
+
+        from core import views
+
+        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("NOPERM")
+
+        monkeypatch.setattr(cache, "set", refuse)
+
+        response = client.get("/ready")
+        # Nothing reads the cache yet, so a broken one is a fact to report, not
+        # a reason to stop sending traffic here.
+        assert response.status_code == 200
+        assert response.json()["checks"]["cache"] == "error: ConnectionError"
 
     def test_ready_fails_when_storage_is_unreachable(self, client, db, monkeypatch):
         from core import views
@@ -437,6 +457,7 @@ class TestMailMustBeEncrypted:
         "DJANGO_SECRET_KEY": "x",
         "DJANGO_ALLOWED_HOSTS": "example.com",
         "DATABASE_URL": "postgres://u:p@localhost/db",
+        "REDIS_URL": "rediss://shiftlush:p@redis.example.com:6379/0",
         "CORS_ALLOWED_ORIGINS": "https://example.com",
         "CSRF_TRUSTED_ORIGINS": "https://example.com",
         "FIELD_ENCRYPTION_KEY": "x",
