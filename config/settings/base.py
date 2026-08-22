@@ -223,7 +223,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # simplejwt's class, plus a join onto the company — see core.authentication
+        # for why several endpoints would otherwise run an extra query each.
+        "core.authentication.CompanyAwareJWTAuthentication",
     ),
     # A view that forgets to declare permissions is closed, not open.
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),

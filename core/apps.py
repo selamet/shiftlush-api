@@ -12,3 +12,9 @@ class CoreConfig(AppConfig):
         from core.audit import connect
 
         connect()
+
+        # Imported for its side effect: the module registers the OpenAPI
+        # extension for our authentication class. Without it the generator
+        # cannot resolve the class and every operation silently loses its
+        # security block.
+        from core import spectacular  # noqa: F401
