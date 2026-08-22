@@ -70,6 +70,34 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Every endpoint is now rate limited, so `429 THROTTLED` is reachable
+  API-wide.** Twenty requests a minute per address without a token, three
+  hundred a minute per user with one (§8.13). Until now only
+  `/geocode/reverse` could answer 429; a client that treated it as a
+  geocoding-only case has to handle it everywhere.
+
+  Nothing in the contract changes shape: no request or response field moves, no
+  error code is added — `THROTTLED` has been in the vocabulary since the first
+  draft. What changes is which endpoints can produce it, which is why it is
+  recorded here rather than left to the schema diff, where it does not appear
+  at all.
+
+  The anonymous limit is per address and applies to the endpoints that admit
+  anonymous callers — login, refresh, registration, password reset. It is
+  shared by everyone behind one office address, and it is deliberately low:
+  twenty login attempts a minute from one address is not an honest client. The
+  authenticated limit is per user, so an office of twenty people does not share
+  one allowance, and a technician moving between wifi and mobile data does not
+  get a fresh one on each network.
+
+  `/geocode/reverse` keeps its own, smaller budget and is not counted twice.
+  `/health` and `/ready` are not counted at all.
+
+  **What a client should do.** Read `RateLimit-Remaining` and slow down before
+  it reaches zero; on a 429, wait the number of seconds in `Retry-After` rather
+  than retrying immediately. A client that retries a 429 straight away spends
+  its next window on refusals and never recovers.
+
 - **`POST /customers` now requires the identifier that matches the type.** An
   `individual` needs `national_id` and may not carry `tax_number` or
   `tax_office`; the four organisation types need `tax_number` and may not carry
@@ -274,3 +302,8 @@ carried as compatibility shims nobody will ever remove.
   browser.
 - Ids are UUIDv7 and are the only way to address a record. Nothing sequential is
   ever exposed, so nobody can infer how many customers a competitor has.
+- Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
+  `RateLimit-Reset`; a 429 carries `Retry-After` as well. `Reset` and
+  `Retry-After` are both seconds, and both mean "when one more request is
+  allowed" — at zero remaining they are the same number. All four are listed in
+  `Access-Control-Expose-Headers`, so a browser client can actually read them.

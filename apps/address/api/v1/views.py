@@ -18,7 +18,6 @@ from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, mixins
 
@@ -27,6 +26,7 @@ from apps.address.matching import match_place
 from apps.address.models import District, Neighborhood, Province
 from core.exceptions import ServiceUnavailable
 from core.text import normalize
+from core.throttling import ScopedRateThrottle
 
 MAX_NEIGHBORHOOD_RESULTS = 20
 MIN_SEARCH_LENGTH = 2
@@ -197,6 +197,11 @@ class ReverseGeocodeView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    # Declaring this replaces the API-wide default rather than adding to it, so
+    # the endpoint is counted once, against the provider's budget — which is
+    # smaller than the general allowance and the only one that costs us
+    # anything. `core.throttling`'s version of DRF's class, so this endpoint
+    # reports its quota in the same headers as everything else.
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "geocode"
 

@@ -63,8 +63,16 @@ MIDDLEWARE = [
     "core.middleware.RequestIDMiddleware",
     # Must run after authentication: it reads the company off the user.
     "core.middleware.CompanyContextMiddleware",
+    "core.middleware.RateLimitHeaderMiddleware",
     "core.middleware.APIVersionHeaderMiddleware",
 ]
+
+#: How many proxies of our own stand in front of the application, and therefore
+#: how many `X-Forwarded-For` entries were written by something we trust. Zero
+#: here: locally and in the test suite nothing is in front, so the header — if
+#: one arrives at all — was written by the caller. Production sets one, for
+#: Caddy. See core.client_ip for what the number does and which way it fails.
+TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=0)
 
 ROOT_URLCONF = "config.urls"
 
@@ -352,12 +360,26 @@ REST_FRAMEWORK = {
     # touches it.
     "COERCE_DECIMAL_TO_STRING": True,
     "EXCEPTION_HANDLER": "core.exceptions.exception_handler",
-    # No default throttle: the rest of the API talks to our own database, and a
-    # blanket rate limit on it would only punish a busy office. Scopes are for
-    # the endpoints that spend something we do not own — the geocoder, whose
-    # usage policy allows one request a second across the whole deployment — and
-    # for the one that answers a guess about a secret.
+    # One throttle for the whole API, picking its scope from whether the caller
+    # is authenticated — see core.throttling for why that is one class rather
+    # than DRF's usual two. A view that declares its own `throttle_classes`
+    # replaces this rather than adding to it, which is what keeps the geocoding
+    # endpoint on its provider's budget and not on ours as well.
+    "DEFAULT_THROTTLE_CLASSES": ("core.throttling.DefaultRateThrottle",),
     "DEFAULT_THROTTLE_RATES": {
+        # Specification 8.13. The anonymous limit is per address and applies to
+        # the endpoints that admit anonymous callers — login, refresh,
+        # registration, password reset. It is deliberately low: those are where
+        # credential stuffing goes, and no honest client needs a twenty-first
+        # login attempt in the same minute. An office behind one NAT address
+        # shares it, which is the trade the specification asks for; the
+        # authenticated limit, fifteen times larger and counted per user rather
+        # than per address, is what the same office actually spends its day on.
+        "anon": env("ANON_RATE_LIMIT", default="20/min"),
+        "user": env("USER_RATE_LIMIT", default="300/min"),
+        # Scopes are for the endpoints that spend something we do not own —
+        # today that is the one calling a third-party geocoder, whose usage
+        # policy allows one request a second across the whole deployment.
         "geocode": env("GEOCODING_RATE_LIMIT", default="60/min"),
         # Keyed on the user, since the endpoint is authenticated. Changing a
         # password takes one request and a mistyped current password takes two
@@ -422,3 +444,16 @@ CORS_ALLOW_CREDENTIALS = True
 # CORS at all, worked. Anything the client sends that is not a CORS-safelisted
 # header has to be named here.
 CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
+
+# A browser hides every response header that is not CORS-safelisted unless the
+# server names it here, so without this list the quota headers reach the network
+# tab and not the application: `fetch` sees them as absent and a client cannot
+# tell "no limit reported" from "no requests left". Retry-After is included for
+# the same reason — a client that backs off for the interval the server named is
+# the whole point of sending it.
+CORS_EXPOSE_HEADERS = [
+    "RateLimit-Limit",
+    "RateLimit-Remaining",
+    "RateLimit-Reset",
+    "Retry-After",
+]
