@@ -31,6 +31,15 @@ coverage.xml
 .env.*
 !.env.example
 
+# Deployment-specific compose overrides. On the server this is not a file but a
+# symlink into /opt/vds-stack/overrides/, and it carries the port mapping and
+# the container name — without it the next deploy comes up unreachable behind
+# Caddy. Untracked, it appeared in `git status` as a stray file, which is
+# precisely what `git clean -fd` removes and precisely what must survive a
+# rollback. Ignored, `git clean -fd` leaves it alone. (`git clean -fdx` still
+# takes it, and `.env` with it — see "Rolling back" in DEPLOYMENT.md.)
+/docker-compose.override.yml
+
 # Editors
 .idea/
 .vscode/

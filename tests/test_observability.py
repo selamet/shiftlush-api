@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +25,7 @@ import pytest
 import sentry_sdk.client  # noqa: F401
 
 from core.context import RequestActor, actor_context, company_context
-from core.observability import SENSITIVE_KEYS, before_send, init_sentry
+from core.observability import SENSITIVE_KEYS, before_send, init_sentry, reporting_status
 
 NATIONAL_ID = "12345678901"
 PASSWORD = "correct-horse-battery"
@@ -238,3 +239,104 @@ def test_no_dsn_means_nothing_is_started(monkeypatch):
     init_sentry(dsn="", environment="test")
 
     assert started == []
+
+
+class TestReportingIsObservable:
+    """Off is allowed. Off and unknowable is not.
+
+    `SENTRY_DSN` was absent from the production `.env`, so nothing was being
+    reported — which is what the optional setting is for, and was indisting-
+    uishable from a deployment with nothing to report. The only way to tell was
+    to read a 0600 file on the server. This is the answer /ready gives instead.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolated_client(self):
+        """Whatever this leaves behind, put the suite back to reporting nothing.
+
+        Several tests in this module start a real client. Without this the
+        assertions below would be about which of them ran first.
+        """
+        sentry_sdk = pytest.importorskip("sentry_sdk")
+        yield
+        client = sentry_sdk.get_client()
+        if getattr(client, "transport", None) is not None:
+            client.close()
+
+    def test_a_deployment_without_a_dsn_says_so(self):
+        assert reporting_status() == "disabled"
+
+    def test_a_dsn_that_is_set_but_empty_is_still_disabled(self, monkeypatch):
+        """The state a blank line in `.env` produces.
+
+        `init_sentry` returns early, so nothing is started — but the SDK's own
+        `is_active()` answers True for a client initialised with an empty DSN,
+        which is why the check asks about the transport instead.
+        """
+        sentry_sdk = pytest.importorskip("sentry_sdk")
+
+        sentry_sdk.init(dsn="")
+
+        assert sentry_sdk.get_client().is_active(), "the SDK's own answer, for contrast"
+        assert reporting_status() == "disabled"
+
+    def test_a_configured_deployment_says_ok(self, monkeypatch):
+        sentry_sdk = pytest.importorskip("sentry_sdk")
+
+        class Collecting(sentry_sdk.Transport):
+            def capture_envelope(self, envelope):
+                pass
+
+            def flush(self, *_args, **_kwargs):
+                pass
+
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(
+            sentry_sdk.client, "make_transport", lambda options: Collecting(options)
+        )
+        init_sentry(dsn="https://key@example.ingest.de.sentry.io/1", environment="test")
+
+        assert reporting_status() == "ok"
+
+    def test_a_closed_client_reports_disabled(self, monkeypatch):
+        """Because it is: a closed client has no transport and sends nothing."""
+        sentry_sdk = pytest.importorskip("sentry_sdk")
+
+        class Collecting(sentry_sdk.Transport):
+            def capture_envelope(self, envelope):
+                pass
+
+            def flush(self, *_args, **_kwargs):
+                pass
+
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(
+            sentry_sdk.client, "make_transport", lambda options: Collecting(options)
+        )
+        init_sentry(dsn="https://key@example.ingest.de.sentry.io/1", environment="test")
+        sentry_sdk.get_client().close()
+
+        assert reporting_status() == "disabled"
+
+
+def test_the_compose_file_forwards_every_sentry_variable():
+    """A name the compose file does not carry never reaches the container.
+
+    This is the REDIS_URL incident, one variable along: production could not see
+    a value that was correctly written into `.env`, because compose substitutes
+    the names it is given and nothing else. Setting `SENTRY_DSN` on the server
+    would have looked like switching reporting on and changed nothing at all.
+    """
+    compose = (Path(__file__).resolve().parent.parent / "docker-compose.prod.yml").read_text()
+
+    for name in (
+        "SENTRY_DSN",
+        "SENTRY_ENVIRONMENT",
+        "SENTRY_RELEASE",
+        "SENTRY_TRACES_SAMPLE_RATE",
+    ):
+        assert f"- {name}=${{{name}" in compose, f"{name} is not forwarded to the container"
