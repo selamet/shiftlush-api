@@ -29,6 +29,9 @@ from core.viewsets import TenantViewSet
 
 class ContractFilter(django_filters.FilterSet):
     search = django_filters.CharFilter(method="filter_search")
+    # See BuildingFilter: an FK-derived filter binds an empty queryset at
+    # start-up and then rejects every id it is given.
+    customer = django_filters.UUIDFilter(field_name="customer_id")
 
     class Meta:
         model = Contract

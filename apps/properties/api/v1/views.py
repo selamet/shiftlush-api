@@ -19,6 +19,17 @@ ADDRESS_JOIN = ("neighborhood", "neighborhood__district", "neighborhood__distric
 
 class BuildingFilter(django_filters.FilterSet):
     search = django_filters.CharFilter(method="filter_search")
+    # Declared rather than derived from the foreign key. django-filter builds a
+    # ModelChoiceFilter for an FK and evaluates its queryset when the class is
+    # defined — at start-up, with no request and therefore no company in
+    # context, where the tenant manager correctly returns nothing. The filter is
+    # then born with a permanently empty set of choices and rejects every id.
+    #
+    # Matching on the raw column also removes a distinction worth not having:
+    # an id belonging to another company and an id belonging to nobody now
+    # produce the same empty list rather than different answers.
+    customer = django_filters.UUIDFilter(field_name="customer_id")
+    complex = django_filters.UUIDFilter(field_name="complex_id")
 
     class Meta:
         model = Building
