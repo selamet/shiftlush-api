@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.contracts.models import (
@@ -17,7 +19,16 @@ from core.error_codes import ErrorCode
 # The financial fields, named once. The viewset drops them for roles that do
 # not carry money, and the same list decides what a serializer omits — so the
 # two can never disagree.
-FINANCIAL_FIELDS = ("pricing_type", "monthly_fee", "currency", "vat_rate", "billing_period")
+FINANCIAL_FIELDS = (
+    "pricing_type",
+    "monthly_fee",
+    "currency",
+    "vat_rate",
+    "billing_period",
+    "monthly_subtotal",
+    "vat_amount",
+    "monthly_total",
+)
 
 
 class StrictMixin:
@@ -54,6 +65,52 @@ class ContractReadSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     lines = ContractLineSerializer(many=True, read_only=True)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
+    previous_contract_number = serializers.CharField(
+        source="previous_contract.contract_number", read_only=True, default=""
+    )
+    monthly_subtotal = serializers.SerializerMethodField()
+    vat_amount = serializers.SerializerMethodField()
+    monthly_total = serializers.SerializerMethodField()
+
+    def _subtotal(self, contract: Contract) -> Decimal:
+        """What the customer is billed each month, before VAT.
+
+        A flat contract is its monthly fee. A per-elevator contract is the sum
+        over its *open* lines — a line closed by a termination or a removal is
+        no longer billed, and including it would keep charging for a lift that
+        left the agreement.
+
+        An open line with no price counts as zero rather than being skipped.
+        That is usually somebody adding an elevator and forgetting to price it,
+        and a total that quietly matches the priced ones hides it.
+        """
+        if contract.pricing_type == PricingType.FLAT:
+            return contract.monthly_fee or Decimal("0")
+        return sum(
+            (line.unit_price or Decimal("0"))
+            for line in contract.lines.all()
+            if line.removed_at is None
+        ) or Decimal("0")
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_monthly_subtotal(self, contract: Contract) -> str:
+        return f"{self._subtotal(contract):.2f}"
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_vat_amount(self, contract: Contract) -> str:
+        rate = contract.vat_rate or Decimal("0")
+        # Rounded once, here, rather than per line. Rounding each line and then
+        # adding them drifts by a kuruş per line, which is exactly the kind of
+        # difference an accountant notices and nobody can explain.
+        amount = (self._subtotal(contract) * rate / Decimal("100")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        return f"{amount:.2f}"
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_monthly_total(self, contract: Contract) -> str:
+        total = self._subtotal(contract) + Decimal(self.get_vat_amount(contract))
+        return f"{total:.2f}"
 
     class Meta:
         model = Contract
@@ -78,6 +135,14 @@ class ContractReadSerializer(serializers.ModelSerializer):
             "termination_reason",
             "notes",
             "elevator_count",
+            "previous_contract_number",
+            # Computed on the server because money does not cross this wire as a
+            # float. Adding the lines up in a browser parses those strings back
+            # into floats, and a contract worth 4,750.00 renders as
+            # 4,749.999999999999.
+            "monthly_subtotal",
+            "vat_amount",
+            "monthly_total",
             "lines",
             "created_at",
             "updated_at",

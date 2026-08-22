@@ -442,3 +442,126 @@ class TestWhoSeesThePrice:
 
         body = api_for(technician).get(reverse("elevator-detail", args=[elevator.id])).data
         assert "unit_price" not in body["current_contract"]
+
+
+class TestWhatTheCustomerPays:
+    """The totals, computed here rather than in a browser.
+
+    Money crosses this API as a string so that JavaScript's float arithmetic
+    never touches it. A client that adds the lines up parses those strings back
+    into floats, and a contract worth 4,750.00 renders as 4,749.999999999999 —
+    which undoes the reason the strings exist.
+    """
+
+    def test_a_flat_contract_totals_its_fee(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="4750.00",
+            vat_rate="20.00",
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+
+        assert body["monthly_subtotal"] == "4750.00"
+        assert body["vat_amount"] == "950.00"
+        assert body["monthly_total"] == "5700.00"
+
+    def test_a_per_elevator_contract_sums_its_open_lines(self, firm):
+        _, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client, customer.id, pricing_type=PricingType.PER_ELEVATOR, vat_rate="20.00"
+        )
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk), str(elevators[1].pk)], "unit_price": "1250.00"},
+            format="json",
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+        assert body["monthly_subtotal"] == "2500.00"
+        assert body["monthly_total"] == "3000.00"
+
+    def test_a_removed_elevator_stops_being_billed(self, firm):
+        _, owner, customer, _, elevators = firm
+        client = api_for(owner)
+        contract = make_contract(client, customer.id, pricing_type=PricingType.PER_ELEVATOR)
+        client.post(
+            reverse("contract-add-elevators", args=[contract["id"]]),
+            {"elevator_ids": [str(elevators[0].pk), str(elevators[1].pk)], "unit_price": "1250.00"},
+            format="json",
+        )
+        client.delete(
+            reverse("contract-remove-elevator", args=[contract["id"], str(elevators[1].pk)])
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+        # A closed line is not billed. Including it would keep charging for a
+        # lift that left the agreement.
+        assert body["monthly_subtotal"] == "1250.00"
+
+    def test_the_values_are_strings(self, firm):
+        import json
+
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client,
+            customer.id,
+            pricing_type=PricingType.FLAT,
+            monthly_fee="4750.00",
+            vat_rate="20.00",
+        )
+
+        raw = json.loads(client.get(reverse("contract-detail", args=[contract["id"]])).content)
+        # In the rendered JSON, not just in `.data`: a Decimal that reaches the
+        # renderer unformatted becomes a JSON number, and the whole point is
+        # that it does not.
+        for field in ("monthly_subtotal", "vat_amount", "monthly_total"):
+            assert isinstance(raw[field], str), field
+
+    def test_operations_is_not_told_the_totals(self, firm):
+        company, owner, customer, _, _ = firm
+        contract = make_contract(api_for(owner), customer.id)
+        operations = colleague(company, Role.OPERATIONS, "ops@example.com")
+
+        body = api_for(operations).get(reverse("contract-detail", args=[contract["id"]])).data
+
+        for field in ("monthly_subtotal", "vat_amount", "monthly_total"):
+            assert field not in body, field
+
+    def test_a_renewal_names_its_predecessor(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        original = make_contract(client, customer.id)
+        renewed = client.post(
+            reverse("contract-renew", args=[original["id"]]),
+            {
+                "start_date": str(TODAY + timedelta(days=366)),
+                "end_date": str(TODAY + timedelta(days=731)),
+            },
+            format="json",
+        ).data
+
+        body = client.get(reverse("contract-detail", args=[renewed["id"]])).data
+        # The screen names the contract this one replaced; it only had an id.
+        assert body["previous_contract_number"] == original["contract_number"]
+
+    def test_a_contract_with_no_rate_stated_adds_no_vat(self, firm):
+        _, owner, customer, _, _ = firm
+        client = api_for(owner)
+        contract = make_contract(
+            client, customer.id, pricing_type=PricingType.FLAT, monthly_fee="1000.00"
+        )
+
+        body = client.get(reverse("contract-detail", args=[contract["id"]])).data
+
+        # `vat_rate` is nullable and has no default. No rate is not a rate of
+        # zero by accident — it is a contract nobody has said the rate for, and
+        # inventing 20% here would be inventing a tax position.
+        assert body["vat_amount"] == "0.00"
+        assert body["monthly_total"] == "1000.00"
