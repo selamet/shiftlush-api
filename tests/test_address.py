@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from django.core.management import call_command
 from django.urls import reverse
@@ -10,12 +12,17 @@ from rest_framework.test import APIClient
 from apps.address.models import District, Neighborhood, Province
 from apps.users.services import register_company
 
+#: The three-province sample, not the real fifty thousand rows. These tests
+#: are about the loader and the endpoints, and loading the country into every
+#: one of them buys nothing but seconds.
+SAMPLE_DATA = str(Path(__file__).resolve().parent / "data" / "address")
+
 PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture
 def address_data(db) -> None:
-    call_command("load_address_data")
+    call_command("load_address_data", path=SAMPLE_DATA)
 
 
 @pytest.fixture
@@ -45,7 +52,7 @@ class TestLoader:
     def test_is_idempotent(self, address_data):
         # The dataset is refreshed about once a year; re-running must update
         # rather than duplicate or fail.
-        call_command("load_address_data")
+        call_command("load_address_data", path=SAMPLE_DATA)
         assert Neighborhood.objects.count() == 10
 
     def test_normalised_column_is_filled(self, address_data):

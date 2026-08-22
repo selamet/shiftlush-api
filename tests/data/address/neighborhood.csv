@@ -1,0 +1,11 @@
+id,district_id,name,postal_code,type
+340101,3401,Barbaros Mah.,34746,neighborhood
+340102,3401,Küçükbakkalköy Mah.,34750,neighborhood
+340103,3401,İçerenköy Mah.,34752,neighborhood
+340201,3402,Fenerbahçe Mah.,34726,neighborhood
+340202,3402,Göztepe Mah.,34730,neighborhood
+340301,3403,Merkez Mah.,34406,neighborhood
+340501,3405,Şişli Merkez Mah.,34360,neighborhood
+060101,0601,Kızılay Mah.,06420,neighborhood
+060102,0601,Çukurambar Mah.,06530,neighborhood
+060103,0601,Yukarı Bahçelievler Mah.,06490,neighborhood
