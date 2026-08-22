@@ -16,5 +16,6 @@ urlpatterns = [
         name="password-reset-confirm",
     ),
     path("email/verify", views.EmailVerifyView.as_view(), name="email-verify"),
+    path("email/resend", views.EmailVerifyResendView.as_view(), name="email-resend"),
     path("me", views.MeView.as_view(), name="me"),
 ]

@@ -154,6 +154,13 @@ class InvitationViewSet(
 
     @extend_schema(request=InvitationCreateSerializer, responses={201: InvitationSerializer})
     def create(self, request: Request) -> Response:
+        # Until the address is proven, this account may enter data but may not
+        # send mail to other people. An unverified account may have been opened
+        # with an address its owner does not control, and an invitation is a
+        # real message to a real person — see specification 7.1.
+        if not request.user.is_email_verified:
+            raise BusinessRuleError(ErrorCode.EMAIL_NOT_VERIFIED)
+
         form = InvitationCreateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
 
