@@ -15,7 +15,12 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView
 
-from core.views import health, ready
+from core.views import health, not_found, ready, server_error
+
+# Django answers an unresolvable URL itself, before DRF is involved, so these
+# are the only way those two responses become JSON like every other error.
+handler404 = not_found
+handler500 = server_error
 
 urlpatterns = [
     path("admin/", admin.site.urls),
