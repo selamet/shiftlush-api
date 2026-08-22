@@ -138,6 +138,10 @@ def renew(
     The result is a draft, which is what makes this reversible and why it needs
     none of termination's ceremony: nothing is billed until someone activates
     the new contract.
+
+    `carry_elevators=False` means the successor starts empty, not that the
+    predecessor keeps its elevators. They are released to `uncontracted`, free
+    to be put on whichever contract the user had in mind instead.
     """
     if contract.status in (ContractStatus.TERMINATED, ContractStatus.RENEWED):
         raise BusinessRuleError(ErrorCode.VALIDATION_ERROR)
@@ -162,10 +166,19 @@ def renew(
         previous_contract=contract,
     )
 
-    if carry_elevators:
-        for line in ContractElevator.objects.filter(contract=contract, removed_at__isnull=True):
-            line.removed_at = start_date
-            line.save(update_fields=["removed_at", "updated_at"])
+    # The predecessor closes its lines either way. `renewed` is a finished state
+    # and a finished contract cannot go on holding elevators: the partial unique
+    # index keys on `removed_at IS NULL`, so a line left open reserves its
+    # elevator for a contract the user has already closed. Every later attempt to
+    # cover that elevator is then refused with ELEVATOR_ALREADY_CONTRACTED naming
+    # a contract they consider finished, and no call in the API can release it.
+    # The flag decides whether the successor inherits the elevators, not whether
+    # the old contract lets go of them.
+    for line in ContractElevator.objects.filter(contract=contract, removed_at__isnull=True):
+        line.removed_at = start_date
+        line.save(update_fields=["removed_at", "updated_at"])
+
+        if carry_elevators:
             ContractElevator.objects.create(
                 company_id=contract.company_id,
                 contract=successor,
@@ -173,6 +186,14 @@ def renew(
                 unit_price=line.unit_price if copy_terms else None,
                 added_at=start_date,
             )
+            continue
+
+        # Not carried, so nothing covers this elevator now. The same rule as
+        # termination: leaving it "active" would hide it from the list of what
+        # needs a contract, which is the list this decision gets made from.
+        elevator = line.elevator
+        elevator.status = ElevatorStatus.UNCONTRACTED
+        elevator.save(update_fields=["status", "updated_at"])
 
     contract.status = ContractStatus.RENEWED
     contract.save(update_fields=["status", "updated_at"])

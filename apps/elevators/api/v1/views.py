@@ -19,7 +19,7 @@ from apps.elevators.api.v1.serializers import (
 )
 from apps.elevators.labels import PdfRenderingUnavailable, render_labels
 from apps.elevators.models import Elevator
-from apps.elevators.services import assign_qr_token, regenerate_qr_token
+from apps.elevators.services import regenerate_qr_token, save_with_qr_token
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse, ServiceUnavailable
 from core.permissions import RolePermission
@@ -79,13 +79,18 @@ class ElevatorViewSet(TenantViewSet):
         # Every elevator gets a token at birth: the label can be printed the
         # moment the record exists, and a nullable token would mean every
         # consumer has to handle the empty case forever.
-        elevator = Elevator(**serializer.validated_data)
-        assign_qr_token(elevator)
-        serializer.save(
-            qr_token=elevator.qr_token,
-            company_id=self.request.user.company_id,
-            created_by=self.request.user,
-            updated_by=self.request.user,
+        #
+        # The insert is what decides whether the token is free, so it is the
+        # insert that gets retried. A token taken by a concurrent create between
+        # a check and this write would otherwise reach the caller as a
+        # constraint violation on a field they never supplied.
+        save_with_qr_token(
+            lambda token: serializer.save(
+                qr_token=token,
+                company_id=self.request.user.company_id,
+                created_by=self.request.user,
+                updated_by=self.request.user,
+            )
         )
 
     def perform_destroy(self, instance: Elevator) -> None:

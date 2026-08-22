@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date, timedelta
+from io import StringIO
 
 import pytest
 from django.core import mail as django_mail
+from django.core.management import call_command
 from django.urls import get_resolver, reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -186,6 +188,64 @@ class TestReplay:
         # the other's response.
         with company_context(company.id):
             assert Contract.objects.count() == 2
+
+
+class TestExpiredKeysAreSweptUp:
+    """Issue #60: the request path only ever drops a key that comes back.
+
+    An expired row is deleted lazily, when the same `(company, user, key)` is
+    presented a second time — which is exactly the case that needed no cleaning
+    up. A key presented once is never read again, and that is nearly all of
+    them: the header is insurance against a retry that usually never comes. So
+    the table keeps every write the deployment has ever served, and nothing says
+    so until someone looks at the disk. Section 5.15 asks for a daily command.
+    """
+
+    def stored(self, firm) -> None:
+        _, owner, customer = firm
+        api_for(owner).post(
+            reverse("contract-list"), payload(customer.id), format="json", HTTP_IDEMPOTENCY_KEY=KEY
+        )
+
+    def test_a_key_past_its_window_is_deleted(self, firm):
+        self.stored(firm)
+        IdempotencyKey.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+
+        call_command("purge_idempotency_keys")
+
+        # Hard deleted, not marked: there is nothing here worth keeping once the
+        # window closes, and no soft-delete column to keep it in.
+        assert not IdempotencyKey.objects.exists()
+
+    def test_a_key_still_inside_its_window_is_left_alone(self, firm):
+        self.stored(firm)
+
+        call_command("purge_idempotency_keys")
+
+        # A sweep that also took live keys would turn the retry it exists for
+        # into a duplicate record.
+        assert IdempotencyKey.objects.count() == 1
+
+    def test_a_dry_run_counts_and_deletes_nothing(self, firm):
+        self.stored(firm)
+        IdempotencyKey.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+
+        output = StringIO()
+        call_command("purge_idempotency_keys", "--dry-run", stdout=output)
+
+        assert "would purge 1 key(s)" in output.getvalue()
+        assert IdempotencyKey.objects.count() == 1
+
+    def test_it_reports_what_it_removed(self, firm):
+        self.stored(firm)
+        IdempotencyKey.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+
+        output = StringIO()
+        call_command("purge_idempotency_keys", stdout=output)
+
+        # Whoever reads the cron log needs a number, not silence: silence looks
+        # the same whether the command worked or never ran.
+        assert "purged 1 key(s)" in output.getvalue()
 
 
 class TestEveryCreateIsProtected:
