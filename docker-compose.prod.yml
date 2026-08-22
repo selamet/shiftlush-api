@@ -10,6 +10,12 @@ services:
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
       - DATABASE_URL=${DATABASE_URL}
+      # Every variable the container needs has to be named here as well as
+      # set in .env: compose substitutes the names it is given and nothing
+      # else. A setting production reads with no default and this list does
+      # not carry is a boot failure, not a missing feature.
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_QUEUE_URL=${REDIS_QUEUE_URL}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS}
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
