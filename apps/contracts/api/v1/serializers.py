@@ -100,7 +100,7 @@ class ContractReadSerializer(serializers.ModelSerializer):
     def get_vat_amount(self, contract: Contract) -> str:
         rate = contract.vat_rate or Decimal("0")
         # Rounded once, here, rather than per line. Rounding each line and then
-        # adding them drifts by a kuruş per line, which is exactly the kind of
+        # adding them drifts by a hundredth per line, which is exactly the kind of
         # difference an accountant notices and nobody can explain.
         amount = (self._subtotal(contract) * rate / Decimal("100")).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
