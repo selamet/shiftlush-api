@@ -22,6 +22,37 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - EMAIL_URL=${EMAIL_URL}
       - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+      # Empty here and unset in .env means the whole country, which is what
+      # keeps a fresh environment working. A deployment that serves one
+      # province names it and the loader stops widening past it.
+      - ADDRESS_PROVINCES=${ADDRESS_PROVINCES:-}
+      # Everything below is read by the settings with a default, so none of
+      # it is required -- but a setting exists to be settable, and a name
+      # missing from this list cannot be set at all: writing it into .env
+      # changes nothing and looks like it worked. Twenty-one of these were
+      # unreachable that way. `tests/test_deployment_env.py` derives this
+      # list from the settings so the next one cannot be forgotten.
+      - ANON_RATE_LIMIT=${ANON_RATE_LIMIT:-}
+      - GEOCODING_CACHE_TTL_SECONDS=${GEOCODING_CACHE_TTL_SECONDS:-}
+      - GEOCODING_MATCH_THRESHOLD=${GEOCODING_MATCH_THRESHOLD:-}
+      - GEOCODING_PROVIDER=${GEOCODING_PROVIDER:-}
+      - GEOCODING_RATE_LIMIT=${GEOCODING_RATE_LIMIT:-}
+      - GEOCODING_TIMEOUT_SECONDS=${GEOCODING_TIMEOUT_SECONDS:-}
+      - GEOCODING_URL=${GEOCODING_URL:-}
+      - GEOCODING_USER_AGENT=${GEOCODING_USER_AGENT:-}
+      - PASSWORD_CHANGE_RATE_LIMIT=${PASSWORD_CHANGE_RATE_LIMIT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-}
+      - TRUSTED_PROXY_COUNT=${TRUSTED_PROXY_COUNT:-}
+      - TR_ACCESS_KEY_ID=${TR_ACCESS_KEY_ID:-}
+      - TR_BUCKET_NAME=${TR_BUCKET_NAME:-}
+      - TR_ENDPOINT_URL=${TR_ENDPOINT_URL:-}
+      - TR_REGION=${TR_REGION:-}
+      - TR_SECRET_ACCESS_KEY=${TR_SECRET_ACCESS_KEY:-}
+      - USER_RATE_LIMIT=${USER_RATE_LIMIT:-}
       - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
       - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}

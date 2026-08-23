@@ -65,6 +65,7 @@ it is exploited. `.env` on the server is the only place they exist.
 | `FRONTEND_URL` | every e-mail links into it |
 | `EMAIL_URL` | SMTP. **Must use `smtp+tls://` or `smtp+ssl://`** — `?tls=True` is ignored and production refuses to boot without TLS, because SMTP AUTH would otherwise send the password in clear text. Invitations and password resets are the only way anyone but the founder gets in. |
 | `R2_*` | object storage; `/ready` reports 503 while these are unset |
+| `ADDRESS_PROVINCES` | which provinces the address tables hold, as licence-plate codes — `25` for Erzurum. Optional, and the exception to the rule above: unset means all 81, which is what development and CI want. Changing it is a command rather than a restart — see "Address data, afterwards" |
 
 **The request limits** are the other exception, and the one that depends on the
 deployment rather than on a credential. `ANON_RATE_LIMIT` (20/min per address)
@@ -162,6 +163,9 @@ command anyone has to remember: an empty `province` / `district` /
 `neighborhood` set is not a missing nicety but an API where creating a building,
 a complex or a customer fails.
 
+How much of the country it loads is `ADDRESS_PROVINCES`, so a new environment
+gets its scope right the first time rather than being narrowed afterwards.
+
 **6. Confirm the environment is usable.** `/ready` reports that the process can
 reach its dependencies. It does not report whether the address tables hold
 anything, and that is precisely the failure this section exists to prevent.
@@ -172,7 +176,8 @@ curl -s https://shiftlush-api.selamet.dev/ready
 docker exec shiftlush-api python manage.py shell -c \
   "from apps.address.models import Province, District, Neighborhood; \
    print(Province.objects.count(), District.objects.count(), Neighborhood.objects.count())"
-# 81 973 50437
+# 81 973 50437   with ADDRESS_PROVINCES unset
+# 1 20 1188      with ADDRESS_PROVINCES=25 (Erzurum), which is what production runs
 ```
 
 **7. The first account.** `POST /auth/register` creates a company and its owner.
@@ -221,12 +226,56 @@ ssh selamet@91.98.233.170
 docker exec shiftlush-api python manage.py load_address_data
 ```
 
-Without the flag the command upserts all three files by primary key. It is
-idempotent — two consecutive runs leave the row counts identical, which the
-suite asserts against the real dataset — so re-running it is never the wrong
-thing to do. What it does not do is delete: a district that upstream has
-dissolved stays until someone removes it deliberately, because the buildings
-pointing at it would otherwise have nowhere to be.
+Without the flag the command upserts all three files by primary key, within
+`ADDRESS_PROVINCES`. It is idempotent — two consecutive runs leave the row counts
+identical, which the suite asserts against the real dataset — so re-running it is
+never the wrong thing to do. Inside the scope it still does not delete: a
+district that upstream has dissolved stays until someone removes it deliberately,
+because the buildings pointing at it would otherwise have nowhere to be.
+
+### The scope, and changing it
+
+`ADDRESS_PROVINCES` is a comma-separated list of licence-plate codes, and it is
+read on **every** load path. Production runs `ADDRESS_PROVINCES=25`, so the
+address tables hold Erzurum and the pickers offer Erzurum. Unset means all 81,
+which is what development and CI use.
+
+Reading it here rather than deleting the other eighty provinces by hand is the
+whole point. A hand-written `DELETE` looks like it works — `--if-missing` only
+asks whether the tables are non-empty, so the deletion survives every restart —
+and then comes undone in silence at the refresh above, or on the next
+environment built from nothing, both of which used to reload all 81. Because the
+scope is a property of the deployment, **no run of this command can widen the
+dataset past it**, and a second deployment for a firm in another province is one
+variable rather than a code change.
+
+Changing the scope is a command, not a restart:
+
+```bash
+"$EDITOR" /opt/apps/shiftlush-api/.env     # ADDRESS_PROVINCES=25
+docker exec shiftlush-api python manage.py load_address_data
+```
+
+The container start does not do the second half. `--if-missing` never deletes —
+fifty thousand rows and a possible refusal is not something to discover during a
+boot — so a restart after an edit loads anything newly in scope, leaves what is
+now out of it, and writes a line to the log saying how many provinces are still
+there and what to run. The run above is the thing that removes them.
+
+It removes them only if nothing points at them. Every foreign key into
+`address.Neighborhood` is `on_delete=PROTECT`, so the database would refuse in
+any case; the command asks first, before its first `DELETE`, and names the table
+and the count instead of raising a `ProtectedError` about one row id:
+
+```
+CommandError: Refusing to remove provinces that records still point at:
+properties.Building.neighborhood: 1. Move those records inside
+ADDRESS_PROVINCES first — nothing has been deleted.
+```
+
+"Nothing has been deleted" is exact: the whole run is one transaction, so a
+refusal takes the refreshed rows back with it. The check counts other tenants'
+rows and soft-deleted ones too — they still hold the foreign key.
 
 Demo data (`seed_demo_data`) is for development environments only. It registers
 a company of its own and refuses to start once any company exists, so it is the

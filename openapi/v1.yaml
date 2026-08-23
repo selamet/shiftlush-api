@@ -2365,7 +2365,12 @@ paths:
   /api/v1/provinces/:
     get:
       operationId: provinces_list
-      description: All 81, unpaginated. Small enough to be a dropdown.
+      description: |-
+        Every province this deployment serves, unpaginated.
+
+        Turkey has 81 and a deployment may serve as few as one, so this is a list to
+        render rather than a count to rely on. Small enough to be a dropdown either
+        way.
       parameters:
       - name: ordering
         required: false

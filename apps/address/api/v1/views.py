@@ -1,8 +1,10 @@
 """Address lookup.
 
 Three endpoints that narrow in sequence, because the data is too big to hand
-over whole: 81 provinces, around 970 districts, and roughly 50,000
-neighbourhoods.
+over whole: up to 81 provinces, around 970 districts, and roughly 50,000
+neighbourhoods. How much of that a given deployment actually holds is
+`ADDRESS_PROVINCES`, and none of these endpoints needs to know — they report
+what the loader put in the tables.
 
 A fourth runs those same three levels backwards. Given a point on the map it
 answers with ids from the same tables, so the picker can drive the cascade from
@@ -64,8 +66,18 @@ class NeighborhoodSerializer(serializers.ModelSerializer[Neighborhood]):
 
 
 class ProvinceViewSet(mixins.ListModelMixin, GenericViewSet[Province]):
-    """All 81, unpaginated. Small enough to be a dropdown."""
+    """Every province this deployment serves, unpaginated.
 
+    Turkey has 81 and a deployment may serve as few as one, so this is a list to
+    render rather than a count to rely on. Small enough to be a dropdown either
+    way.
+    """
+
+    # Whatever is in the table, which is what `ADDRESS_PROVINCES` and the loader
+    # already decided. Narrowing the queryset here instead would leave the other
+    # eighty provinces sitting in the table — for the geocoder to match a
+    # dropped pin against, and for the next `load_address_data` to widen
+    # straight back into the dropdown.
     queryset = Province.objects.all()
     serializer_class = ProvinceSerializer
     permission_classes = [IsAuthenticated]
