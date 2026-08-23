@@ -45,9 +45,29 @@ urlpatterns = [
     ),
 ]
 
-# The schema names every field and business rule in the system. It is served in
-# development for the client generator, and only behind an IP restriction in
-# production.
+# Both are development-only, and for `/schema/` that is a deliberate departure
+# from the 8.6 inventory rather than `/docs/` dragging it along. The deviations
+# table carries the argument; it is not the one 8.13 makes.
+#
+# 8.13 closes `/docs/` because the schema exposes every field name and business
+# rule. That reason does not survive contact with this repository: it is public,
+# and `openapi/v1.yaml` on main is the same document sitting at a URL anyone can
+# fetch. Nothing is kept secret by refusing to serve it here.
+#
+# What is left is that a production `/schema/` would have no reader and two
+# costs. No reader, because the frontend stopped asking a running backend for
+# the contract — `npm run api:sync` pulls the published file, which is what lets
+# 14.1's "the frontend build must not depend on a running backend" hold. The
+# costs: it is a second copy of a document CI already gates on, free to disagree
+# with the committed one the moment a deploy lags behind main, and
+# SpectacularAPIView builds it by walking every serializer on each request — an
+# unauthenticated endpoint doing real work, on a three-worker container sharing
+# a box with four other applications, behind a 20/min/IP limit sized for cheap
+# requests.
+#
+# Serving it would mean caching it and restricting it, to arrive at a slower
+# copy of a static file that already exists. Development keeps both: that is
+# where the generator and a browser actually want them.
 if settings.DEBUG:
     urlpatterns += [
         path("schema/", SpectacularAPIView.as_view(), name="schema"),

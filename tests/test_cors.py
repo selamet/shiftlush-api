@@ -78,6 +78,63 @@ class TestEveryHeaderTheClientSends:
         headers = preflight(browser, "/api/v1/customers/", header)
         assert header in headers["access-control-allow-headers"].lower()
 
+    def test_the_request_id_is_not_among_them(self, browser, db):
+        headers = preflight(browser, "/api/v1/customers/", "content-type")
+
+        # Deliberate, and the counterpart to TestEveryHeaderTheBrowserCanRead.
+        # RequestIDMiddleware honours an incoming id, so listing it here would
+        # let the frontend name its own trace. 8.9 gives the id a second job
+        # that this would break: the user reads it off their screen and one
+        # search finds their request. An id the browser picks can repeat across
+        # every request, or be one it saw somewhere else. The settings comment
+        # carries the full argument and the way back if a client needs it.
+        assert "x-request-id" not in headers["access-control-allow-headers"].lower()
+
+
+class TestEveryHeaderTheBrowserCanRead:
+    """A response header the server does not expose does not exist to `fetch`.
+
+    Not hidden, not blocked — absent. The browser drops it before application
+    code runs, so the header is visible in the network tab and nowhere else,
+    which is how one of these can be sent on every response for months and
+    still be missing everywhere it was meant to be used.
+    """
+
+    #: Sent on a plain successful response, and useless unless the client can
+    #: read it.
+    READ_BY_THE_CLIENT = ("x-request-id",)
+
+    @pytest.fixture
+    def response(self, browser, db):
+        from apps.users.services import issue_tokens, register_company
+
+        _, owner = register_company(
+            legal_name="Firm Ltd",
+            display_name="Firm",
+            first_name="F",
+            last_name="Owner",
+            email="owner@example.com",
+            password="correct-horse-battery",
+        )
+        return browser.get(
+            "/api/v1/elevators/",
+            HTTP_ORIGIN=ORIGIN,
+            HTTP_AUTHORIZATION=f"Bearer {issue_tokens(owner).access}",
+        )
+
+    @pytest.mark.parametrize("header", READ_BY_THE_CLIENT)
+    def test_it_is_exposed(self, response, header):
+        exposed = response.headers.get("access-control-expose-headers", "").lower()
+        assert header in [name.strip() for name in exposed.split(",")]
+
+    def test_the_id_is_actually_on_a_successful_response(self, response):
+        # The exposure only matters because the header is there to read. It was
+        # the error envelope that carried an id before this, which covers the
+        # failures and leaves every success untagged — and a user reporting
+        # "the list came back empty" has no exception to search for.
+        assert response.status_code == 200
+        assert response.headers.get("X-Request-ID")
+
 
 class TestAMissingSlashIsLegible:
     """A wrong URL should say so, not look like a CORS problem.

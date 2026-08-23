@@ -22,7 +22,6 @@ from typing import Any
 import qrcode
 from django.conf import settings
 from django.template.loader import render_to_string
-from django.utils import translation
 from qrcode.constants import ERROR_CORRECT_H
 
 from apps.elevators.models import Elevator
@@ -101,20 +100,22 @@ def build_html(elevators: list[Elevator], company: Any) -> str:
         for elevator in elevators
     ]
 
-    # The label is read by a person standing in Turkey, so it is rendered in
-    # Turkish whatever language the caller's tooling last activated.
-    with translation.override("tr"):
-        html = render_to_string(
-            "labels/elevator_labels.html",
-            {
-                "elevators": labels,
-                "company_name": company.display_name,
-                "company_phone": company.phone,
-                "company_logo": _logo_data_uri(company),
-            },
-        )
-
-    return html
+    # This used to render inside `translation.override("tr")`, on the stated
+    # grounds that the label is read by a person standing in Turkey. The
+    # template has no `{% trans %}` in it and nothing else it renders is
+    # localised, so the override forced a language onto a document that had no
+    # opinion about language — a guard that would have gone on passing had the
+    # template been in the wrong one. Turkish reaches the sheet the same way it
+    # reaches an e-mail: written into the template. See the deviations table.
+    return render_to_string(
+        "labels/elevator_labels.html",
+        {
+            "elevators": labels,
+            "company_name": company.display_name,
+            "company_phone": company.phone,
+            "company_logo": _logo_data_uri(company),
+        },
+    )
 
 
 def render_labels(elevators: list[Elevator], company: Any) -> bytes:

@@ -324,8 +324,15 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ShiftLush <noreply@shift
 # Internationalisation
 # --------------------------------------------------------------------------
 
-# The API never returns Turkish text; this is for invitation e-mails and the
-# QR label template, whose strings live in locale/tr, not in code.
+# The API never returns Turkish text. The two places that do — the e-mails and
+# the QR label sheet — are templates, and in phase 1 they carry their Turkish
+# directly rather than through a gettext catalogue. The deviations table says
+# why; the short version is that one language does not pay for a compile step
+# whose failure mode is a silently English e-mail.
+#
+# So `locale/` is empty and this path resolves to nothing. Both stay: the
+# setting is where the catalogue goes on the day a second language arrives, and
+# LANGUAGE_CODE still decides the locale Django itself formats under.
 LANGUAGE_CODE = "tr"
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
@@ -457,6 +464,19 @@ CORS_ALLOW_CREDENTIALS = True
 # CORS error — while the same call from a server-side client, which enforces no
 # CORS at all, worked. Anything the client sends that is not a CORS-safelisted
 # header has to be named here.
+#
+# `x-request-id` is deliberately NOT here, and that is a decision rather than an
+# omission. RequestIDMiddleware honours an incoming id, so adding it would let
+# the frontend name its own trace and carry one id across the browser and the
+# API. The reason not to is what the id is for: it is the support handle, the
+# thing a user reads off their screen so one lookup finds their request. A value
+# the browser chooses can be the same on every request, which makes that lookup
+# return everything, or it can be an id the sender saw somewhere else, which
+# makes it return somebody else's. The hop that may set it is Caddy — trusted,
+# named in DEPLOYMENT.md, and the same hop TRUSTED_PROXY_COUNT already trusts
+# for the client address. If a client ever genuinely needs to originate a trace,
+# this is a one-line change; the validation in RequestIDMiddleware is what makes
+# it a safe one, and it is already in place.
 CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
 
 # A browser hides every response header that is not CORS-safelisted unless the
@@ -465,9 +485,18 @@ CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
 # tell "no limit reported" from "no requests left". Retry-After is included for
 # the same reason — a client that backs off for the interval the server named is
 # the whole point of sending it.
+#
+# X-Request-ID is the same failure with a worse ending. RequestIDMiddleware puts
+# it on every response and core.observability tags every Sentry event with it,
+# but the frontend and the API are different origins, so the browser was hiding
+# it and the only id the frontend could show a user came out of an error body.
+# That covers the failures and leaves every successful response untagged —
+# precisely the reports that are hardest to find afterwards, because "the list
+# came back empty" leaves no exception to search for.
 CORS_EXPOSE_HEADERS = [
     "RateLimit-Limit",
     "RateLimit-Remaining",
     "RateLimit-Reset",
     "Retry-After",
+    "X-Request-ID",
 ]
