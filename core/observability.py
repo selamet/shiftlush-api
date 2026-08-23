@@ -168,3 +168,39 @@ def init_sentry(
         before_send=before_send,
         traces_sample_rate=traces_sample_rate,
     )
+
+
+def reporting_status() -> str:
+    """Whether an error raised right now would actually reach anybody.
+
+    `init_sentry` is deliberately silent with no DSN, and that silence was the
+    problem: the code shipped, the deploy went green, and a deployment that
+    reports nothing looks exactly like one that has nothing to report. The
+    difference was visible only by reading `.env` on the server.
+
+    This is the answer `/ready` gives, so the state is readable from outside
+    with the same curl that already checks the database.
+
+    Asked of the SDK rather than of `settings.SENTRY_DSN`, because those are
+    different questions. A DSN that is set but malformed, or an `init` that
+    never ran because the settings module was not the production one, both leave
+    the setting looking correct while nothing is being sent.
+    """
+    try:
+        import sentry_sdk
+    except ImportError:  # pragma: no cover - the dependency is declared
+        # Not the same as "switched off": the image is missing a declared
+        # dependency, which is a broken build rather than a decision.
+        return "error: sentry-sdk is not installed"
+
+    client = sentry_sdk.get_client()
+
+    # The question is whether a transport exists, not whether the client says it
+    # is active. `is_active()` reads as the obvious call and answers a different
+    # question: on sentry-sdk 2.68 it returns True after `init(dsn="")` and
+    # True again after the client has been closed, in both of which cases
+    # nothing is sent anywhere. The transport is the thing an event has to go
+    # through, so its absence is the honest answer.
+    if not client.is_active() or getattr(client, "transport", None) is None:
+        return "disabled"
+    return "ok"

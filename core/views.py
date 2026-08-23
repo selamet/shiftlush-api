@@ -12,7 +12,7 @@ from django.core.cache import cache
 from django.db import connection
 from django.http import HttpRequest, JsonResponse
 
-from core import storage
+from core import observability, storage
 from core.error_codes import ErrorCode
 
 
@@ -66,6 +66,20 @@ def ready(request: HttpRequest) -> JsonResponse:
         checks["cache"] = "ok" if cache.get("ready-probe") == "ok" else "error: read-back"
     except Exception as exc:
         checks["cache"] = f"error: {exc.__class__.__name__}"
+
+    # Reported, and never fatal — for the same reason as the cache, plus one it
+    # does not share. Error reporting is optional by design: an instance with no
+    # DSN serves every request correctly, and refusing to boot without one would
+    # take production down over a feature that has no effect on a single
+    # customer. This repository has already had that outage once, over
+    # REDIS_URL, and that variable was actually load-bearing.
+    #
+    # But "optional" was being read as "unobservable". `SENTRY_DSN` is absent
+    # from the server, so nothing is being reported, and there was no way to
+    # learn that without opening `.env` on the box. Answering it here puts the
+    # state where it belongs: in the readiness response the deploy workflow
+    # already prints and anyone can curl.
+    checks["error_reporting"] = observability.reporting_status()
 
     return JsonResponse(
         {"status": "ready" if healthy else "not_ready", "checks": checks},

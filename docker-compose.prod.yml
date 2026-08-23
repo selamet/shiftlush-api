@@ -26,8 +26,59 @@ services:
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
       - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
       - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      # Error reporting, and the same rule as above applies to it. The settings
+      # read these four; a name this list does not carry never reaches the
+      # container, however carefully it is written into `.env`. Setting
+      # SENTRY_DSN on the server without this line would have looked exactly
+      # like switching reporting on and changed nothing — the REDIS_URL
+      # incident, one variable along.
+      #
+      # `:-` rather than a bare `${...}` because these four are genuinely
+      # optional. Without it compose warns on every deploy of a deployment that
+      # has not chosen to use Sentry, and a warning nobody can act on is one
+      # more line teaching people to skim the deploy log.
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.0}
     expose:
       - "8000"
+    # The host has 7.6 GiB, no swap, and 21 containers belonging to five
+    # applications. Unlimited means one runaway request here takes the box down
+    # and every other tenant with it. Limited means the kernel kills this
+    # container, `restart: unless-stopped` brings it back, and the blast radius
+    # is one application for a few seconds.
+    #
+    # Measured rather than rounded, by running this image with its own
+    # `--workers 3` and reading /proc:
+    #
+    #   gunicorn master                29 MB
+    #   each worker, warm             110 MB   Django, DRF, psycopg, botocore
+    #   container, steady state       293 MB   summed PSS: shared pages counted once
+    #
+    #   a worker that has printed a QR label sheet    166 MB
+    #     WeasyPrint imports lazily in apps/elevators/labels.py: +22 MB for the
+    #     import, +55 MB to render, and the allocator does not hand it back.
+    #
+    # Worst realistic case is all three workers having printed labels at least
+    # once: 293 + 3 x 77 = ~525 MB. 768m clears that by about 45% — room for the
+    # peak plus per-request allocation, and short of the 1 GiB that would spend a
+    # third of the host's free memory on headroom nothing has ever used.
+    #
+    # If this starts being OOM-killed, the honest fixes are fewer workers or
+    # `--max-requests` to recycle them — not a bigger number here. Steady state
+    # is 293 MB, so anything near 768 MB is a leak, and raising the ceiling only
+    # buys the leak more time to reach the host.
+    mem_limit: 768m
+    # Equal to the limit on purpose. There is no swap today, so this changes
+    # nothing now; it means that adding swap to the host later cannot quietly
+    # convert a fast, visible OOM kill into a slow thrash that reads as the API
+    # being mysteriously slow.
+    memswap_limit: 768m
+    # Soft floor. Under host-wide pressure the kernel reclaims this container
+    # back towards its working set before it starts hurting it, and the label
+    # render peak is the first thing to go.
+    mem_reservation: 384m
     healthcheck:
       # /health only: liveness must not fail when the database is down, or the
       # orchestrator restarts the one instance that could still serve reads.

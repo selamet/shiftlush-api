@@ -305,10 +305,39 @@ class TestInfrastructureEndpoints:
         # Storage is not running in the test environment; the point here is that
         # both checks are reported, not that MinIO is up.
         monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+        # The test suite reports nothing to Sentry on purpose, so this one is
+        # pinned rather than left to whatever a previous test left initialised.
+        monkeypatch.setattr(views.observability, "reporting_status", lambda: "ok")
 
         response = client.get("/ready")
         assert response.status_code == 200
-        assert response.json()["checks"] == {"database": "ok", "storage": "ok", "cache": "ok"}
+        assert response.json()["checks"] == {
+            "database": "ok",
+            "storage": "ok",
+            "cache": "ok",
+            "error_reporting": "ok",
+        }
+
+    def test_error_reporting_is_reported_and_never_takes_the_instance_out(
+        self, client, db, monkeypatch
+    ):
+        """Off is a legitimate state. Off and unknowable is what this fixes.
+
+        A deployment with no `SENTRY_DSN` serves every request correctly, so a
+        load balancer must keep sending traffic here. It stopped being invisible:
+        the deploy workflow prints /ready, so "disabled" is in the log of the
+        deploy that shipped it.
+        """
+        from core import views
+
+        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(views.observability, "reporting_status", lambda: "disabled")
+
+        response = client.get("/ready")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ready"
+        assert response.json()["checks"]["error_reporting"] == "disabled"
 
     def test_a_broken_cache_is_reported_without_taking_the_instance_out(
         self, client, db, monkeypatch
