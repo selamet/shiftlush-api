@@ -13,18 +13,24 @@ The staff domain is an argument rather than a constant because `User.email` is
 unique across the whole table, not per company. Two demonstration tenants in one
 database — which is exactly what a developer gets after running both commands —
 would otherwise collide on the first technician.
+
+Everything with an address goes through `ServiceArea`, which is the one thing in
+here that is read out of the database rather than written down: see `_province`
+for how the province is chosen and why nothing in this module names it.
 """
 
 from __future__ import annotations
 
 import json
 import random
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Count
 
 from apps.companies.models import Company
 from apps.contracts.models import (
@@ -49,6 +55,7 @@ from apps.elevators.models import (
 from apps.properties.models import Building, BuildingType, Complex
 from apps.users.models import Role, User
 from core.context import company_context
+from core.text import normalize
 
 # Deterministic, so two people looking at "the demo data" are looking at the
 # same thing.
@@ -63,6 +70,16 @@ DEMO = json.loads(DATA_PATH.read_text(encoding="utf-8"))
 CUSTOMERS = [tuple(row) for row in DEMO["customers"]]
 STAFF = [tuple(row) for row in DEMO["staff"]]
 BRANDS = [tuple(row) for row in DEMO["brands"]]
+
+#: How many districts the firm's vans cover.
+#:
+#: Two, because that is what a maintenance firm is. Its customers are apartment
+#: blocks and offices a technician visits several of in a day, so they sit in
+#: one town — and in Turkey a town of any size is split across two or three
+#: districts. Widening this to the whole province would put a customer three
+#: hours up a mountain road; narrowing it to one district would put every
+#: customer on the same few streets. Both are equally unlike a real portfolio.
+SERVICE_AREA_DISTRICTS = 2
 
 DEMO_PASSWORD = "shiftlush-demo-2026"
 
@@ -103,13 +120,13 @@ def populate(
     correct, which is the failure that is worth designing out.
     """
     generator = rng if rng is not None else random.Random(SEED)
-    areas = _areas()
+    area = _service_area()
 
     with company_context(company.id):
         users = _staff(company, staff_domain)
-        customers = _customers(company, generator, areas)
-        buildings = _buildings(company, generator, customers, areas)
-        elevators = _elevators(company, generator, buildings)
+        customers = _customers(company, generator, area)
+        buildings = _buildings(company, generator, customers, area)
+        elevators = _elevators(company, generator, buildings, area)
         contracts = _contracts(company, generator, customers, elevators)
         _assign_technicians(company, users, customers)
 
@@ -122,10 +139,118 @@ def populate(
     )
 
 
-def _areas() -> list[Any]:
-    from apps.address.models import Neighborhood
+@dataclass(frozen=True)
+class ServiceArea:
+    """The patch of the country one demonstration firm works.
 
-    return list(Neighborhood.objects.all()[:20])
+    Everything with an address is placed through this, so the whole generated
+    portfolio lands inside it. Before it existed each row picked from the first
+    twenty neighbourhoods in the table — which, ordered by name across all
+    eighty-one provinces, meant a firm with customers in Balikesir, Izmir and
+    Tokat at once. No elevator maintenance firm has a portfolio like that, and a
+    demonstration of one is a demonstration of a business that does not exist.
+    """
+
+    province: Any
+    #: Most central first: the rota below leans on the order.
+    districts: list[Any]
+    #: District id to its neighbourhoods, read once rather than per row.
+    places: dict[int, list[Any]]
+    #: Whether `province` is the one the demo data was written for. False means
+    #: the dataset does not hold it and a stand-in was chosen, so anything else
+    #: keyed to the town — its dialling code — has to stand down too.
+    at_home: bool
+
+    def district_for(self, index: int) -> Any:
+        """Deal customers round the districts, rather than scattering them.
+
+        A rota rather than a random pick: it is what guarantees that several
+        customers share a district, which is the half of "coherent" that a
+        uniform random choice over a province would only manage by luck.
+        """
+        return self.districts[index % len(self.districts)]
+
+    def somewhere_in(self, district: Any, rng: random.Random) -> Any:
+        return rng.choice(self.places[district.id])
+
+
+def _service_area() -> ServiceArea:
+    from apps.address.models import District, Neighborhood
+
+    province, at_home = _province()
+    districts = list(
+        District.objects.filter(province=province)
+        .annotate(
+            # Distinct postal codes is the only signal in this dataset that
+            # separates a town from a mountain valley: a rural district gets one
+            # code for the whole of it, while a district that is part of a city
+            # gets one per quarter. Over the real data it picks Yakutiye and
+            # Palandoken out of Erzurum's twenty districts, which is where the
+            # city is, and Cankaya and Yenimahalle out of Ankara's.
+            codes=Count("neighborhoods__postal_code", distinct=True),
+            places=Count("neighborhoods", distinct=True),
+        )
+        .filter(places__gt=0)
+        .order_by("-codes", "-places", "name")[:SERVICE_AREA_DISTRICTS]
+    )
+
+    places: dict[int, list[Any]] = defaultdict(list)
+    # One query for every neighbourhood in the area, because the alternative is
+    # one per building and this runs against a table of fifty thousand rows.
+    for place in Neighborhood.objects.filter(district__in=districts).order_by("id"):
+        places[place.district_id].append(place)
+
+    return ServiceArea(province=province, districts=districts, places=dict(places), at_home=at_home)
+
+
+def _province() -> tuple[Any, bool]:
+    """Which province the demonstration firm operates in.
+
+    Read off the address dataset rather than configured here, in three steps.
+
+    A deployment whose dataset holds exactly one province has already answered
+    the question: that is the province it serves, and the demo belongs in it. No
+    setting is consulted to find that out, so scoping the dataset — which is
+    being added separately — moves the demo with it and needs nothing from this
+    module.
+
+    An unscoped dataset holds all eighty-one and cannot answer, so the province
+    the demo data was written around is named in `demo.json` beside the customer
+    names that assume it, and is looked up by name.
+
+    And if even that is absent — a test fixture with three provinces in it, none
+    of them the one named — the best-covered province stands in, so a database
+    with address data in it can always be filled. The caller has already
+    established there is some.
+
+    Both lookups below insist on a province that has neighbourhoods rather than
+    one that merely has a row. A province with no districts under it would
+    otherwise be chosen and then yield an empty service area, and that is not a
+    hypothetical shape: scoping a dataset by loading one province's districts
+    while leaving all eighty-one province rows in place would produce exactly
+    it, with eighty of them empty.
+    """
+    from apps.address.models import Province
+
+    # Two rows is enough to tell "exactly one" from "more than one" without
+    # counting eighty-one.
+    loaded = list(Province.objects.all()[:2])
+    if len(loaded) == 1:
+        return loaded[0], _is_home(loaded[0])
+
+    inhabited = Province.objects.annotate(places=Count("districts__neighborhoods")).filter(
+        places__gt=0
+    )
+
+    named = inhabited.filter(name_normalized=normalize(DEMO["home"]["province"])).first()
+    if named is not None:
+        return named, True
+
+    return inhabited.order_by("-places", "id").first(), False
+
+
+def _is_home(province: Any) -> bool:
+    return bool(province.name_normalized == normalize(DEMO["home"]["province"]))
 
 
 def has_address_data() -> bool:
@@ -133,9 +258,13 @@ def has_address_data() -> bool:
 
     Asked by the callers before they start, so an empty address table is
     reported as the missing step it is rather than as an IndexError from
-    somewhere inside the generator.
+    somewhere inside the generator. One neighbourhood is enough to answer it:
+    every neighbourhood carries a district and every district a province, so
+    a service area can always be built around one.
     """
-    return bool(_areas())
+    from apps.address.models import Neighborhood
+
+    return Neighborhood.objects.exists()
 
 
 def _short_name(legal_name: str) -> str:
@@ -162,22 +291,49 @@ def _staff(company: Company, domain: str) -> list[User]:
     return created
 
 
-def _customers(company: Company, rng: random.Random, areas: list[Any]) -> list[Customer]:
+def _street(rng: random.Random) -> str:
+    return f"{rng.randint(1, 60)}{DEMO['street_suffix']}"
+
+
+def _phone(area: ServiceArea, index: int) -> str:
+    """The office number of a firm's customer.
+
+    A landline, because that is what an estate office or a municipality answers
+    on — but only where the dialling code is right. If the dataset could not
+    supply the province the demo was written for, a number from that town would
+    be one more thing pointing at a place the rest of the data is not in, so the
+    fallback is a mobile, which belongs to no town.
+    """
+    if area.at_home:
+        return f"{DEMO['home']['landline_prefix']}{2340000 + index * 13:07d}"
+    return f"+90533{2000000 + index:07d}"
+
+
+def _customers(company: Company, rng: random.Random, area: ServiceArea) -> list[Customer]:
     created = []
     for index, (name, kind, contact, tax_number) in enumerate(CUSTOMERS):
+        district = area.district_for(index)
         customer = Customer.objects.create(
             company=company,
             type=kind,
-            legal_name=name,
+            # A municipality and a chamber of commerce are named after the
+            # province they belong to, so those three rows carry `{province}`
+            # rather than a province. It is the last thing that would have gone
+            # stale if the dataset were ever scoped somewhere else: everything
+            # else about the address already follows the data, and a customer
+            # called "Erzurum Belediyesi" in Trabzon would undo that on the one
+            # screen a demonstration opens first. The names stay in the JSON,
+            # where Turkish belongs; only the substitution is here.
+            legal_name=name.format(province=area.province.name),
             # Every demo customer is an organisation, and an organisation
             # needs its tax number — without one the seeded rows would be
             # the one thing a demo must not contain: records the product
             # refuses to save when somebody opens them.
             tax_number=tax_number,
             tax_office=rng.choice(DEMO["tax_offices"]),
-            phone=f"+90216{4000000 + index:07d}",
-            neighborhood=rng.choice(areas),
-            street=f"{rng.randint(1, 60)}{DEMO['street_suffix']}",
+            phone=_phone(area, index),
+            neighborhood=area.somewhere_in(district, rng),
+            street=_street(rng),
             is_active=index != len(CUSTOMERS) - 1,
         )
         CustomerContact.objects.create(
@@ -192,43 +348,119 @@ def _customers(company: Company, rng: random.Random, areas: list[Any]) -> list[C
     return created
 
 
-def _buildings(
-    company: Company, rng: random.Random, customers: list[Customer], areas: list[Any]
-) -> list[Building]:
-    created = []
-    for customer in customers:
-        site = None
-        if customer.type == CustomerType.COMPLEX_MANAGEMENT:
-            site = Complex.objects.create(
-                company=company,
+def _block(company: Company, rng: random.Random, **fields: Any) -> Building:
+    """One building, with the dimensions of a building in a provincial town.
+
+    Four to fourteen floors rather than four to twenty-four: the tall end of the
+    old range is a tower block, and a firm whose portfolio is full of them is
+    working somewhere other than where the rest of this data says it is.
+
+    Flats are counted off the floors rather than drawn beside them, because two
+    independent draws produced twelve-storey blocks with eleven flats in them.
+    """
+    floors = rng.randint(4, 14)
+    return Building.objects.create(
+        company=company,
+        address_note=rng.choice(DEMO["address_notes"]),
+        floor_count=floors,
+        unit_count=floors * rng.randint(2, 5),
+        **fields,
+    )
+
+
+def _estate(
+    company: Company, rng: random.Random, customer: Customer, created: list[Building]
+) -> None:
+    """A complex and its blocks, at one address.
+
+    The blocks of an estate share a neighbourhood and a street and differ by
+    their entrance — A, B, C at number 12 — because that is what an estate is.
+    Drawing a neighbourhood per block, which is what this did before, produced
+    an "estate" whose three blocks were in three different parts of town.
+    """
+    site = Complex.objects.create(
+        company=company,
+        customer=customer,
+        name=_short_name(customer.legal_name),
+        neighborhood=customer.neighborhood,
+        street=customer.street,
+        building_number=str(rng.randint(1, 40)),
+    )
+    for block in range(rng.randint(2, 4)):
+        letter = chr(65 + block)
+        created.append(
+            _block(
+                company,
+                rng,
                 customer=customer,
-                name=_short_name(customer.legal_name),
-                neighborhood=rng.choice(areas),
+                complex=site,
+                name=f"{letter}{DEMO['block_suffix']}",
+                type=BuildingType.RESIDENTIAL,
+                neighborhood=site.neighborhood,
+                street=site.street,
+                building_number=f"{site.building_number}/{letter}",
             )
-        for block in range(rng.randint(1, 4)):
-            created.append(
-                Building.objects.create(
-                    company=company,
-                    customer=customer,
-                    complex=site,
-                    name=f"{chr(65 + block)}{DEMO['block_suffix']}"
-                    if site
-                    else customer.legal_name,
-                    type=rng.choice(
-                        [BuildingType.RESIDENTIAL, BuildingType.COMMERCIAL, BuildingType.PUBLIC]
-                    ),
-                    neighborhood=rng.choice(areas),
-                    street=f"{rng.randint(1, 60)}{DEMO['street_suffix']}",
-                    building_number=str(rng.randint(1, 90)),
-                    address_note=DEMO["address_note"],
-                    floor_count=rng.randint(4, 24),
-                    unit_count=rng.randint(8, 96),
-                )
+        )
+
+
+def _premises(
+    company: Company,
+    rng: random.Random,
+    customer: Customer,
+    area: ServiceArea,
+    district: Any,
+    created: list[Building],
+) -> None:
+    """The buildings of a customer who is not an estate.
+
+    A block management company has one block, by definition. A firm has its
+    office and perhaps an annexe. A public body has several buildings spread
+    across the district it belongs to — and unlike an estate's blocks, those
+    genuinely are in different neighbourhoods, which is the other half of not
+    over-clustering.
+    """
+    short = _short_name(customer.legal_name)
+    if customer.type == CustomerType.PUBLIC:
+        kind, names = BuildingType.PUBLIC, DEMO["public_buildings"][: rng.randint(2, 4)]
+    elif customer.type == CustomerType.CORPORATE:
+        kind, names = BuildingType.COMMERCIAL, ["", DEMO["annex_suffix"]][: rng.randint(1, 2)]
+    else:
+        kind, names = BuildingType.RESIDENTIAL, [""]
+
+    for position, suffix in enumerate(names):
+        # The first is at the address the customer is registered at; the rest
+        # are elsewhere in the same district.
+        here = customer.neighborhood if position == 0 else area.somewhere_in(district, rng)
+        created.append(
+            _block(
+                company,
+                rng,
+                customer=customer,
+                complex=None,
+                name=f"{short} {suffix}".strip() if suffix else short,
+                type=kind,
+                neighborhood=here,
+                street=customer.street if position == 0 else _street(rng),
+                building_number=str(rng.randint(1, 90)),
             )
+        )
+
+
+def _buildings(
+    company: Company, rng: random.Random, customers: list[Customer], area: ServiceArea
+) -> list[Building]:
+    created: list[Building] = []
+    for index, customer in enumerate(customers):
+        if customer.type == CustomerType.COMPLEX_MANAGEMENT:
+            _estate(company, rng, customer, created)
+        else:
+            _premises(company, rng, customer, area, area.district_for(index), created)
     return created
 
 
-def _elevators(company: Company, rng: random.Random, buildings: list[Building]) -> list[Elevator]:
+def _elevators(
+    company: Company, rng: random.Random, buildings: list[Building], area: ServiceArea
+) -> list[Elevator]:
     from apps.elevators.services import assign_qr_token
 
     created = []
@@ -237,12 +469,21 @@ def _elevators(company: Company, rng: random.Random, buildings: list[Building]) 
         for _ in range(rng.randint(1, 4)):
             counter += 1
             brand, model = rng.choice(BRANDS)
+            # A registration number opens with the plate code of the province
+            # that issued it, so a hard-coded 34 said Istanbul on every lift no
+            # matter where the building was.
+            plate = f"{area.province.id:02d}"
+            # Stops come from the building rather than from the dice: a lift
+            # cannot serve more floors than the block has, and one that says it
+            # serves twenty-four in a six-storey block is the sort of detail
+            # that makes a demonstration stop being believed.
+            stops = building.floor_count or rng.randint(2, 8)
             installed = date(rng.randint(2012, 2024), rng.randint(1, 12), rng.randint(1, 28))
             last = date.today() - timedelta(days=rng.randint(30, 400))
             elevator = Elevator(
                 company=company,
                 building=building,
-                registration_number=f"34-{installed.year}-{counter:06d}",
+                registration_number=f"{plate}-{installed.year}-{counter:06d}",
                 name=rng.choice(DEMO["elevator_names"]),
                 category=rng.choice(
                     [Category.PASSENGER, Category.FREIGHT, Category.PASSENGER_FREIGHT]
@@ -256,8 +497,8 @@ def _elevators(company: Company, rng: random.Random, buildings: list[Building]) 
                 machine_room=rng.choice([MachineRoom.PRESENT, MachineRoom.ABSENT]),
                 capacity_kg=rng.choice([320, 450, 630, 1000, 1600]),
                 capacity_persons=rng.choice([4, 6, 8, 13, 21]),
-                stop_count=rng.randint(2, 24),
-                entrance_count=rng.randint(2, 24),
+                stop_count=stops,
+                entrance_count=stops,
                 speed_mps=rng.choice(["0.63", "1.00", "1.60"]),
                 brand=brand,
                 model=model,
