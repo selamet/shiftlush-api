@@ -23,6 +23,13 @@ python manage.py migrate --noinput
 # The yearly data refresh is deliberately NOT covered by this: new CSVs in the
 # image change nothing until someone runs the command without the flag. See
 # DEPLOYMENT.md.
+#
+# How much of the country gets loaded is ADDRESS_PROVINCES, read by the command
+# itself. Narrowing it is the other thing this line deliberately does not do:
+# --if-missing loads what is newly in scope and never deletes what has fallen
+# out of it, because fifty thousand rows and a possible refusal is not something
+# to discover during a container start. It warns instead, and DEPLOYMENT.md has
+# the one-line command that acts on the warning.
 echo "Loading address reference data if absent..."
 python manage.py load_address_data --if-missing
 

@@ -165,6 +165,26 @@ CACHES = {
 REDIS_QUEUE_URL = env("REDIS_QUEUE_URL", default="")
 
 # --------------------------------------------------------------------------
+# Address data
+# --------------------------------------------------------------------------
+
+#: Which provinces this deployment's address tables hold, by licence-plate code
+#: — the number that is already `Province.id`, fixed by law and stable across
+#: the yearly data refresh in a way names are not.
+#:
+#: A firm works one province, and an address picker offering the other eighty is
+#: a list nobody can scan. The scope belongs here, to the deployment, rather
+#: than to whatever rows happen to be in the table: a hand-written DELETE
+#: survives restarts (`--if-missing` only asks whether the tables are non-empty)
+#: right up until the yearly refresh or a rebuilt environment puts all 81 back,
+#: silently. `load_address_data` reads this on every load path, so it cannot.
+#:
+#: **Empty means the whole country.** That is what keeps every environment that
+#: never sets it — development, CI, which builds one from nothing — loading the
+#: same 81 provinces it always did. A second deployment, for a firm in another
+#: province, is this one variable and no code.
+ADDRESS_PROVINCES: list[int] = env.list("ADDRESS_PROVINCES", cast=int, default=[])
+
 # Reverse geocoding
 # --------------------------------------------------------------------------
 

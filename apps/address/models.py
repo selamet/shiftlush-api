@@ -3,6 +3,10 @@
 Reference data: global, not owned by any company, and never soft-deleted. It is
 loaded once from a CSV by a management command and refreshed about once a year;
 nothing here depends on an external service at runtime.
+
+How much of the country these tables hold is `settings.ADDRESS_PROVINCES` rather
+than anything declared here. A deployment serving one province loads one, and
+the models are the same either way.
 """
 
 from __future__ import annotations
