@@ -34,8 +34,23 @@ format:
 spec:
 	uv run python manage.py spectacular --file openapi/v1.yaml --fail-on-warn
 
-# Copies the generated spec next door and records its checksum, so the frontend
-# CI can prove the two repositories hold the same contract.
+# The frontend pulls the contract; it is no longer pushed from here.
+#
+# This used to also write ../shiftlush-web/openapi/v1.sha256, and the frontend
+# CI compared that checksum against the spec sitting beside it. Both files were
+# written by this one command, so the pair agreed with itself no matter how far
+# behind it was — the check could catch a hand-edited spec and could never catch
+# this repository moving on without a sync, which is what it was for. It didn't:
+# the two copies drifted by 214 lines and four /auth endpoints with both
+# pipelines green.
+#
+# The frontend now compares against openapi/v1.yaml on this repository's main
+# branch, which is public, so `npm run api:sync` over there needs nothing from
+# here and no side-by-side clone. This target survives only as a shortcut for
+# someone who does have both repositories open and wants the spec across before
+# it is merged; it can no longer write anything a check will read.
 sync-spec: spec
 	cp openapi/v1.yaml ../shiftlush-web/openapi/v1.yaml
-	shasum -a 256 openapi/v1.yaml | cut -d' ' -f1 > ../shiftlush-web/openapi/v1.sha256
+	@echo "Copied to ../shiftlush-web/openapi/v1.yaml (uncommitted, and not the"
+	@echo "published contract until this repository's main branch has it)."
+	@echo "The supported path is 'npm run api:sync' in shiftlush-web."
