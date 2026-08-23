@@ -66,15 +66,18 @@ class NeighborhoodSerializer(serializers.ModelSerializer[Neighborhood]):
 
 
 class ProvinceViewSet(mixins.ListModelMixin, GenericViewSet[Province]):
-    """Every province the deployment serves, unpaginated.
+    """Every province this deployment serves, unpaginated.
 
-    Up to 81 and, for a firm working one province, exactly one. The filtering
-    happened at load time rather than here: a queryset narrowed in this view
-    would leave eighty provinces in the table for the geocoder to match a pin
-    against and for the next `load_address_data` to widen back into the
-    dropdown.
+    Turkey has 81 and a deployment may serve as few as one, so this is a list to
+    render rather than a count to rely on. Small enough to be a dropdown either
+    way.
     """
 
+    # Whatever is in the table, which is what `ADDRESS_PROVINCES` and the loader
+    # already decided. Narrowing the queryset here instead would leave the other
+    # eighty provinces sitting in the table — for the geocoder to match a
+    # dropped pin against, and for the next `load_address_data` to widen
+    # straight back into the dropdown.
     queryset = Province.objects.all()
     serializer_class = ProvinceSerializer
     permission_classes = [IsAuthenticated]
