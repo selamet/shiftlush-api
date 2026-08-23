@@ -111,7 +111,11 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     certificate_number = models.CharField(max_length=50, blank=True)
     certificate_valid_until = models.DateField(null=True, blank=True)
 
-    objects = UserManager()
+    # See core.models.CompanyOwnedModel: replacing an inherited manager is not
+    # something the plugin models. UserManager is deliberately not a
+    # SoftDeleteManager — authentication has to find a user before the company
+    # is known — which is the second half of what is being silenced here.
+    objects = UserManager()  # type: ignore[misc,assignment]
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["first_name", "last_name"]

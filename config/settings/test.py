@@ -8,6 +8,7 @@ operators are not covered by the SQLite run.
 
 import base64
 import os
+from typing import Any, cast
 
 from .base import *
 
@@ -46,10 +47,13 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 # "not throttled" and exercises the same code path production takes for a view
 # with no limit. The geocode scope keeps its rate — it is keyed per user, and
 # its own tests assert on it.
+#
+# The cast is there because the settings arrive through a star import, which
+# flattens every value to `object`.
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,
     "DEFAULT_THROTTLE_RATES": {
-        **REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"],
+        **cast("dict[str, Any]", REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]),
         "anon": None,
         "user": None,
     },

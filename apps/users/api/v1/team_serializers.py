@@ -9,6 +9,7 @@ created by invitation, and an administrator who can set a password can read one.
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from rest_framework import serializers
 
@@ -16,7 +17,7 @@ from apps.users.models import Invitation, Role, User
 from core.validators import normalize_email, normalize_phone
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(serializers.ModelSerializer[User]):
     full_name = serializers.CharField(read_only=True)
     assigned_customer_ids = serializers.SerializerMethodField()
 
@@ -50,7 +51,7 @@ class UserSerializer(serializers.ModelSerializer):
         return [str(row.customer_id) for row in user.customer_assignments.all()]
 
 
-class UserUpdateSerializer(serializers.ModelSerializer):
+class UserUpdateSerializer(serializers.ModelSerializer[User]):
     class Meta:
         model = User
         # Not the e-mail address: it is the username, it is globally unique, and
@@ -69,7 +70,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return normalize_phone(value) if value else value
 
 
-class InvitationSerializer(serializers.ModelSerializer):
+class InvitationSerializer(serializers.ModelSerializer[Invitation]):
     invited_by_name = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
 
@@ -102,7 +103,7 @@ class InvitationSerializer(serializers.ModelSerializer):
         return invitation.accepted_at is None and invitation.expires_at <= timezone.now()
 
 
-class InvitationCreateSerializer(serializers.Serializer):
+class InvitationCreateSerializer(serializers.Serializer[Any]):
     email = serializers.EmailField(max_length=150)
     first_name = serializers.CharField(max_length=60)
     last_name = serializers.CharField(max_length=60)
@@ -119,7 +120,7 @@ class InvitationCreateSerializer(serializers.Serializer):
         return value
 
 
-class InvitationPreviewSerializer(serializers.Serializer):
+class InvitationPreviewSerializer(serializers.Serializer[Any]):
     """What the sign-up screen may show before anyone has authenticated.
 
     Only what is already in the e-mail the invitee is holding: who invited them
@@ -135,10 +136,10 @@ class InvitationPreviewSerializer(serializers.Serializer):
     expires_at = serializers.DateTimeField()
 
 
-class AssignedCustomersSerializer(serializers.Serializer):
+class AssignedCustomersSerializer(serializers.Serializer[Any]):
     customer_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=True)
 
-    def validate_customer_ids(self, value: list) -> list:
+    def validate_customer_ids(self, value: list[UUID]) -> list[UUID]:
         from apps.customers.models import Customer
 
         unique = list(dict.fromkeys(value))
@@ -151,5 +152,5 @@ class AssignedCustomersSerializer(serializers.Serializer):
         return unique
 
 
-class AcceptInvitationResultSerializer(serializers.Serializer):
+class AcceptInvitationResultSerializer(serializers.Serializer[Any]):
     user: Any = UserSerializer()

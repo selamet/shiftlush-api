@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import django_filters
 from django.db.models import Count, Q, QuerySet
 from drf_spectacular.utils import extend_schema
@@ -19,6 +21,7 @@ from apps.customers.models import Customer, CustomerContact
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
 from core.idempotency import replay_protected
+from core.requests import authenticated_user
 from core.serializers import ADDRESS_JOIN
 from core.text import normalize
 from core.viewsets import TenantViewSet
@@ -31,7 +34,9 @@ class CustomerFilter(django_filters.FilterSet):
         model = Customer
         fields = ["type", "is_active"]
 
-    def filter_search(self, queryset: QuerySet[Customer], name: str, value: str):
+    def filter_search(
+        self, queryset: QuerySet[Customer], name: str, value: str
+    ) -> QuerySet[Customer]:
         # Through the normalised copy of the name, never the name itself.
         # `icontains` on `legal_name` is the trap in section 9.2: the user types
         # a name in plain ASCII, the record holds it with cedillas and breves,
@@ -44,7 +49,7 @@ class CustomerFilter(django_filters.FilterSet):
         )
 
 
-class CustomerViewSet(TenantViewSet):
+class CustomerViewSet(TenantViewSet[Customer]):
     resource = "customer"
     read_serializer_class = CustomerReadSerializer
     write_serializer_class = CustomerWriteSerializer
@@ -113,7 +118,13 @@ class CustomerViewSet(TenantViewSet):
             return self._create_contact(request, customer)
 
         queryset = CustomerContact.objects.filter(customer=customer)
-        page = self.paginate_queryset(queryset)
+        # DRF types pagination against the viewset's own model, and this action
+        # pages a related one. The paginator never looks at the model, so the
+        # cast is a statement about DRF's signature rather than about the rows.
+        page = cast(
+            "list[CustomerContact] | None",
+            self.paginate_queryset(cast("QuerySet[Customer]", queryset)),
+        )
         serializer = CustomerContactReadSerializer(
             page, many=True, context=self.get_serializer_context()
         )
@@ -125,17 +136,18 @@ class CustomerViewSet(TenantViewSet):
             data=request.data, context=self.get_serializer_context()
         )
         write.is_valid(raise_exception=True)
+        user = authenticated_user(request)
         write.save(
-            company_id=request.user.company_id,
+            company_id=user.company_id,
             customer=customer,
-            created_by=request.user,
-            updated_by=request.user,
+            created_by=user,
+            updated_by=user,
         )
         read = CustomerContactReadSerializer(write.instance, context=self.get_serializer_context())
         return Response(read.data, status=status.HTTP_201_CREATED)
 
 
-class CustomerContactViewSet(TenantViewSet):
+class CustomerContactViewSet(TenantViewSet[CustomerContact]):
     resource = "customer"
     read_serializer_class = CustomerContactReadSerializer
     write_serializer_class = CustomerContactWriteSerializer

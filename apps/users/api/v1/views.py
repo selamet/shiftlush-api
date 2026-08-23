@@ -31,6 +31,7 @@ from apps.users.api.v1.serializers import (
 from core.client_ip import client_ip
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
+from core.requests import authenticated_user
 
 REFRESH_COOKIE = "shiftlush_refresh"
 
@@ -203,11 +204,12 @@ class EmailVerifyResendView(APIView):
 
     @extend_schema(request=None, responses={204: None})
     def post(self, request: Request) -> Response:
-        if not request.user.is_email_verified:
+        user = authenticated_user(request)
+        if not user.is_email_verified:
             # Issuing a new token invalidates the previous one, which is what
             # should happen: two live links for one address is one more than
             # anybody needs.
-            services.request_email_verification(request.user)
+            services.request_email_verification(user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -216,4 +218,4 @@ class MeView(APIView):
 
     @extend_schema(responses={200: CurrentUserSerializer})
     def get(self, request: Request) -> Response:
-        return Response(CurrentUserSerializer(request.user).data)
+        return Response(CurrentUserSerializer(authenticated_user(request)).data)

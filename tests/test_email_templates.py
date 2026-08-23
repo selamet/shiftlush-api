@@ -14,13 +14,14 @@ backend that speaks Turkish to a human.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 from django.template.loader import render_to_string
 
 TEMPLATES = ["invitation", "password_reset", "email_verification"]
 
-CONTEXT = {
+CONTEXT: dict[str, Any] = {
     "first_name": "Nur",
     "company_name": "Yükseliş Asansör",
     "url": "https://shiftlush.selamet.dev/invitation/abc123",
@@ -56,7 +57,7 @@ def test_both_parts_carry_the_link(template: str) -> None:
         rendered = render_to_string(f"email/{template}/{part}", CONTEXT)
         # The plain-text part is not decoration: a client that refuses HTML
         # shows it instead, and a link only in the HTML half is a dead end.
-        assert CONTEXT["url"] in rendered, part
+        assert str(CONTEXT["url"]) in rendered, part
 
 
 @pytest.mark.parametrize("template", TEMPLATES)

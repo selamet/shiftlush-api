@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 import django_filters
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer
 
 from apps.contracts import services
 from apps.contracts.api.v1.serializers import (
@@ -19,10 +20,11 @@ from apps.contracts.api.v1.serializers import (
     RenewSerializer,
     TerminateSerializer,
 )
-from apps.contracts.models import Contract
+from apps.contracts.models import Contract, ContractElevator
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
 from core.permissions import READ, may
+from core.requests import authenticated_company_id, authenticated_user
 from core.viewsets import TenantViewSet
 
 
@@ -36,13 +38,15 @@ class ContractFilter(django_filters.FilterSet):
         model = Contract
         fields = ["status", "customer", "scope"]
 
-    def filter_search(self, queryset: QuerySet[Contract], name: str, value: str):
+    def filter_search(
+        self, queryset: QuerySet[Contract], name: str, value: str
+    ) -> QuerySet[Contract]:
         return queryset.filter(
             Q(contract_number__icontains=value) | Q(customer__legal_name__icontains=value)
         )
 
 
-class ContractViewSet(TenantViewSet):
+class ContractViewSet(TenantViewSet[Contract]):
     resource = "contract"
     read_serializer_class = ContractReadSerializer
     write_serializer_class = ContractWriteSerializer
@@ -50,12 +54,27 @@ class ContractViewSet(TenantViewSet):
     ordering_fields = ["contract_number", "start_date", "end_date", "created_at"]
 
     def get_base_queryset(self) -> QuerySet[Contract]:
-        return Contract.objects.select_related("customer").annotate(
-            elevator_count=Count("lines", distinct=True, filter=Q(lines__removed_at__isnull=True))
+        return (
+            Contract.objects.select_related("customer", "previous_contract")
+            .prefetch_related(
+                # The read serializer renders every line, and sums the open ones
+                # for the monthly total, so a contract list without this is one
+                # query per contract plus two per line. Found by the guard in
+                # tests/conftest.py rather than by anyone reading the code.
+                Prefetch(
+                    "lines",
+                    queryset=ContractElevator.objects.select_related("elevator__building"),
+                )
+            )
+            .annotate(
+                elevator_count=Count(
+                    "lines", distinct=True, filter=Q(lines__removed_at__isnull=True)
+                )
+            )
         )
 
     def get_serializer_context(self) -> dict[str, Any]:
-        context = super().get_serializer_context()
+        context: dict[str, Any] = dict(super().get_serializer_context())
         # Decided here, from the same matrix the permission class reads, so the
         # rule lives in one place rather than being restated per serializer.
         context["show_financials"] = may(
@@ -63,15 +82,17 @@ class ContractViewSet(TenantViewSet):
         )
         return context
 
-    def perform_create(self, serializer) -> None:  # type: ignore[no-untyped-def]
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
+        user = authenticated_user(self.request)
+        company_id = authenticated_company_id(self.request)
         data = dict(serializer.validated_data)
         if not data.get("contract_number"):
-            data["contract_number"] = services.next_contract_number(self.request.user.company_id)
+            data["contract_number"] = services.next_contract_number(company_id)
         serializer.save(
             **{"contract_number": data["contract_number"]},
-            company_id=self.request.user.company_id,
-            created_by=self.request.user,
-            updated_by=self.request.user,
+            company_id=company_id,
+            created_by=user,
+            updated_by=user,
         )
 
     def perform_destroy(self, instance: Contract) -> None:

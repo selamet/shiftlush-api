@@ -49,6 +49,13 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      - name: Types
+        # Section 19 asks for mypy alongside ruff and pytest. It was configured
+        # and never run, which is the same as not having it: the first run found
+        # 736 errors. Placed before the tests so a type error is reported in
+        # seconds rather than after the database has been built.
+        run: uv run mypy .
+
       - name: No Turkish in product code
         # Turkish belongs in locale catalogues, templates and data files. A
         # Turkish string in a module means user-facing text was compiled into

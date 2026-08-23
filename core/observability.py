@@ -25,7 +25,12 @@ straight to the event.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sentry_sdk.types import Event, Hint
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +170,11 @@ def init_sentry(
         # And the one that actually stops bodies being collected. Without it
         # `send_default_pii=False` still permits a request body of medium size.
         max_request_body_size="never",
-        before_send=before_send,
+        # sentry-sdk declares this hook against its own Event/Hint types. The
+        # function is written against plain dicts on purpose — that is what the
+        # tests hand it, and what the SDK passes at runtime — so the cast is
+        # where the two descriptions of the same dictionary meet.
+        before_send=cast("Callable[[Event, Hint], Event | None]", before_send),
         traces_sample_rate=traces_sample_rate,
     )
 

@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 from core.crypto import decrypt, encrypt
 
+if TYPE_CHECKING:
+    # Django's fields carry type parameters in the stubs but are not
+    # subscriptable at runtime — `CharField[str, str]` as a base class is a
+    # TypeError on import. Split so the checker sees the parameters and the
+    # interpreter sees the class. The alternative, django-stubs-ext's
+    # monkeypatch, would put a typing package in the production dependencies.
+    _CharFieldBase = models.CharField[str, str]
+else:
+    _CharFieldBase = models.CharField
 
-class EncryptedCharField(models.CharField):
+
+class EncryptedCharField(_CharFieldBase):
     """Stores its value encrypted and hands back plaintext.
 
     Encryption happens at the boundary rather than in the callers, so nothing

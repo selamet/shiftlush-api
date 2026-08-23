@@ -21,7 +21,7 @@ from apps.users.models import Role, User
 from core.validators import normalize_email
 
 
-class StrictSerializer(serializers.Serializer):
+class StrictSerializer(serializers.Serializer[Any]):
     """Rejects fields it does not know about.
 
     DRF ignores unknown keys by default, which silently swallows a typo: the
@@ -119,7 +119,7 @@ class InvitationAcceptSerializer(StrictSerializer):
     password = PasswordField()
 
 
-class CurrentUserSerializer(serializers.ModelSerializer):
+class CurrentUserSerializer(serializers.ModelSerializer[User]):
     """What `/auth/me` returns.
 
     Read-only, and narrower than the model on purpose: `national_id` and
@@ -138,7 +138,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         # Empty string rather than null for a superuser with no company: the
         # client renders it directly, and widening the type for a case that
         # never reaches a real screen costs every call site a null check.
-        return user.company.display_name if user.company_id else ""
+        return user.company.display_name if user.company else ""
 
     class Meta:
         model = User
@@ -161,7 +161,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class TokenResponseSerializer(serializers.Serializer):
+class TokenResponseSerializer(serializers.Serializer[Any]):
     """The body of a successful sign-in.
 
     Only the access token is here. The refresh token goes out as an httpOnly

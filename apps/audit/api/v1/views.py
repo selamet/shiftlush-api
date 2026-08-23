@@ -4,8 +4,8 @@ from typing import Any
 
 import django_filters
 from django.db.models import QuerySet
-from rest_framework import serializers
-from rest_framework.viewsets import GenericViewSet, mixins
+from rest_framework import mixins, serializers
+from rest_framework.viewsets import GenericViewSet
 
 from apps.audit.models import AuditLog
 from apps.users.models import User
@@ -13,7 +13,7 @@ from core.context import require_current_company_id
 from core.permissions import RolePermission
 
 
-class AuditLogSerializer(serializers.ModelSerializer):
+class AuditLogSerializer(serializers.ModelSerializer[AuditLog]):
     user_name = serializers.SerializerMethodField()
 
     def get_user_name(self, entry: AuditLog) -> str:
@@ -59,7 +59,7 @@ class AuditLogFilter(django_filters.FilterSet):
         fields = ["table_name", "record_id", "action", "user_id"]
 
 
-class AuditLogViewSet(mixins.ListModelMixin, GenericViewSet):
+class AuditLogViewSet(mixins.ListModelMixin, GenericViewSet[AuditLog]):
     """Read-only, and only for owners and admins.
 
     There is no create, update or delete anywhere: a log that can be edited is

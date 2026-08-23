@@ -10,6 +10,7 @@ inconsistent and nothing would say so.
 from __future__ import annotations
 
 from datetime import date
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Max
@@ -21,7 +22,7 @@ from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 
 
-def next_contract_number(company_id: str) -> str:
+def next_contract_number(company_id: UUID) -> str:
     """`2026-0001`, per company, per year."""
     year = timezone.now().year
     prefix = f"{year}-"
@@ -151,7 +152,7 @@ def renew(
     successor = Contract.objects.create(
         company_id=contract.company_id,
         customer=contract.customer,
-        contract_number=next_contract_number(str(contract.company_id)),
+        contract_number=next_contract_number(contract.company_id),
         status=ContractStatus.DRAFT,
         scope=contract.scope,
         start_date=start_date,

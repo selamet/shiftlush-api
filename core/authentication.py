@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db.models import Manager
+from django.db.models import QuerySet
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 
@@ -37,8 +37,12 @@ class _WithCompany:
         return getattr(self._model, name)
 
     @property
-    def objects(self) -> Manager[Any]:
-        return self._model.objects.select_related("company")
+    def objects(self) -> QuerySet[Any]:
+        # A queryset, not a manager: simplejwt only ever calls `.get()` on this,
+        # and `select_related` is what puts the join in. Saying Manager here
+        # would have been a comfortable lie about what the caller receives.
+        queryset: QuerySet[Any] = self._model.objects.select_related("company")
+        return queryset
 
 
 class CompanyAwareJWTAuthentication(JWTAuthentication):

@@ -19,7 +19,7 @@ the suite runs with them off at all is explained in `config/settings/test.py`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -78,7 +78,7 @@ def make_user(email: str = "user@example.com") -> None:
     )
 
 
-def authenticated(email: str = "user@example.com", **extra: str) -> APIClient:
+def authenticated(email: str = "user@example.com", **extra: Any) -> APIClient:
     api = APIClient(**extra)
     access = api.post(reverse("auth:login"), {"email": email, "password": PASSWORD}).data["access"]
     api.credentials(HTTP_AUTHORIZATION=f"Bearer {access}", **extra)
@@ -408,7 +408,7 @@ class TestHowItIsConfigured:
     def test_the_configured_rates_are_the_ones_the_specification_asks_for(self):
         from config.settings import base
 
-        rates = base.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
+        rates = cast("dict[str, str]", base.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"])
 
         assert rates["anon"] == "20/min"
         assert rates["user"] == "300/min"

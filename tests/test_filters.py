@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from typing import Any
 
 import django_filters
 import pytest
@@ -191,7 +192,8 @@ class TestTheTrapItself:
                     continue
                 if candidate is django_filters.FilterSet:
                     continue
-                for field, declared in candidate.base_filters.items():
+                declared_filters: dict[str, Any] = getattr(candidate, "base_filters", {})
+                for field, declared in declared_filters.items():
                     queryset = getattr(declared, "queryset", None)
                     if queryset is not None and not callable(queryset):
                         offenders.append(f"{attribute}.{field}")

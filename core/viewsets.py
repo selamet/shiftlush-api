@@ -9,17 +9,25 @@ instead of exposing one in production.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar
 
-from django.db.models import Model, QuerySet
+from django.db.models import QuerySet
 from rest_framework import mixins, status, viewsets
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 
-from apps.users.models import Role
+from apps.users.models import Role, User
 from core.idempotency import ReplayProtectedCreate
+from core.models import CompanyOwnedModel
 from core.permissions import RolePermission
+from core.requests import authenticated_user
+
+# The model a viewset serves, named once so that `perform_destroy` in a subclass
+# can say `instance: Building` and still be the same method the mixin calls.
+# Without it every hook here would take a bare Model, and a subclass narrowing to
+# its own type would be an override error rather than the obvious thing to write.
+ModelT = TypeVar("ModelT", bound=CompanyOwnedModel)
 
 
 class TenantViewSet(
@@ -29,7 +37,7 @@ class TenantViewSet(
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
-    viewsets.GenericViewSet,
+    viewsets.GenericViewSet[ModelT],
 ):
     """CRUD over a company-owned model.
 
@@ -41,22 +49,22 @@ class TenantViewSet(
     #: Key into the permission matrix. Required.
     resource: str
     #: Serializer used for reads.
-    read_serializer_class: type[BaseSerializer]
+    read_serializer_class: type[BaseSerializer[Any]]
     #: Serializer used for create and update. Separate on purpose — a single
     #: class juggling read_only is how a field like `company` stays writable.
-    write_serializer_class: type[BaseSerializer]
+    write_serializer_class: type[BaseSerializer[Any]]
     #: Lookup path from this model to Customer, for the technician narrowing.
     customer_path: str | None = None
 
     permission_classes = [RolePermission]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
-    def get_serializer_class(self) -> type[BaseSerializer]:
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action in ("create", "update", "partial_update"):
             return self.write_serializer_class
         return self.read_serializer_class
 
-    def get_base_queryset(self) -> QuerySet[Model]:
+    def get_base_queryset(self) -> QuerySet[ModelT]:
         """Subclasses override this, not get_queryset.
 
         Overriding get_queryset directly would drop the technician narrowing
@@ -65,12 +73,15 @@ class TenantViewSet(
         """
         return super().get_queryset()
 
-    def get_queryset(self) -> QuerySet[Model]:
+    def get_queryset(self) -> QuerySet[ModelT]:
         # The manager has already applied the company filter; this narrows
         # further for the one role that does not see the whole company.
         queryset = self.get_base_queryset()
         user = self.request.user
-        if getattr(user, "role", None) == Role.TECHNICIAN and self.customer_path:
+        # isinstance rather than the helper below: this one is allowed to run
+        # without a user — the schema generator walks viewsets outside a request
+        # — and the answer for a non-user is "no narrowing", not an exception.
+        if isinstance(user, User) and user.role == Role.TECHNICIAN and self.customer_path:
             assigned = list(user.customer_assignments.values_list("customer_id", flat=True))
             queryset = queryset.filter(**{f"{self.customer_path}__in": assigned})
         return queryset
@@ -101,34 +112,31 @@ class TenantViewSet(
         read = self.read_serializer_class(write.instance, context=self.get_serializer_context())
         return Response(read.data)
 
-    def perform_create(self, serializer: BaseSerializer) -> None:
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         # The company comes from the authenticated user, never from the payload.
         # If a client could name its own tenant the whole boundary would be
         # advisory.
-        serializer.save(
-            company_id=self.request.user.company_id,
-            created_by=self.request.user,
-            updated_by=self.request.user,
-        )
+        user = authenticated_user(self.request)
+        serializer.save(company_id=user.company_id, created_by=user, updated_by=user)
 
-    def perform_update(self, serializer: BaseSerializer) -> None:
-        serializer.save(updated_by=self.request.user)
+    def perform_update(self, serializer: BaseSerializer[Any]) -> None:
+        serializer.save(updated_by=authenticated_user(self.request))
 
-    def perform_destroy(self, instance: Model) -> None:
+    def perform_destroy(self, instance: ModelT) -> None:
         # Soft delete. The model's delete() marks the row; nothing is removed.
-        instance.updated_by = self.request.user
+        instance.updated_by = authenticated_user(self.request)
         instance.save(update_fields=["updated_by", "updated_at"])
         instance.delete()
 
 
 class ReadOnlyTenantViewSet(
-    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet[ModelT]
 ):
     resource: str
     permission_classes = [RolePermission]
 
 
-class ReferenceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+class ReferenceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet[Any]):
     """Global reference data — provinces, districts, neighbourhoods.
 
     Not tenant-scoped because it is not owned by anyone, and read-only because
@@ -138,9 +146,5 @@ class ReferenceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     pagination_class = None
 
     def get_serializer_context(self) -> dict[str, Any]:
-        context: dict[str, Any] = super().get_serializer_context()
+        context: dict[str, Any] = dict(super().get_serializer_context())
         return context
-
-
-def request_user_company(request: Request) -> Any:
-    return getattr(request.user, "company_id", None)

@@ -84,7 +84,7 @@ class SoftDeleteModel(TimeStampedModel):
         abstract = True
         base_manager_name = "objects"
 
-    def delete(self, using: str | None = None, keep_parents: bool = False) -> Any:  # type: ignore[override]
+    def delete(self, using: str | None = None, keep_parents: bool = False) -> Any:
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.save(using=using, update_fields=["is_deleted", "deleted_at", "updated_at"])
@@ -108,8 +108,12 @@ class CompanyOwnedModel(SoftDeleteModel):
         related_name="%(class)ss",
     )
 
-    objects = TenantManager()
-    unscoped = UnscopedManager()
+    # django-stubs marks a model's managers as class variables, and does not
+    # recognise an abstract base replacing one it declared itself. There is no
+    # narrower code to silence and no way to declare it that keeps the manager
+    # parameterised per concrete model, which is what makes reads typed at all.
+    objects = TenantManager()  # type: ignore[misc]
+    unscoped = UnscopedManager()  # type: ignore[misc]
 
     class Meta:
         abstract = True

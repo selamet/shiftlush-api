@@ -674,6 +674,7 @@ class TestSystemContextCallers:
     def test_a_reset_token_cannot_be_spent_twice(self, two_firms):
         _, theirs = two_firms
         token = services.request_password_reset(theirs.owner.email)
+        assert token is not None
         services.confirm_password_reset(token=token, new_password=NEW_PASSWORD)
         with pytest.raises(BusinessRuleError):
             services.confirm_password_reset(token=token, new_password="third-password-here")

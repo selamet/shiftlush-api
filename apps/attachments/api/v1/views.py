@@ -22,6 +22,7 @@ from apps.attachments.services import confirm_upload, download_url, prepare_uplo
 from apps.users.models import Role
 from core.idempotency import ReplayProtectedCreate, replay_exempt
 from core.permissions import RolePermission
+from core.requests import authenticated_company_id, authenticated_user
 
 
 class AttachmentFilter(django_filters.FilterSet):
@@ -37,7 +38,7 @@ class AttachmentViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.DestroyModelMixin,
-    GenericViewSet,
+    GenericViewSet[Attachment],
 ):
     """Files, without the bytes.
 
@@ -108,7 +109,7 @@ class AttachmentViewSet(
         form = UploadUrlRequestSerializer(data=request.data)
         form.is_valid(raise_exception=True)
 
-        ticket = prepare_upload(company_id=request.user.company_id, **form.validated_data)
+        ticket = prepare_upload(company_id=authenticated_company_id(request), **form.validated_data)
         return Response(UploadUrlResponseSerializer(ticket).data)
 
     @extend_schema(request=AttachmentConfirmSerializer, responses={201: AttachmentSerializer})
@@ -127,8 +128,8 @@ class AttachmentViewSet(
         form.is_valid(raise_exception=True)
 
         attachment = confirm_upload(
-            company_id=request.user.company_id,
-            uploaded_by=request.user,
+            company_id=authenticated_company_id(request),
+            uploaded_by=authenticated_user(request),
             **form.validated_data,
         )
         return Response(AttachmentSerializer(attachment).data, status=status.HTTP_201_CREATED)

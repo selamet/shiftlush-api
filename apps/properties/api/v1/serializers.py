@@ -14,10 +14,14 @@ class StrictMixin:
         unknown = set(getattr(self, "initial_data", {})) - set(self.fields)  # type: ignore[attr-defined]
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "unexpected field"))
-        return super().validate(attrs)  # type: ignore[misc]
+        # The mixin is declared standalone, so `super()` is only a serializer
+        # once it is mixed in; the ignore is that, and the local annotation is
+        # what stops the resulting Any leaking into every caller.
+        validated: dict[str, Any] = super().validate(attrs)  # type: ignore[misc]
+        return validated
 
 
-class ComplexReadSerializer(AddressReadMixin, serializers.ModelSerializer):
+class ComplexReadSerializer(AddressReadMixin, serializers.ModelSerializer[Complex]):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
@@ -46,7 +50,7 @@ class ComplexReadSerializer(AddressReadMixin, serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ComplexWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class ComplexWriteSerializer(StrictMixin, serializers.ModelSerializer[Complex]):
     class Meta:
         model = Complex
         fields = [
@@ -61,7 +65,7 @@ class ComplexWriteSerializer(StrictMixin, serializers.ModelSerializer):
         ]
 
 
-class BuildingReadSerializer(AddressReadMixin, serializers.ModelSerializer):
+class BuildingReadSerializer(AddressReadMixin, serializers.ModelSerializer[Building]):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     complex_name = serializers.CharField(source="complex.name", read_only=True, default=None)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
@@ -95,7 +99,7 @@ class BuildingReadSerializer(AddressReadMixin, serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class BuildingWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class BuildingWriteSerializer(StrictMixin, serializers.ModelSerializer[Building]):
     type = serializers.ChoiceField(choices=BuildingType.choices)
 
     class Meta:

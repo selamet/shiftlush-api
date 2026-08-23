@@ -19,7 +19,10 @@ from django.utils import translation
 from drf_spectacular.contrib.rest_framework_simplejwt import SimpleJWTScheme
 
 
-class CompanyAwareJWTScheme(SimpleJWTScheme):
+# drf-spectacular registers extensions from an unannotated `__init_subclass__`.
+# Ignored at the one line that calls it rather than by relaxing the rule for the
+# module: the day the library annotates it, mypy says this comment is stale.
+class CompanyAwareJWTScheme(SimpleJWTScheme):  # type: ignore[no-untyped-call]
     """Teaches the generator that our subclass is still bearer-token auth.
 
     Without this every operation loses its `security` block, and a generated

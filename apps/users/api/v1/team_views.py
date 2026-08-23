@@ -32,6 +32,7 @@ from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 from core.idempotency import ReplayProtectedCreate
 from core.permissions import RolePermission
+from core.requests import authenticated_company, authenticated_user
 
 
 class UserFilter(django_filters.FilterSet):
@@ -44,7 +45,7 @@ class UserViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
-    GenericViewSet,
+    GenericViewSet[User],
 ):
     """Colleagues.
 
@@ -94,7 +95,7 @@ class UserViewSet(
         form.is_valid(raise_exception=True)
 
         role = form.validated_data.pop("role", None)
-        if role == Role.OWNER and request.user.role != Role.OWNER:
+        if role == Role.OWNER and authenticated_user(request).role != Role.OWNER:
             # The rule InvitationCreateSerializer already applies, on the other
             # path to the same outcome: an administrator who could mint an owner
             # could promote themselves past the one role they do not hold.
@@ -140,7 +141,7 @@ class UserViewSet(
         services.set_assigned_customers(
             user=user,
             customer_ids=form.validated_data["customer_ids"],
-            assigned_by=request.user,
+            assigned_by=authenticated_user(request),
         )
         user.refresh_from_db()
         return Response(UserSerializer(user).data)
@@ -157,7 +158,7 @@ class InvitationViewSet(
     ReplayProtectedCreate,
     mixins.ListModelMixin,
     mixins.DestroyModelMixin,
-    GenericViewSet,
+    GenericViewSet[Invitation],
 ):
     """Pending and past invitations.
 
@@ -181,14 +182,15 @@ class InvitationViewSet(
         # send mail to other people. An unverified account may have been opened
         # with an address its owner does not control, and an invitation is a
         # real message to a real person — see specification 7.1.
-        if not request.user.is_email_verified:
+        actor = authenticated_user(request)
+        if not actor.is_email_verified:
             raise BusinessRuleError(ErrorCode.EMAIL_NOT_VERIFIED)
 
         form = InvitationCreateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
 
         invitation, _token = services.create_invitation(
-            company=request.user.company, invited_by=request.user, **form.validated_data
+            company=authenticated_company(request), invited_by=actor, **form.validated_data
         )
         # The token is deliberately dropped here. It exists once, in the e-mail;
         # returning it would put a working credential in an API response and in

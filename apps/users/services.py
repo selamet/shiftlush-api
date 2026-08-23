@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -60,7 +60,7 @@ def _new_token() -> str:
 class TokenPair:
     access: str
     refresh: str
-    refresh_expires_at: object
+    refresh_expires_at: datetime
 
 
 def issue_tokens(
@@ -642,6 +642,9 @@ def deactivate_user(*, user: User) -> None:
 def _is_last_active_owner(user: User) -> bool:
     if user.role != Role.OWNER or not user.is_active:
         return False
+    if user.company_id is None:
+        # No firm, so not the last owner of one. Only a superuser gets here.
+        return False
     return (
         not User.objects.filter(company_id=user.company_id, role=Role.OWNER, is_active=True)
         .exclude(pk=user.pk)
@@ -669,14 +672,16 @@ def change_role(*, user: User, role: str) -> None:
 
 
 @transaction.atomic
-def set_assigned_customers(*, user: User, customer_ids: list, assigned_by: User) -> None:
+def set_assigned_customers(*, user: User, customer_ids: list[UUID], assigned_by: User) -> None:
     """Replace the set of customers a technician may see.
 
     A replace rather than an add: the caller sends the list it wants to be true,
     which is the only form that can remove an assignment without a second
     endpoint and a second race.
     """
-    if user.role != Role.TECHNICIAN:
+    if user.role != Role.TECHNICIAN or user.company_id is None:
+        # A user with no firm has no customers to be assigned, and is not a
+        # technician either — only a superuser reaches that state.
         raise BusinessRuleError(ErrorCode.ONLY_TECHNICIANS_ARE_ASSIGNED)
 
     wanted = set(customer_ids)

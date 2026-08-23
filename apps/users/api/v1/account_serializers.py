@@ -8,6 +8,8 @@ there, so the password policy has one home.
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 from apps.users.api.v1.serializers import PasswordField, StrictSerializer
@@ -48,10 +50,11 @@ class PasswordChangeSerializer(StrictSerializer):
         could resolve one and return it here. Left alone in this change because
         those serializers are not what this change is about.
         """
-        return self.context["request"].user
+        user: User = self.context["request"].user
+        return user
 
 
-class SessionSerializer(serializers.Serializer):
+class SessionSerializer(serializers.Serializer[Any]):
     """One signed-in device, not one refresh token.
 
     `id` is the chain rather than the row's primary key. The row is replaced

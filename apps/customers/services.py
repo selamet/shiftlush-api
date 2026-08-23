@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from apps.customers.models import Customer, CustomerContact
 
 
-def demote_other_primaries(customer: Customer, keep_pk: object | None = None) -> None:
+def demote_other_primaries(customer: Customer, keep_pk: UUID | None = None) -> None:
     """Clear the primary flag on every other live contact of this customer.
 
     Marking a contact primary is an instruction, not a clash: the person doing

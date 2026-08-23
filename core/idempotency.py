@@ -25,6 +25,7 @@ from rest_framework.response import Response
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
 from core.models import IdempotencyKey
+from core.requests import authenticated_user
 
 HEADER = "Idempotency-Key"
 RETENTION = timedelta(hours=24)
@@ -77,9 +78,16 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
 
         endpoint = f"{request.method} {request.path}"
         fingerprint = _fingerprint(request)
+        user = authenticated_user(request)
+        company_id = user.company_id
+        if company_id is None:
+            # The stored row is keyed by company, and a user without one cannot
+            # reach any of the endpoints this wraps — every one of them is
+            # company-scoped and the permission class refuses first.
+            return handler(self, request, *args, **kwargs)
 
         existing = IdempotencyKey.objects.filter(
-            company_id=request.user.company_id, user_id=request.user.pk, key=key
+            company_id=company_id, user_id=user.pk, key=key
         ).first()
 
         if existing is not None:
@@ -97,8 +105,8 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
         if 200 <= response.status_code < 300:
             response_data = response.data
             IdempotencyKey.objects.update_or_create(
-                company_id=request.user.company_id,
-                user_id=request.user.pk,
+                company_id=company_id,
+                user_id=user.pk,
                 key=key,
                 defaults={
                     "endpoint": endpoint,
@@ -145,6 +153,11 @@ class ReplayProtectedCreate:
     exemption". Anything that inherits this gets its create wrapped, including a
     subclass several levels down that overrides an already-protected one.
     """
+
+    #: Contributed by the viewset this is mixed into, and rebound below. Declared
+    #: so that the rebinding is a typed assignment rather than an attribute this
+    #: class is not supposed to know about.
+    create: Callable[..., Response]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)

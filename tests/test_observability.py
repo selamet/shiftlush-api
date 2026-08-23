@@ -124,7 +124,9 @@ class TestTheWholePath:
         # `parsed_dsn` on the way to sending, and a hand-rolled stand-in that
         # lacks it drops every event without a word — which looks exactly like
         # "nothing was reported", the thing under test.
-        class Collecting(sentry_sdk.Transport):
+        # sentry_sdk arrives through importorskip, so its Transport is not a
+        # name the checker can resolve at the class statement.
+        class Collecting(sentry_sdk.Transport):  # type: ignore[misc,name-defined]
             def capture_envelope(self, envelope):
                 for item in envelope.items:
                     payload = item.payload.json
@@ -181,7 +183,9 @@ class TestARealRequest:
         sentry_sdk = pytest.importorskip("sentry_sdk")
         captured: list[dict] = []
 
-        class Collecting(sentry_sdk.Transport):
+        # sentry_sdk arrives through importorskip, so its Transport is not a
+        # name the checker can resolve at the class statement.
+        class Collecting(sentry_sdk.Transport):  # type: ignore[misc,name-defined]
             def capture_envelope(self, envelope):
                 for item in envelope.items:
                     if item.payload.json:
