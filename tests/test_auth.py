@@ -319,14 +319,14 @@ class TestInfrastructureEndpoints:
         assert client.get("/health").status_code == 200
 
     def test_ready_checks_the_database_and_storage(self, client, db, monkeypatch):
-        from core import storage
+        from core import observability, storage
 
         # Storage is not running in the test environment; the point here is that
         # both checks are reported, not that MinIO is up.
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(storage, "reachable", lambda backend: True)
         # The test suite reports nothing to Sentry on purpose, so this one is
         # pinned rather than left to whatever a previous test left initialised.
-        monkeypatch.setattr(views.observability, "reporting_status", lambda: "ok")
+        monkeypatch.setattr(observability, "reporting_status", lambda: "ok")
 
         response = client.get("/ready")
         assert response.status_code == 200
@@ -347,10 +347,10 @@ class TestInfrastructureEndpoints:
         the deploy workflow prints /ready, so "disabled" is in the log of the
         deploy that shipped it.
         """
-        from core import views
+        from core import observability, storage
 
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
-        monkeypatch.setattr(views.observability, "reporting_status", lambda: "disabled")
+        monkeypatch.setattr(storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(observability, "reporting_status", lambda: "disabled")
 
         response = client.get("/ready")
 
