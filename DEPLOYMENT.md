@@ -178,6 +178,32 @@ docker exec shiftlush-api python manage.py shell -c \
 **7. The first account.** `POST /auth/register` creates a company and its owner.
 Everyone after that arrives by invitation.
 
+**8. The demonstration account.** The one login that can be shown to somebody
+without opening the firm's own records. It is a command rather than something
+typed into a shell precisely so that this step exists: an account created by
+hand is gone the next time a database is built, and nobody can say what it was.
+
+```bash
+docker exec shiftlush-api python manage.py create_demo_account --with-data
+```
+
+It creates the company `ShiftLush Demo` and `demo@selamet.dev` / `demo123123` as
+its owner, with the address already marked verified — it is provisioned rather
+than claimed, so no message is sent and nothing is left for the admin to tick.
+Running it again creates no second company and resets no password, so it is safe
+on the boot path of a rebuild.
+
+`--with-data` fills the demo company with generated customers, buildings,
+elevators and contracts, and a demonstration environment wants it: five empty
+lists show nothing. It is not the default because this command is expected to be
+run against databases holding real records, and it writes into the demo tenant
+only — the tenant boundary is what guarantees that, not the names it picks. On a
+tenant that already holds colleagues or customers it writes nothing and says so.
+
+The password is checked against `AUTH_PASSWORD_VALIDATORS` before the account is
+created, so `--password` cannot quietly install one below the policy the product
+enforces on its customers.
+
 ### Address data, afterwards
 
 Once the data is present the load is skipped on every restart: three existence
@@ -202,8 +228,11 @@ thing to do. What it does not do is delete: a district that upstream has
 dissolved stays until someone removes it deliberately, because the buildings
 pointing at it would otherwise have nowhere to be.
 
-Demo data (`seed_demo_data`) is for development and demonstration environments
-only. It refuses to run twice, and it refuses to run at all before the address
+Demo data (`seed_demo_data`) is for development environments only. It registers
+a company of its own and refuses to start once any company exists, so it is the
+wrong command for anything already carrying real records — `create_demo_account`
+is the one that provisions a demonstration tenant beside a live one. Both fill
+the tenant from the same generator, and both refuse to run before the address
 data exists.
 
 ## Checking a deployment

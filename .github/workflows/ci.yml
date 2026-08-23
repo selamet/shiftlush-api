@@ -85,10 +85,16 @@ jobs:
       - name: A clean database can be brought up from nothing
         env:
           DATABASE_URL: postgres://shiftlush:shiftlush@localhost:5432/shiftlush
+        # The demo account runs last, and deliberately after a company already
+        # exists, because that is the shape it meets on a live box. Twice, since
+        # what it promises is that a second run creates no second company — the
+        # suite makes that promise on SQLite, this step makes it on Postgres.
         run: |
           uv run python manage.py migrate
           uv run python manage.py load_address_data
           uv run python manage.py seed_demo_data
+          uv run python manage.py create_demo_account --with-data
+          uv run python manage.py create_demo_account --with-data
 
       - name: The contract matches the code
         # The spec is generated, so a stale committed copy means the frontend is

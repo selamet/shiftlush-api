@@ -88,7 +88,10 @@ ignore = [
 "tests/**" = ["S105", "S106", "S107", "RUF059"]
 # Seed data is demonstration material: the password is meant to be known and
 # the randomness only has to be repeatable, not unguessable.
-"core/management/commands/seed_demo_data.py" = ["S105", "S311", "RUF059"]
+"core/demo.py" = ["S105", "S311", "RUF059"]
+# Same reason, for the one credential a demonstration is handed. It is checked
+# against AUTH_PASSWORD_VALIDATORS at run time, which is the rule that matters.
+"core/management/commands/create_demo_account.py" = ["S105"]
 # A developer tool, run by hand when the yearly address refresh lands. It reads
 # one hard-coded https URL and is not part of the running application.
 "apps/address/data/build.py" = ["S310"]
