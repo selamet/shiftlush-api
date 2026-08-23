@@ -24,18 +24,22 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.template.loader import render_to_string
-from django.utils import translation
 
 logger = logging.getLogger(__name__)
 
 
 def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) -> None:
-    # Recipients are Turkish regardless of what the last management command
-    # activated, and this is the one place the backend produces prose.
-    with translation.override("tr"):
-        subject = render_to_string(f"email/{template}/subject.txt", context).strip()
-        text_body = render_to_string(f"email/{template}/body.txt", context)
-        html_body = render_to_string(f"email/{template}/body.html", context)
+    # These three renders used to sit inside `translation.override("tr")`, so
+    # that a recipient got Turkish regardless of what a management command had
+    # last activated. There is nothing for it to act on: the templates hold
+    # their Turkish literally, with no `{% trans %}` and no `{% load i18n %}`,
+    # and the only values they interpolate are names, URLs and a small integer
+    # that reads the same in every locale. The override was a guard that could
+    # not fail and could not have caught an English e-mail either. See the
+    # deviations table for why the templates are written this way.
+    subject = render_to_string(f"email/{template}/subject.txt", context).strip()
+    text_body = render_to_string(f"email/{template}/body.txt", context)
+    html_body = render_to_string(f"email/{template}/body.html", context)
 
     message = EmailMultiAlternatives(
         subject=subject,

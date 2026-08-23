@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable
 from http import HTTPStatus
@@ -15,6 +16,21 @@ from core.context import RequestActor, actor_context, company_context
 from core.throttling import STATE_ATTRIBUTE, RateLimitState
 
 RequestHandler = Callable[[HttpRequest], HttpResponse]
+
+
+#: What an incoming id has to look like to be honoured.
+#:
+#: The id is not decoration. It goes on the log record, onto a Sentry tag, and
+#: into the body of a 500, and it is the handle support asks a user to read out.
+#: Whatever arrives in the header is written by the caller, so the shape has to
+#: be checked before any of that happens: a value with a newline in it forges a
+#: second log line, and a value with no ceiling puts an arbitrary number of
+#: bytes on every record of a request that repeats it.
+#:
+#: Hex, dashes and underscores, 8 to 64 characters. That accepts the two forms
+#: actually in use — this middleware's own `uuid4().hex`, and the dashed UUID a
+#: proxy writes — and nothing that can break a line or a search.
+_WELL_FORMED_ID = re.compile(r"\A[0-9a-fA-F][0-9a-fA-F_-]{7,63}\Z")
 
 
 class RequestIDMiddleware:
@@ -31,10 +47,19 @@ class RequestIDMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        # A client-supplied id is honoured so a trace can span the browser and
-        # the API; one is generated when absent.
+        # An incoming id is honoured so a trace can span the hop in front of
+        # this process — Caddy, or a server-side client — and the API. It is
+        # replaced rather than rejected when it does not look like an id: the
+        # caller wanted a request served, not a lecture about a header, and a
+        # 400 here would turn a malformed trace id into a failed request.
+        #
+        # The browser is deliberately not among the callers that can set it.
+        # `x-request-id` is not CORS-safelisted and is absent from
+        # CORS_ALLOW_HEADERS, so the frontend can read the id but not name it;
+        # the reason is written where that list is.
         incoming = request.headers.get(self.HEADER, "")
-        request.request_id = incoming or uuid.uuid4().hex  # type: ignore[attr-defined]
+        honoured = incoming if _WELL_FORMED_ID.match(incoming) else ""
+        request.request_id = honoured or uuid.uuid4().hex  # type: ignore[attr-defined]
         response = self.get_response(request)
         response[self.HEADER] = request.request_id  # type: ignore[attr-defined]
         return response

@@ -95,6 +95,33 @@ class TestTheContractItself:
                 assert operation.get("security"), f"{method.upper()} {path}"
 
 
+class TestWhatProductionServesOfIt:
+    """Neither `/schema/` nor `/docs/` is routed outside DEBUG.
+
+    The suite runs with `DEBUG = False`, so this is the production URLconf and
+    not a simulation of one — `urlpatterns` is built at import time and no
+    `override_settings` would move it.
+
+    `/docs/` is 8.13. `/schema/` is a deviation from the 8.6 inventory, recorded
+    with its reasoning; the short version is that the frontend now pulls the
+    contract from the published `openapi/v1.yaml` rather than from a running
+    backend, which leaves the endpoint with no reader, a second copy of a
+    document free to disagree with the committed one, and a full schema build on
+    every unauthenticated request. Asserted here because the alternative is a
+    reader of `config/urls.py` noticing an `if`.
+    """
+
+    @pytest.mark.parametrize("path", ["/schema/", "/docs/"])
+    def test_it_is_not_routed(self, client, db, path):
+        assert client.get(path).status_code == 404
+
+    def test_the_committed_contract_is_the_one_that_is_published(self, spec):
+        # The consequence of the above: this file is the only copy anyone can
+        # read, so the tests over it are the only gate the contract has.
+        assert SPEC_PATH.exists()
+        assert spec["openapi"].startswith("3.")
+
+
 class TestTheSchemaMatchesTheServer:
     """The gap the other tests in this file did not cover.
 
