@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import csv
 import json
-import sys
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 BASE = "https://raw.githubusercontent.com/ubeydeozdmr/turkiye-api/main/datasets/2025"
 HERE = Path(__file__).resolve().parent
@@ -33,7 +33,7 @@ VILLAGE_ID_OFFSET = 1_000_000
 EXPECTED = {"provinces": 81, "districts": 900, "neighborhoods": 30_000, "villages": 15_000}
 
 
-def fetch(name: str) -> list[dict]:
+def fetch(name: str) -> list[dict[str, Any]]:
     """Read one upstream file into memory.
 
     Deliberately not written to disk on the way past. An earlier version kept
@@ -51,10 +51,11 @@ def fetch(name: str) -> list[dict]:
     # be committed as a diff nobody reads closely enough.
     if len(rows) < EXPECTED[name]:
         raise SystemExit(f"{name}: got {len(rows)} rows, expected at least {EXPECTED[name]}")
-    return rows
+    loaded: list[dict[str, Any]] = rows
+    return loaded
 
 
-def write(name: str, header: list[str], rows: list[list]) -> None:
+def write(name: str, header: list[str], rows: list[list[Any]]) -> None:
     path = HERE / f"{name}.csv"
     with path.open("w", encoding="utf-8", newline="") as handle:
         # csv.writer defaults to CRLF. Set explicitly so the committed bytes
@@ -114,4 +115,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

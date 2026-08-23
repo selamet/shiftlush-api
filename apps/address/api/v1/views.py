@@ -12,14 +12,16 @@ list of fifty thousand.
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.db.models import QuerySet
 from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework import serializers
+from rest_framework import mixins, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import GenericViewSet, mixins
+from rest_framework.viewsets import GenericViewSet
 
 from apps.address.geocoding import GeocoderUnavailable, reverse_geocode
 from apps.address.matching import match_place
@@ -32,19 +34,19 @@ MAX_NEIGHBORHOOD_RESULTS = 20
 MIN_SEARCH_LENGTH = 2
 
 
-class ProvinceSerializer(serializers.ModelSerializer):
+class ProvinceSerializer(serializers.ModelSerializer[Province]):
     class Meta:
         model = Province
         fields = ["id", "name"]
 
 
-class DistrictSerializer(serializers.ModelSerializer):
+class DistrictSerializer(serializers.ModelSerializer[District]):
     class Meta:
         model = District
         fields = ["id", "province_id", "name"]
 
 
-class NeighborhoodSerializer(serializers.ModelSerializer):
+class NeighborhoodSerializer(serializers.ModelSerializer[Neighborhood]):
     district_name = serializers.CharField(source="district.name", read_only=True)
     province_name = serializers.CharField(source="district.province.name", read_only=True)
 
@@ -61,7 +63,7 @@ class NeighborhoodSerializer(serializers.ModelSerializer):
         ]
 
 
-class ProvinceViewSet(mixins.ListModelMixin, GenericViewSet):
+class ProvinceViewSet(mixins.ListModelMixin, GenericViewSet[Province]):
     """All 81, unpaginated. Small enough to be a dropdown."""
 
     queryset = Province.objects.all()
@@ -70,7 +72,7 @@ class ProvinceViewSet(mixins.ListModelMixin, GenericViewSet):
     pagination_class = None
 
 
-class DistrictViewSet(mixins.ListModelMixin, GenericViewSet):
+class DistrictViewSet(mixins.ListModelMixin, GenericViewSet[District]):
     serializer_class = DistrictSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
@@ -88,7 +90,7 @@ class DistrictViewSet(mixins.ListModelMixin, GenericViewSet):
         return District.objects.filter(province_id=province)
 
 
-class NeighborhoodViewSet(mixins.ListModelMixin, GenericViewSet):
+class NeighborhoodViewSet(mixins.ListModelMixin, GenericViewSet[Neighborhood]):
     """Typeahead only. The full list is never served.
 
     Searching goes through `name_normalized`, which the loader fills with the
@@ -132,7 +134,7 @@ class NeighborhoodViewSet(mixins.ListModelMixin, GenericViewSet):
 ADDRESS_LEVELS = ["province", "district", "neighborhood"]
 
 
-class GeocodeMatchSerializer(serializers.Serializer):
+class GeocodeMatchSerializer(serializers.Serializer[Any]):
     """One level of the address, resolved to a row the client can select."""
 
     id = serializers.IntegerField(
@@ -151,14 +153,14 @@ class GeocodeMatchSerializer(serializers.Serializer):
     )
 
 
-class ReverseGeocodeQuerySerializer(serializers.Serializer):
+class ReverseGeocodeQuerySerializer(serializers.Serializer[Any]):
     """The point to look up. Both are required; neither has a default."""
 
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lng = serializers.FloatField(min_value=-180, max_value=180)
 
 
-class ReverseGeocodeSerializer(serializers.Serializer):
+class ReverseGeocodeSerializer(serializers.Serializer[Any]):
     """What a dropped pin resolves to.
 
     Ids rather than names, because the form the client is filling in is a

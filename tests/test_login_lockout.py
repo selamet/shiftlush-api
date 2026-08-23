@@ -23,6 +23,7 @@ out of enforces nothing at all.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pytest
 from django.core.cache import cache
@@ -60,8 +61,21 @@ def owner(db) -> User:
     return user
 
 
-def login(client: APIClient, *, email: str = EMAIL, password: str = PASSWORD, **extra: str):
-    return client.post(reverse("auth:login"), {"email": email, "password": password}, **extra)
+def login(
+    client: APIClient,
+    *,
+    email: str = EMAIL,
+    password: str = PASSWORD,
+    **extra: str,
+) -> Any:
+    # `extra` carries the WSGI header overrides that set the caller's address.
+    # Passed through `headers=`-style kwargs rather than positionally, because
+    # the third positional argument of `post` is `format`, not a header bag.
+    return client.post(
+        reverse("auth:login"),
+        {"email": email, "password": password},
+        **extra,  # type: ignore[arg-type]  # header kwargs, not `format`
+    )
 
 
 def fail(client: APIClient, times: int = 1, *, email: str = EMAIL, **extra: str) -> list[str]:

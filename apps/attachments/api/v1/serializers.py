@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from apps.attachments.services import ALLOWED_TYPES, MAX_SIZE_BYTES
 
 
-class AttachmentSerializer(serializers.ModelSerializer):
+class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     """What a client is told about a file.
 
     `storage_key` and `storage_backend` are absent on purpose. They are how the
@@ -40,7 +42,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
         return f"{user.first_name} {user.last_name}".strip() if user else ""
 
 
-class UploadUrlRequestSerializer(serializers.Serializer):
+class UploadUrlRequestSerializer(serializers.Serializer[Any]):
     object_type = serializers.ChoiceField(choices=ObjectType.choices)
     object_id = serializers.UUIDField()
     category = serializers.ChoiceField(choices=AttachmentCategory.choices)
@@ -50,7 +52,7 @@ class UploadUrlRequestSerializer(serializers.Serializer):
     size_bytes = serializers.IntegerField(min_value=1, max_value=MAX_SIZE_BYTES)
 
 
-class UploadUrlResponseSerializer(serializers.Serializer):
+class UploadUrlResponseSerializer(serializers.Serializer[Any]):
     upload_url = serializers.URLField()
     storage_key = serializers.CharField()
     expires_in = serializers.IntegerField()
@@ -59,7 +61,7 @@ class UploadUrlResponseSerializer(serializers.Serializer):
     content_type = serializers.CharField()
 
 
-class AttachmentConfirmSerializer(serializers.Serializer):
+class AttachmentConfirmSerializer(serializers.Serializer[Any]):
     """The second half of an upload.
 
     Only the key and the display name: everything else — which record the file
@@ -71,6 +73,6 @@ class AttachmentConfirmSerializer(serializers.Serializer):
     original_filename = serializers.CharField(max_length=255)
 
 
-class DownloadUrlSerializer(serializers.Serializer):
+class DownloadUrlSerializer(serializers.Serializer[Any]):
     download_url = serializers.URLField()
     expires_in = serializers.IntegerField()

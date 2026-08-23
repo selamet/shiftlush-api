@@ -76,8 +76,8 @@ def _target_exists(company_id: uuid.UUID, object_type: str, object_id: uuid.UUID
     queryset = model.unscoped.filter(pk=object_id, is_deleted=False)
     if object_type == ObjectType.COMPANY:
         # Company is the tenant; it has no column pointing at itself.
-        return queryset.filter(pk=company_id).exists()
-    return queryset.filter(company_id=company_id).exists()
+        return bool(queryset.filter(pk=company_id).exists())
+    return bool(queryset.filter(company_id=company_id).exists())
 
 
 def _backend_for(category: str) -> str:

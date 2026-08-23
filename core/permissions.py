@@ -17,7 +17,7 @@ the list endpoint.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar
 
 from django.db.models import Model, QuerySet
 from rest_framework import permissions
@@ -25,6 +25,10 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from apps.users.models import Role
+
+# Generic so that a caller narrowing a Building queryset is handed Buildings
+# back, not bare Models.
+ModelT = TypeVar("ModelT", bound=Model)
 
 # The matrix from the specification, written once. A viewset names a resource
 # and the action it is performing; the answer comes from here rather than from
@@ -146,7 +150,7 @@ class TechnicianScopedQueryset:
     #: Lookup path from this model to the customer, e.g. "building__customer".
     customer_path: str = "customer"
 
-    def scope_to_assignments(self, queryset: QuerySet[Model], user: Any) -> QuerySet[Model]:
+    def scope_to_assignments(self, queryset: QuerySet[ModelT], user: Any) -> QuerySet[ModelT]:
         if getattr(user, "role", None) != Role.TECHNICIAN:
             return queryset
         assigned = user.customer_assignments.values_list("customer_id", flat=True)

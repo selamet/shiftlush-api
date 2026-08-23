@@ -1,4 +1,4 @@
-.PHONY: dev migrate check test test-pg lint format spec sync-spec services
+.PHONY: dev migrate check test test-pg lint mypy format spec sync-spec services
 
 dev:
 	uv run python manage.py runserver
@@ -23,6 +23,12 @@ services:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
+
+# Strict, and the whole tree. Tests are checked too, with their own annotations
+# not required of them — see the overrides in pyproject.toml, which say what is
+# relaxed and why.
+mypy:
+	uv run mypy .
 
 format:
 	uv run ruff check --fix .

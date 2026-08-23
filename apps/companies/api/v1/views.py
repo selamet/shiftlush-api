@@ -23,7 +23,7 @@ from core.permissions import RolePermission
 from core.validators import validate_tax_number
 
 
-class CompanySerializer(serializers.ModelSerializer):
+class CompanySerializer(serializers.ModelSerializer[Company]):
     logo_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -56,11 +56,12 @@ class CompanySerializer(serializers.ModelSerializer):
     def get_logo_url(self, company: Company) -> str:
         # A signed URL rather than a stored one: the bucket is private, and a
         # URL with an expiry cannot be pasted into a public page by accident.
-        if company.logo_id is None or not company.logo.storage_key:
+        logo = company.logo
+        if logo is None or not logo.storage_key:
             return ""
         from apps.attachments.services import download_url
 
-        return download_url(company.logo)
+        return download_url(logo)
 
     def validate_logo(self, value: Any) -> Any:
         if value is None:

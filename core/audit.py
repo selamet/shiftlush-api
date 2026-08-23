@@ -70,6 +70,11 @@ class AuditedModel(models.Model):
     which is the half people actually need when reconstructing an incident.
     """
 
+    #: Set by ``from_db`` on every instance that came out of the database. Not a
+    #: field — Django only collects Field instances, so an annotation here stays
+    #: out of the schema while telling a reader (and mypy) that it exists.
+    _loaded_values: dict[str, Any]
+
     class Meta:
         abstract = True
 
@@ -93,7 +98,7 @@ def _serialise(value: Any) -> Any:
 
 def _snapshot(instance: models.Model) -> dict[str, Any]:
     data: dict[str, Any] = {}
-    for field in instance._meta.concrete_fields:  # type: ignore[attr-defined]
+    for field in instance._meta.concrete_fields:
         name = field.attname
         if field.name in MASKED_FIELDS or name in MASKED_FIELDS:
             data[field.name] = MASK
@@ -110,7 +115,7 @@ def _changed(instance: models.Model) -> tuple[dict[str, Any], dict[str, Any]]:
 
     old: dict[str, Any] = {}
     new: dict[str, Any] = {}
-    for field in instance._meta.concrete_fields:  # type: ignore[attr-defined]
+    for field in instance._meta.concrete_fields:
         name = field.attname
         if name not in loaded or field.name in IGNORED_IN_DIFF:
             continue

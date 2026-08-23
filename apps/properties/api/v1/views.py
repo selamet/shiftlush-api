@@ -34,7 +34,9 @@ class BuildingFilter(django_filters.FilterSet):
         model = Building
         fields = ["customer", "complex", "type", "is_active"]
 
-    def filter_search(self, queryset: QuerySet[Building], name: str, value: str):
+    def filter_search(
+        self, queryset: QuerySet[Building], name: str, value: str
+    ) -> QuerySet[Building]:
         return queryset.filter(
             Q(name__icontains=value)
             | Q(customer__legal_name__icontains=value)
@@ -42,7 +44,7 @@ class BuildingFilter(django_filters.FilterSet):
         )
 
 
-class ComplexViewSet(TenantViewSet):
+class ComplexViewSet(TenantViewSet[Complex]):
     resource = "complex"
     read_serializer_class = ComplexReadSerializer
     write_serializer_class = ComplexWriteSerializer
@@ -66,7 +68,7 @@ class ComplexViewSet(TenantViewSet):
         super().perform_destroy(instance)
 
 
-class BuildingViewSet(TenantViewSet):
+class BuildingViewSet(TenantViewSet[Building]):
     resource = "building"
     read_serializer_class = BuildingReadSerializer
     write_serializer_class = BuildingWriteSerializer

@@ -35,6 +35,7 @@ from apps.users.api.v1.serializers import TokenResponseSerializer
 from apps.users.api.v1.views import REFRESH_COOKIE, _token_response
 from apps.users.models import RefreshSession
 from core.client_ip import client_ip
+from core.requests import authenticated_user
 
 
 def _current_session(request: Request) -> RefreshSession | None:
@@ -45,7 +46,9 @@ def _current_session(request: Request) -> RefreshSession | None:
     the cookie, every session would report `is_current: false`, and "sign out
     everywhere else" would quietly mean everywhere.
     """
-    return services.session_for_refresh_token(request.user, request.COOKIES.get(REFRESH_COOKIE))
+    return services.session_for_refresh_token(
+        authenticated_user(request), request.COOKIES.get(REFRESH_COOKIE)
+    )
 
 
 class PasswordChangeView(APIView):
@@ -85,7 +88,7 @@ class PasswordChangeView(APIView):
         serializer.is_valid(raise_exception=True)
 
         pair = services.change_password(
-            user=request.user,
+            user=authenticated_user(request),
             current_password=serializer.validated_data["current_password"],
             new_password=serializer.validated_data["new_password"],
             current_session=_current_session(request),
@@ -123,7 +126,7 @@ class SessionListView(APIView):
     )
     def get(self, request: Request) -> Response:
         current = _current_session(request)
-        sessions = services.live_sessions(request.user)
+        sessions = services.live_sessions(authenticated_user(request))
         return Response(
             SessionSerializer(
                 sessions,
@@ -159,7 +162,7 @@ class SessionRevokeView(APIView):
         current = _current_session(request)
         ending_own = current is not None and current.chain_id == session_id
 
-        if not services.revoke_session(user=request.user, chain_id=session_id):
+        if not services.revoke_session(user=authenticated_user(request), chain_id=session_id):
             raise NotFound()
 
         response = Response(status=status.HTTP_204_NO_CONTENT)
@@ -192,5 +195,7 @@ class SessionRevokeOthersView(APIView):
         ),
     )
     def post(self, request: Request) -> Response:
-        services.revoke_other_sessions(user=request.user, keep=_current_session(request))
+        services.revoke_other_sessions(
+            user=authenticated_user(request), keep=_current_session(request)
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)

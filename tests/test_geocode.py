@@ -83,8 +83,8 @@ class FakeResponse:
     def __enter__(self) -> FakeResponse:
         return self
 
-    def __exit__(self, *exc: object) -> bool:
-        return False
+    def __exit__(self, *exc: object) -> None:
+        return None
 
 
 class UnreachableCache:

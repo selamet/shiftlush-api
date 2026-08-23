@@ -281,7 +281,7 @@ class Command(BaseCommand):
             contract = Contract.objects.create(
                 company=company,
                 customer=customer,
-                contract_number=next_contract_number(str(company.id)),
+                contract_number=next_contract_number(company.id),
                 status=ContractStatus.ACTIVE,
                 scope=rng.choice([Scope.MAINTENANCE_ONLY, Scope.MAINTENANCE_AND_REPAIR]),
                 start_date=start,

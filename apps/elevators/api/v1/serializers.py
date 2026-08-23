@@ -27,10 +27,14 @@ class StrictMixin:
         unknown = set(getattr(self, "initial_data", {})) - set(self.fields)  # type: ignore[attr-defined]
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "unexpected field"))
-        return super().validate(attrs)  # type: ignore[misc]
+        # The mixin is declared standalone, so `super()` is only a serializer
+        # once it is mixed in; the ignore is that, and the local annotation is
+        # what stops the resulting Any leaking into every caller.
+        validated: dict[str, Any] = super().validate(attrs)  # type: ignore[misc]
+        return validated
 
 
-class ElevatorListSerializer(serializers.ModelSerializer):
+class ElevatorListSerializer(serializers.ModelSerializer[Elevator]):
     """What the list screen needs — seven columns' worth, not all 31 fields.
 
     The rest are record fields rather than search criteria and live on the
@@ -62,7 +66,7 @@ class ElevatorListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class CurrentContractSerializer(serializers.Serializer):
+class CurrentContractSerializer(serializers.Serializer[Any]):
     """The contract covering this elevator right now, if any.
 
     A compact block rather than the whole contract: the detail screen shows four
@@ -77,7 +81,7 @@ class CurrentContractSerializer(serializers.Serializer):
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
 
-class ElevatorDetailSerializer(serializers.ModelSerializer):
+class ElevatorDetailSerializer(serializers.ModelSerializer[Elevator]):
     building_name = serializers.CharField(source="building.name", read_only=True)
     customer_id = serializers.UUIDField(source="building.customer_id", read_only=True)
     customer_name = serializers.CharField(source="building.customer.legal_name", read_only=True)
@@ -183,7 +187,7 @@ class ElevatorDetailSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer[Elevator]):
     category = serializers.ChoiceField(choices=Category.choices, required=False, allow_blank=True)
     drive_type = serializers.ChoiceField(
         choices=DriveType.choices, required=False, allow_blank=True
@@ -271,7 +275,7 @@ class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer):
         return attrs
 
 
-class ElevatorByQrSerializer(serializers.ModelSerializer):
+class ElevatorByQrSerializer(serializers.ModelSerializer[Elevator]):
     """The six values that decide what happens next on site.
 
     Deliberately narrow: this is what a technician sees after scanning, on a
@@ -304,7 +308,7 @@ class ElevatorByQrSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class LabelRequestSerializer(serializers.Serializer):
+class LabelRequestSerializer(serializers.Serializer[Any]):
     """Which elevators to print, in the order they should appear.
 
     A list rather than a filter: the user ticks rows on a screen, and a filter

@@ -376,6 +376,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-zen-queries"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/88/87/03c327804113144d88cfa76bd4c7deebe565af656dddf0e29682bca4ecbd/django-zen-queries-2.1.0.tar.gz", hash = "sha256:624dad6a10f04df4dc188ff4f27a875943c1708738bd9863388dd39861ac9614", size = 10376, upload-time = "2021-07-27T10:31:58.53Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/51/b611dce1db2315c92cfc9958d9440063c3fab0c732e89035798d29a67f8b/django_zen_queries-2.1.0-py3-none-any.whl", hash = "sha256:255f6a1efd94974c5752af2ef60d2d1fa66466d74e7faf32a6ff46141e947e55", size = 12356, upload-time = "2021-07-27T10:31:56.947Z" },
+]
+
+[[package]]
 name = "djangorestframework"
 version = "3.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -941,6 +953,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "django-stubs", extra = ["compatible-mypy"] },
+    { name = "django-zen-queries" },
     { name = "djangorestframework-stubs" },
     { name = "factory-boy" },
     { name = "mypy" },
@@ -978,6 +991,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "django-stubs", extras = ["compatible-mypy"], specifier = ">=5.2" },
+    { name = "django-zen-queries", specifier = ">=2.1" },
     { name = "djangorestframework-stubs", specifier = ">=3.16" },
     { name = "factory-boy", specifier = ">=3.3" },
     { name = "mypy", specifier = ">=1.17" },

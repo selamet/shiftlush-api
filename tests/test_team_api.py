@@ -8,6 +8,7 @@ technician's view is what their assignments say it is.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import timedelta
 
 import pytest
 from django.core import mail as django_mail
@@ -201,7 +202,7 @@ class TestInviting:
         _, owner = firm
         invite(api_for(owner), deliver)
         token = link_token(0, "invitation")
-        Invitation.unscoped.update(expires_at=timezone.now() - timezone.timedelta(seconds=1))
+        Invitation.unscoped.update(expires_at=timezone.now() - timedelta(seconds=1))
 
         response = APIClient().get(reverse("invitation-verify", args=[token]))
         # Distinct from an invalid token: the invitee should ask for a new
@@ -243,7 +244,7 @@ class TestInviting:
         _, owner = firm
         client = api_for(owner)
         invite(client, deliver)
-        Invitation.unscoped.update(expires_at=timezone.now() - timezone.timedelta(seconds=1))
+        Invitation.unscoped.update(expires_at=timezone.now() - timedelta(seconds=1))
 
         # An expired invitation has no live link, so inviting again is a real
         # request rather than a duplicate of one.
@@ -296,7 +297,9 @@ class TestUsers:
 
         # Otherwise nobody can manage users or company settings again, and there
         # is no way back short of editing the database.
-        assert raised.value.detail.code == ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED.value
+        detail = raised.value.detail
+        assert not isinstance(detail, list | dict)
+        assert detail.code == ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED.value
 
     def test_the_last_owner_cannot_be_demoted_either(self, firm):
         company, owner = firm

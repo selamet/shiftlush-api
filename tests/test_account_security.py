@@ -8,6 +8,8 @@ call and the interesting behaviour is everything around it.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.urls import reverse
 from django.utils import timezone
@@ -336,7 +338,7 @@ class TestSessionListing:
         with system_context():
             RefreshSession.objects.filter(user=owner).exclude(
                 chain_id=_chain_of(client, owner)
-            ).update(expires_at=timezone.now() - timezone.timedelta(seconds=1))
+            ).update(expires_at=timezone.now() - timedelta(seconds=1))
 
         # A thirty-day token that ran out is not a device the user has to do
         # anything about, and listing it as live would invite them to end

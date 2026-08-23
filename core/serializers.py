@@ -7,6 +7,8 @@ the second copy is where the two start to disagree.
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 #: The joins `AddressReadMixin` reads. Kept beside it so that a viewset selecting
@@ -15,7 +17,7 @@ from rest_framework import serializers
 ADDRESS_JOIN = ("neighborhood", "neighborhood__district", "neighborhood__district__province")
 
 
-class AddressReadMixin(serializers.Serializer):
+class AddressReadMixin(serializers.Serializer[Any]):
     """The named address behind a `neighborhood` foreign key.
 
     Every one of these keys is nullable — a record can be entered before anyone

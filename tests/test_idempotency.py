@@ -522,7 +522,7 @@ class TestNoCreateEndpointCanForgetThis:
         exempt = {
             view.__name__
             for _, view in create_routes()
-            if getattr(view.create, "replay_exempt", False)
+            if getattr(getattr(view, "create", None), "replay_exempt", False)
         }
         # Confirming an upload converges by itself: a storage key names one
         # object, so a retry returns the record the first call made. Any other

@@ -18,6 +18,7 @@ rules here:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -28,7 +29,7 @@ from django.utils import translation
 logger = logging.getLogger(__name__)
 
 
-def _send(*, template: str, subject_key: str, to: str, context: dict) -> None:
+def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) -> None:
     # Recipients are Turkish regardless of what the last management command
     # activated, and this is the one place the backend produces prose.
     with translation.override("tr"):

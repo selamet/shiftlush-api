@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 from django.db import models
 from django.utils import timezone
 
 from core.context import get_current_company_id, in_system_context
 
+# Generic over the model so that `Elevator.objects.first()` is an Elevator and
+# not Any. Left unparameterised, every read through these managers arrived
+# untyped and carried that Any into whatever the caller returned.
+ModelT = TypeVar("ModelT", bound=models.Model)
 
-class SoftDeleteQuerySet(models.QuerySet["Any"]):
+
+class SoftDeleteQuerySet(models.QuerySet[ModelT]):
     """A queryset whose ``delete()`` marks rows instead of removing them."""
 
-    def delete(self) -> tuple[int, dict[str, int]]:  # type: ignore[override]
+    def delete(self) -> tuple[int, dict[str, int]]:
         # Django's QuerySet.delete() issues SQL directly and never calls the
         # model's delete(), so overriding the model alone would let a bulk
         # delete quietly destroy rows that are supposed to be recoverable.
@@ -22,18 +29,18 @@ class SoftDeleteQuerySet(models.QuerySet["Any"]):
         """Remove rows for real. Management commands only."""
         return super().delete()
 
-    def alive(self) -> SoftDeleteQuerySet:
+    def alive(self) -> SoftDeleteQuerySet[ModelT]:
         return self.filter(is_deleted=False)
 
 
-class SoftDeleteManager(models.Manager["Any"]):
+class SoftDeleteManager(models.Manager[ModelT]):
     """Hides soft-deleted rows."""
 
-    def get_queryset(self) -> SoftDeleteQuerySet:
+    def get_queryset(self) -> SoftDeleteQuerySet[ModelT]:
         return SoftDeleteQuerySet(self.model, using=self._db).filter(is_deleted=False)
 
 
-class TenantManager(SoftDeleteManager):
+class TenantManager(SoftDeleteManager[ModelT]):
     """Adds the company filter on top of soft delete.
 
     This is the default manager, and it is also set as ``base_manager_name`` so
@@ -42,7 +49,7 @@ class TenantManager(SoftDeleteManager):
     tenant boundary.
     """
 
-    def get_queryset(self) -> SoftDeleteQuerySet:
+    def get_queryset(self) -> SoftDeleteQuerySet[ModelT]:
         queryset = super().get_queryset()
         if in_system_context():
             return queryset
@@ -55,7 +62,7 @@ class TenantManager(SoftDeleteManager):
         return queryset.filter(company_id=company_id)
 
 
-class UnscopedManager(models.Manager["Any"]):
+class UnscopedManager(models.Manager[ModelT]):
     """No filters at all — neither tenant nor soft delete.
 
     Every row, including other companies' and deleted ones. That is what the
@@ -67,5 +74,5 @@ class UnscopedManager(models.Manager["Any"]):
     mid-line; ``Elevator.all_objects.all()`` would read as ordinary.
     """
 
-    def get_queryset(self) -> SoftDeleteQuerySet:
+    def get_queryset(self) -> SoftDeleteQuerySet[ModelT]:
         return SoftDeleteQuerySet(self.model, using=self._db)

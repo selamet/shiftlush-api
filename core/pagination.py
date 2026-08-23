@@ -50,6 +50,12 @@ class StandardPagination(PageNumberPagination):
         }
 
     def get_paginated_response(self, data: Any) -> Response:
+        page, request = self.page, self.request
+        if page is None or request is None:
+            # DRF sets both in paginate_queryset(), which always runs first. A
+            # caller that reached here without it has a bug worth a stack trace
+            # rather than an AttributeError three frames deeper.
+            raise RuntimeError("get_paginated_response called before paginate_queryset")
         return Response(
             OrderedDict(
                 [
@@ -58,10 +64,10 @@ class StandardPagination(PageNumberPagination):
                         "pagination",
                         OrderedDict(
                             [
-                                ("page", self.page.number),
-                                ("page_size", self.get_page_size(self.request)),
-                                ("total", self.page.paginator.count),
-                                ("total_pages", self.page.paginator.num_pages),
+                                ("page", page.number),
+                                ("page_size", self.get_page_size(request)),
+                                ("total", page.paginator.count),
+                                ("total_pages", page.paginator.num_pages),
                             ]
                         ),
                     ),

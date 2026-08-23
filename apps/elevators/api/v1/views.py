@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import django_filters
 from django.db.models import Q, QuerySet
 from django.http import HttpResponse
@@ -9,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer
 
 from apps.elevators.api.v1.serializers import (
     ElevatorByQrSerializer,
@@ -23,6 +26,7 @@ from apps.elevators.services import regenerate_qr_token, save_with_qr_token
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse, ServiceUnavailable
 from core.permissions import RolePermission
+from core.requests import authenticated_user
 from core.viewsets import TenantViewSet
 
 JOINS = ("building", "building__customer", "building__complex")
@@ -38,7 +42,9 @@ class ElevatorFilter(django_filters.FilterSet):
         model = Elevator
         fields = ["status", "inspection_label", "category", "building", "customer"]
 
-    def filter_search(self, queryset: QuerySet[Elevator], name: str, value: str):
+    def filter_search(
+        self, queryset: QuerySet[Elevator], name: str, value: str
+    ) -> QuerySet[Elevator]:
         return queryset.filter(
             Q(registration_number__icontains=value)
             | Q(name__icontains=value)
@@ -47,7 +53,7 @@ class ElevatorFilter(django_filters.FilterSet):
         )
 
 
-class ElevatorViewSet(TenantViewSet):
+class ElevatorViewSet(TenantViewSet[Elevator]):
     resource = "elevator"
     # Printing a label and regenerating a token are field work: a technician who
     # has to go back to the office for a replacement sticker is a technician who
@@ -75,7 +81,7 @@ class ElevatorViewSet(TenantViewSet):
             queryset = queryset.prefetch_related("contract_lines__contract")
         return queryset
 
-    def perform_create(self, serializer) -> None:  # type: ignore[no-untyped-def]
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         # Every elevator gets a token at birth: the label can be printed the
         # moment the record exists, and a nullable token would mean every
         # consumer has to handle the empty case forever.
@@ -84,12 +90,13 @@ class ElevatorViewSet(TenantViewSet):
         # insert that gets retried. A token taken by a concurrent create between
         # a check and this write would otherwise reach the caller as a
         # constraint violation on a field they never supplied.
+        user = authenticated_user(self.request)
         save_with_qr_token(
             lambda token: serializer.save(
                 qr_token=token,
-                company_id=self.request.user.company_id,
-                created_by=self.request.user,
-                updated_by=self.request.user,
+                company_id=user.company_id,
+                created_by=user,
+                updated_by=user,
             )
         )
 
@@ -161,7 +168,7 @@ class ElevatorViewSet(TenantViewSet):
             raise NotFound
 
         try:
-            pdf = render_labels(elevators, request.user.company)
+            pdf = render_labels(elevators, authenticated_user(request).company)
         except PdfRenderingUnavailable as exc:
             raise ServiceUnavailable() from exc
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import ClassVar
 
 import pytest
@@ -222,7 +223,7 @@ class TestRefreshRotation:
         login(client)
         with system_context():
             RefreshSession.objects.filter(user=owner).update(
-                expires_at=timezone.now() - timezone.timedelta(seconds=1)
+                expires_at=timezone.now() - timedelta(seconds=1)
             )
         assert client.post(reverse("auth:refresh")).data["error"]["code"] == "TOKEN_EXPIRED"
 
@@ -318,14 +319,14 @@ class TestInfrastructureEndpoints:
         assert client.get("/health").status_code == 200
 
     def test_ready_checks_the_database_and_storage(self, client, db, monkeypatch):
-        from core import views
+        from core import observability, storage
 
         # Storage is not running in the test environment; the point here is that
         # both checks are reported, not that MinIO is up.
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(storage, "reachable", lambda backend: True)
         # The test suite reports nothing to Sentry on purpose, so this one is
         # pinned rather than left to whatever a previous test left initialised.
-        monkeypatch.setattr(views.observability, "reporting_status", lambda: "ok")
+        monkeypatch.setattr(observability, "reporting_status", lambda: "ok")
 
         response = client.get("/ready")
         assert response.status_code == 200
@@ -346,10 +347,10 @@ class TestInfrastructureEndpoints:
         the deploy workflow prints /ready, so "disabled" is in the log of the
         deploy that shipped it.
         """
-        from core import views
+        from core import observability, storage
 
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
-        monkeypatch.setattr(views.observability, "reporting_status", lambda: "disabled")
+        monkeypatch.setattr(storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(observability, "reporting_status", lambda: "disabled")
 
         response = client.get("/ready")
 
@@ -362,9 +363,9 @@ class TestInfrastructureEndpoints:
     ):
         from django.core.cache import cache
 
-        from core import views
+        from core import storage
 
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: True)
+        monkeypatch.setattr(storage, "reachable", lambda backend: True)
 
         def refuse(*args, **kwargs):
             raise ConnectionError("NOPERM")
@@ -378,9 +379,9 @@ class TestInfrastructureEndpoints:
         assert response.json()["checks"]["cache"] == "error: ConnectionError"
 
     def test_ready_fails_when_storage_is_unreachable(self, client, db, monkeypatch):
-        from core import views
+        from core import storage
 
-        monkeypatch.setattr(views.storage, "reachable", lambda backend: False)
+        monkeypatch.setattr(storage, "reachable", lambda backend: False)
 
         response = client.get("/ready")
         # An instance that cannot reach the bucket hands out upload URLs that

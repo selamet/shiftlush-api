@@ -23,6 +23,7 @@ import pytest
 # make_transport on sentry_sdk.client, and that attribute exists only once the
 # submodule has been loaded.
 import sentry_sdk.client  # noqa: F401
+from sentry_sdk.transport import Transport
 
 from core.context import RequestActor, actor_context, company_context
 from core.observability import SENSITIVE_KEYS, before_send, init_sentry, reporting_status
@@ -124,7 +125,7 @@ class TestTheWholePath:
         # `parsed_dsn` on the way to sending, and a hand-rolled stand-in that
         # lacks it drops every event without a word — which looks exactly like
         # "nothing was reported", the thing under test.
-        class Collecting(sentry_sdk.Transport):
+        class Collecting(Transport):
             def capture_envelope(self, envelope):
                 for item in envelope.items:
                     payload = item.payload.json
@@ -181,7 +182,7 @@ class TestARealRequest:
         sentry_sdk = pytest.importorskip("sentry_sdk")
         captured: list[dict] = []
 
-        class Collecting(sentry_sdk.Transport):
+        class Collecting(Transport):
             def capture_envelope(self, envelope):
                 for item in envelope.items:
                     if item.payload.json:
@@ -283,7 +284,7 @@ class TestReportingIsObservable:
     def test_a_configured_deployment_says_ok(self, monkeypatch):
         sentry_sdk = pytest.importorskip("sentry_sdk")
 
-        class Collecting(sentry_sdk.Transport):
+        class Collecting(Transport):
             def capture_envelope(self, envelope):
                 pass
 
@@ -304,7 +305,7 @@ class TestReportingIsObservable:
         """Because it is: a closed client has no transport and sends nothing."""
         sentry_sdk = pytest.importorskip("sentry_sdk")
 
-        class Collecting(sentry_sdk.Transport):
+        class Collecting(Transport):
             def capture_envelope(self, envelope):
                 pass
 

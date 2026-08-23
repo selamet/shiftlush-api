@@ -38,10 +38,14 @@ class StrictMixin:
         unknown = set(getattr(self, "initial_data", {})) - set(self.fields)  # type: ignore[attr-defined]
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "unexpected field"))
-        return super().validate(attrs)  # type: ignore[misc]
+        # The mixin is declared standalone, so `super()` is only a serializer
+        # once it is mixed in; the ignore is that, and the local annotation is
+        # what stops the resulting Any leaking into every caller.
+        validated: dict[str, Any] = super().validate(attrs)  # type: ignore[misc]
+        return validated
 
 
-class ContractLineSerializer(serializers.ModelSerializer):
+class ContractLineSerializer(serializers.ModelSerializer[ContractElevator]):
     registration_number = serializers.CharField(
         source="elevator.registration_number", read_only=True
     )
@@ -63,7 +67,7 @@ class ContractLineSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ContractReadSerializer(serializers.ModelSerializer):
+class ContractReadSerializer(serializers.ModelSerializer[Contract]):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     lines = ContractLineSerializer(many=True, read_only=True)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
@@ -193,7 +197,7 @@ class ContractReadSerializer(serializers.ModelSerializer):
         return data
 
 
-class ContractWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class ContractWriteSerializer(StrictMixin, serializers.ModelSerializer[Contract]):
     status = serializers.ChoiceField(choices=ContractStatus.choices, required=False)
     scope = serializers.ChoiceField(choices=Scope.choices)
     pricing_type = serializers.ChoiceField(choices=PricingType.choices)
@@ -255,14 +259,14 @@ class ContractWriteSerializer(StrictMixin, serializers.ModelSerializer):
         return attrs
 
 
-class AddElevatorsSerializer(StrictMixin, serializers.Serializer):
+class AddElevatorsSerializer(StrictMixin, serializers.Serializer[Any]):
     elevator_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
     unit_price = serializers.DecimalField(
         max_digits=12, decimal_places=2, required=False, allow_null=True
     )
 
 
-class TerminateSerializer(StrictMixin, serializers.Serializer):
+class TerminateSerializer(StrictMixin, serializers.Serializer[Any]):
     terminated_at = serializers.DateField()
     # allow_blank so DRF's generic "blank" error does not fire first and hide
     # the specific code the client needs to translate.
@@ -278,7 +282,7 @@ class TerminateSerializer(StrictMixin, serializers.Serializer):
         return value
 
 
-class RenewSerializer(StrictMixin, serializers.Serializer):
+class RenewSerializer(StrictMixin, serializers.Serializer[Any]):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     carry_elevators = serializers.BooleanField(default=True)

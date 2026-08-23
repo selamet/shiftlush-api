@@ -36,10 +36,14 @@ class StrictMixin:
         unknown = set(getattr(self, "initial_data", {})) - set(self.fields)  # type: ignore[attr-defined]
         if unknown:
             raise serializers.ValidationError(dict.fromkeys(sorted(unknown), "unexpected field"))
-        return super().validate(attrs)  # type: ignore[misc]
+        # The mixin is declared standalone, so `super()` is only a serializer
+        # once it is mixed in; the ignore is that, and the local annotation is
+        # what stops the resulting Any leaking into every caller.
+        validated: dict[str, Any] = super().validate(attrs)  # type: ignore[misc]
+        return validated
 
 
-class CustomerContactReadSerializer(serializers.ModelSerializer):
+class CustomerContactReadSerializer(serializers.ModelSerializer[CustomerContact]):
     class Meta:
         model = CustomerContact
         fields = [
@@ -57,7 +61,7 @@ class CustomerContactReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class CustomerContactWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class CustomerContactWriteSerializer(StrictMixin, serializers.ModelSerializer[CustomerContact]):
     role = serializers.ChoiceField(choices=ContactRole.choices, default=ContactRole.OTHER)
 
     class Meta:
@@ -99,7 +103,7 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
         fields = ["full_name", "role", "phone", "email", "is_primary", "notes"]
 
 
-class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer):
+class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Customer]):
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
@@ -135,7 +139,7 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer):
         # default response would leak it to every client that renders a table.
 
 
-class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer):
+class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer[Customer]):
     type = serializers.ChoiceField(choices=CustomerType.choices)
 
     class Meta:
@@ -188,6 +192,7 @@ class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer):
 
     def _check_type_rules(self, attrs: dict[str, Any]) -> None:
         customer_type = attrs.get("type") or getattr(self.instance, "type", None)
+        forbidden: tuple[str, ...]
         if customer_type == CustomerType.INDIVIDUAL:
             forbidden, required = ("tax_number", "tax_office"), "national_id"
         elif customer_type in ORGANISATION_TYPES:
