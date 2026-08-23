@@ -9,3 +9,12 @@ id,district_id,name,postal_code,type
 060101,0601,Kızılay Mah.,06420,neighborhood
 060102,0601,Çukurambar Mah.,06530,neighborhood
 060103,0601,Yukarı Bahçelievler Mah.,06490,neighborhood
+250101,2501,Akdağ,25100,neighborhood
+250102,2501,Muratpaşa,25200,neighborhood
+250103,2501,Cumhuriyet,25240,neighborhood
+250104,2501,Şükrüpaşa,25240,neighborhood
+250201,2502,Yıldızkent,25070,neighborhood
+250202,2502,Hüseyin Avni Ulaş,25080,neighborhood
+250203,2502,Yenişehir,25090,neighborhood
+250301,2503,Dutçu,25300,village
+250302,2503,Gezköy,25300,village

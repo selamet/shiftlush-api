@@ -156,10 +156,6 @@ class ServiceArea:
     districts: list[Any]
     #: District id to its neighbourhoods, read once rather than per row.
     places: dict[int, list[Any]]
-    #: Whether `province` is the one the demo data was written for. False means
-    #: the dataset does not hold it and a stand-in was chosen, so anything else
-    #: keyed to the town — its dialling code — has to stand down too.
-    at_home: bool
 
     def district_for(self, index: int) -> Any:
         """Deal customers round the districts, rather than scattering them.
@@ -177,7 +173,7 @@ class ServiceArea:
 def _service_area() -> ServiceArea:
     from apps.address.models import District, Neighborhood
 
-    province, at_home = _province()
+    province = _province()
     districts = list(
         District.objects.filter(province=province)
         .annotate(
@@ -200,57 +196,48 @@ def _service_area() -> ServiceArea:
     for place in Neighborhood.objects.filter(district__in=districts).order_by("id"):
         places[place.district_id].append(place)
 
-    return ServiceArea(province=province, districts=districts, places=dict(places), at_home=at_home)
+    return ServiceArea(province=province, districts=districts, places=dict(places))
 
 
-def _province() -> tuple[Any, bool]:
-    """Which province the demonstration firm operates in.
+class DemoProvinceMissing(RuntimeError):
+    """The province the demo data is written around is not in the address table."""
 
-    Read off the address dataset rather than configured here, in three steps.
 
-    A deployment whose dataset holds exactly one province has already answered
-    the question: that is the province it serves, and the demo belongs in it. No
-    setting is consulted to find that out, so scoping the dataset — which is
-    being added separately — moves the demo with it and needs nothing from this
-    module.
+def _province() -> Any:
+    """The province the demonstration firm operates in: the one named in `demo.json`.
 
-    An unscoped dataset holds all eighty-one and cannot answer, so the province
-    the demo data was written around is named in `demo.json` beside the customer
-    names that assume it, and is looked up by name.
+    Named there rather than chosen here, and not derived from the dataset. An
+    earlier version fell back to whichever province had the most neighbourhoods
+    when the named one was absent, which is how a demonstration for a firm in
+    one town came to describe customers in Balikesir, Izmir and Tokat.
 
-    And if even that is absent — a test fixture with three provinces in it, none
-    of them the one named — the best-covered province stands in, so a database
-    with address data in it can always be filled. The caller has already
-    established there is some.
+    A stand-in is worse than a refusal. Nothing about the generated data
+    announces which province it landed in — the customer names, the dialling
+    code and the district rota all read as deliberate — so a substitution is
+    invisible in exactly the artefact whose job is to be looked at.
 
-    Both lookups below insist on a province that has neighbourhoods rather than
-    one that merely has a row. A province with no districts under it would
-    otherwise be chosen and then yield an empty service area, and that is not a
-    hypothetical shape: scoping a dataset by loading one province's districts
-    while leaving all eighty-one province rows in place would produce exactly
-    it, with eighty of them empty.
+    So this refuses. `load_address_data` is the step that was missed, and saying
+    so is more use than several hundred plausible rows in the wrong town.
+
+    The province must have neighbourhoods under it, not merely a row. Loading
+    one province's districts while leaving all eighty-one province rows in place
+    produces exactly that shape, and it would yield an empty service area.
     """
     from apps.address.models import Province
 
-    # Two rows is enough to tell "exactly one" from "more than one" without
-    # counting eighty-one.
-    loaded = list(Province.objects.all()[:2])
-    if len(loaded) == 1:
-        return loaded[0], _is_home(loaded[0])
-
-    inhabited = Province.objects.annotate(places=Count("districts__neighborhoods")).filter(
-        places__gt=0
+    wanted = DEMO["home"]["province"]
+    province = (
+        Province.objects.annotate(places=Count("districts__neighborhoods"))
+        .filter(places__gt=0, name_normalized=normalize(wanted))
+        .first()
     )
-
-    named = inhabited.filter(name_normalized=normalize(DEMO["home"]["province"])).first()
-    if named is not None:
-        return named, True
-
-    return inhabited.order_by("-places", "id").first(), False
-
-
-def _is_home(province: Any) -> bool:
-    return bool(province.name_normalized == normalize(DEMO["home"]["province"]))
+    if province is None:
+        raise DemoProvinceMissing(
+            f"the demo data is written for {wanted} and the address tables hold no "
+            f"neighbourhoods there. Run load_address_data, and check "
+            f"ADDRESS_PROVINCES if the dataset is scoped."
+        )
+    return province
 
 
 def has_address_data() -> bool:
@@ -295,18 +282,14 @@ def _street(rng: random.Random) -> str:
     return f"{rng.randint(1, 60)}{DEMO['street_suffix']}"
 
 
-def _phone(area: ServiceArea, index: int) -> str:
+def _phone(index: int) -> str:
     """The office number of a firm's customer.
 
     A landline, because that is what an estate office or a municipality answers
-    on — but only where the dialling code is right. If the dataset could not
-    supply the province the demo was written for, a number from that town would
-    be one more thing pointing at a place the rest of the data is not in, so the
-    fallback is a mobile, which belongs to no town.
+    on, and the dialling code is always the right one: the generator refuses to
+    run anywhere but the town the data is written for.
     """
-    if area.at_home:
-        return f"{DEMO['home']['landline_prefix']}{2340000 + index * 13:07d}"
-    return f"+90533{2000000 + index:07d}"
+    return f"{DEMO['home']['landline_prefix']}{2340000 + index * 13:07d}"
 
 
 def _customers(company: Company, rng: random.Random, area: ServiceArea) -> list[Customer]:
@@ -331,7 +314,7 @@ def _customers(company: Company, rng: random.Random, area: ServiceArea) -> list[
             # refuses to save when somebody opens them.
             tax_number=tax_number,
             tax_office=rng.choice(DEMO["tax_offices"]),
-            phone=_phone(area, index),
+            phone=_phone(index),
             neighborhood=area.somewhere_in(district, rng),
             street=_street(rng),
             is_active=index != len(CUSTOMERS) - 1,

@@ -223,15 +223,18 @@ class TestTheRecordsMatchTheirBuildings:
 
 
 class TestWhereTheProvinceComesFrom:
-    """The three routes, each built rather than assumed.
+    """One place, and a refusal everywhere else.
 
-    A deployment whose address dataset is scoped to one province has already
-    said which province it serves. That is the case a colleague's setting is
-    about to create, and the first test is what makes the two fit together
-    without this module knowing the setting exists.
+    The demo data is written for Erzurum -- the customer names carry it, the
+    dialling code is its own, and the district rota assumes twenty districts of
+    the right sizes. So the province is not chosen, it is required.
+
+    An earlier draft fell back to whichever province had the most
+    neighbourhoods, which is exactly how a demonstration for a firm in one town
+    came to describe customers in three others.
     """
 
-    def test_a_dataset_holding_one_province_decides_it(self, db, tmp_path):
+    def test_the_named_province_is_used_when_the_dataset_holds_it(self, db, tmp_path):
         scoped = write_dataset(tmp_path / "scoped", {25: "Erzurum"}, {25: 12})
         call_command("load_address_data", path=scoped)
         call_command("seed_demo_data")
@@ -243,12 +246,11 @@ class TestWhereTheProvinceComesFrom:
 
         assert {province_of(building) for building in buildings} == {25}
 
-    def test_an_unscoped_dataset_falls_to_the_province_the_data_names(self, db, tmp_path):
-        """And to it rather than to the biggest.
+    def test_a_bigger_province_beside_it_changes_nothing(self, db, tmp_path):
+        """Istanbul is given four times the coverage on purpose.
 
-        Istanbul is given four times the coverage here precisely so that the
-        rule below it — best covered wins — would pick the wrong answer if the
-        name were not consulted first.
+        Any rule that reached for the best-covered province would answer 34
+        here, so this fails if one is ever reintroduced.
         """
         both = write_dataset(tmp_path / "both", {25: "Erzurum", 34: "Istanbul"}, {25: 12, 34: 48})
         call_command("load_address_data", path=both)
@@ -261,32 +263,35 @@ class TestWhereTheProvinceComesFrom:
 
         assert {province_of(building) for building in buildings} == {25}
 
-    def test_a_dataset_without_it_falls_to_the_best_covered_province(self, db, tmp_path):
-        """CI builds an environment from nothing, and a test fixture holds three
-        provinces that need not include the one the demo data was written for.
-        Neither may end in an exception: the point of the fallback is that any
-        database with address data in it can be filled.
+    def test_a_dataset_without_it_refuses_rather_than_standing_in(self, db, tmp_path):
+        """The whole point of the change.
+
+        Several hundred plausible rows in the wrong town are worse than an
+        error, because nothing in the generated data announces which province it
+        landed in. The message has to name the step that was missed.
         """
         elsewhere = write_dataset(
             tmp_path / "elsewhere", {6: "Ankara", 34: "Istanbul"}, {6: 12, 34: 48}
         )
         call_command("load_address_data", path=elsewhere)
-        call_command("seed_demo_data")
+
+        with pytest.raises(demo.DemoProvinceMissing) as refused:
+            call_command("seed_demo_data")
+
+        assert "Erzurum" in str(refused.value)
+        assert "load_address_data" in str(refused.value)
 
         with system_context():
-            company = Company.objects.get()
-        with company_context(company.id):
-            buildings = list(Building.objects.select_related("neighborhood__district"))
+            assert not Company.objects.exists(), "it created a company before refusing"
 
-        assert {province_of(building) for building in buildings} == {34}
-
-    def test_a_province_row_with_nothing_under_it_is_not_chosen(self, db, tmp_path):
+    def test_a_province_row_with_nothing_under_it_does_not_count(self, db, tmp_path):
         """The shape scoping a dataset is most likely to leave behind.
 
         Loading one province's districts while leaving all eighty-one province
         rows in place gives eighty provinces that exist and hold nothing. Erzurum
-        is one of the empty ones here, so the lookup by name finds a row and
-        would have built a service area with no districts in it.
+        is one of the empty ones here, so a lookup by name alone would find a row
+        and build a service area with no districts in it -- which is a worse
+        failure than the refusal, because it happens later and further away.
         """
         scoped = write_dataset(tmp_path / "scoped", {6: "Ankara"}, {6: 24})
         call_command("load_address_data", path=scoped)
@@ -297,15 +302,8 @@ class TestWhereTheProvinceComesFrom:
         )
         call_command("load_address_data", path=bare)
 
-        call_command("seed_demo_data")
-
-        with system_context():
-            company = Company.objects.get()
-        with company_context(company.id):
-            buildings = list(Building.objects.select_related("neighborhood__district"))
-
-        assert buildings
-        assert {province_of(building) for building in buildings} == {6}
+        with pytest.raises(demo.DemoProvinceMissing):
+            call_command("seed_demo_data")
 
     def test_an_empty_dataset_is_reported_rather_than_crashed_into(self, db):
         assert demo.has_address_data() is False
