@@ -94,8 +94,15 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     is_email_verified = models.BooleanField(default=False)
     last_login_at = models.DateTimeField(null=True, blank=True)
 
-    failed_login_count = models.SmallIntegerField(default=0)
-    locked_until = models.DateTimeField(null=True, blank=True)
+    # No `failed_login_count` or `locked_until`. The specification's field list
+    # (5.2) has both, and 7.4 then keys the lockout on the e-mail *and the
+    # address* — which a column on this row cannot express, because the row is
+    # the e-mail. Built the way the columns invite, the lock stops being a
+    # defence and becomes a way for a stranger to hold a named customer out of
+    # their own account. They are gone rather than left unread: an unused
+    # `locked_until` is an invitation to write `if user.locked_until` somewhere
+    # next year and put the hole straight back. The counter is in the cache,
+    # keyed on the pair — see `apps.users.lockout` and the deviations table.
 
     # Ciphertext, not eleven digits: AES-256-GCM output does not fit a char(11),
     # and a column sized for plaintext is the clearest sign encryption was

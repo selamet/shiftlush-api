@@ -32,8 +32,9 @@ from apps.users.api.v1.serializers import TokenResponseSerializer
 
 # The cookie policy is defined once, next to the endpoints that mint sessions.
 # A second copy of the path and the flags here is a second thing to get wrong.
-from apps.users.api.v1.views import REFRESH_COOKIE, _client_ip, _token_response
+from apps.users.api.v1.views import REFRESH_COOKIE, _token_response
 from apps.users.models import RefreshSession
+from core.client_ip import client_ip
 
 
 def _current_session(request: Request) -> RefreshSession | None:
@@ -89,7 +90,7 @@ class PasswordChangeView(APIView):
             new_password=serializer.validated_data["new_password"],
             current_session=_current_session(request),
             user_agent=request.headers.get("User-Agent", ""),
-            ip=_client_ip(request),
+            ip=client_ip(request),
         )
         return _token_response(request, pair, request.user)
 

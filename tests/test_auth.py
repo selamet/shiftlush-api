@@ -9,8 +9,9 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.users.lockout import MAX_ATTEMPTS
 from apps.users.models import RefreshSession, Role, User
-from apps.users.services import MAX_FAILED_LOGINS, register_company
+from apps.users.services import register_company
 from core.context import system_context
 
 PASSWORD = "correct-horse-battery"
@@ -153,17 +154,34 @@ class TestLogin:
         assert wrong.data["error"]["code"] == unknown.data["error"]["code"]
 
     def test_lockout_after_repeated_failures(self, client, owner):
-        for _ in range(MAX_FAILED_LOGINS):
+        for _ in range(MAX_ATTEMPTS):
             login(client, password="wrong-password-entirely")
 
         response = login(client)  # correct password, still locked
         assert response.data["error"]["code"] == "ACCOUNT_LOCKED"
 
     def test_success_clears_the_failure_counter(self, client, owner):
-        login(client, password="wrong-password-entirely")
-        login(client)
-        with system_context():
-            assert User.objects.get(pk=owner.pk).failed_login_count == 0
+        for _ in range(MAX_ATTEMPTS - 1):
+            login(client, password="wrong-password-entirely")
+        assert login(client).status_code == 200
+
+        # Read through the endpoint rather than off a column, because there is no
+        # column any more: the counter is keyed on (e-mail, address) and lives in
+        # the cache. Four more failures without locking is what "cleared" means —
+        # cumulative, the fifth of these would have shut the door.
+        for _ in range(MAX_ATTEMPTS - 1):
+            login(client, password="wrong-password-entirely")
+        assert login(client).status_code == 200
+
+    def test_the_lock_does_not_follow_the_account_to_another_address(self, client, owner):
+        # 7.4 keys the limit on the e-mail *and* the address. The rest of that
+        # rule has a file of its own; this is here because it is the property
+        # somebody deleting a test in this class would need to trip over.
+        for _ in range(MAX_ATTEMPTS):
+            login(client, password="wrong-password-entirely")
+
+        assert login(client).data["error"]["code"] == "ACCOUNT_LOCKED"
+        assert login(APIClient(REMOTE_ADDR="203.0.113.44")).status_code == 200
 
     def test_inactive_account_cannot_sign_in(self, client, owner):
         with system_context():
@@ -289,9 +307,9 @@ class TestMe:
         access = login(client).data["access"]
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
         body = client.get(reverse("auth:me")).data
-        # These all live on User and none of them belong in a response. Listing
+        # These both live on User and neither belongs in a response. Listing
         # fields explicitly is what keeps a new sensitive column off the API.
-        for field in ("password", "national_id", "failed_login_count", "locked_until"):
+        for field in ("password", "national_id"):
             assert field not in body
 
 

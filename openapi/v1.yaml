@@ -3747,9 +3747,8 @@ components:
       description: |-
         What `/auth/me` returns.
 
-        Read-only, and narrower than the model on purpose: `national_id`,
-        `password`, `failed_login_count` and `locked_until` are all on User and none
-        of them belong in a response.
+        Read-only, and narrower than the model on purpose: `national_id` and
+        `password` are both on User and neither belongs in a response.
       properties:
         id:
           type: string
@@ -6532,7 +6531,7 @@ components:
         * `FIELD_NOT_VALID_FOR_CUSTOMER_TYPE` - This field does not apply to this customer type
         * `STATUS_NOT_USER_SELECTABLE` - This status is assigned by the system
         * `INVALID_CREDENTIALS` - E-mail or password is incorrect
-        * `ACCOUNT_LOCKED` - Too many failed attempts; account is temporarily locked
+        * `ACCOUNT_LOCKED` - Too many failed attempts from this address; try again later
         * `ACCOUNT_INACTIVE` - Account is not active
         * `TOKEN_INVALID` - Token is invalid or has already been used
         * `TOKEN_EXPIRED` - Token has expired
