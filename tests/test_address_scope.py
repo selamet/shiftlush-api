@@ -55,6 +55,23 @@ def counts() -> tuple[int, int, int]:
     )
 
 
+def sample_counts() -> tuple[int, int, int]:
+    """What the sample on disk holds, counted rather than written down here.
+
+    The sample is shared with the address and demo-data suites, and it gains
+    rows when one of them needs a province it did not have. A number copied into
+    an assertion turns that into a failure in a file with nothing to do with the
+    change -- which is exactly how this file broke.
+    """
+    root = Path(SAMPLE_DATA)
+
+    def rows(name: str) -> int:
+        lines = (root / f"{name}.csv").read_text(encoding="utf-8").splitlines()[1:]
+        return sum(1 for line in lines if line)
+
+    return rows("province"), rows("district"), rows("neighborhood")
+
+
 @pytest.fixture
 def sample(db) -> None:
     """The sample dataset, loaded whole, the way an unscoped deployment has it."""
@@ -91,7 +108,7 @@ class TestTheScopeDecidesWhatIsLoaded:
         # never set the variable, and CI builds an environment from nothing on
         # every run. Anything else here would have made this change a migration
         # for every existing deployment.
-        assert counts() == (3, 6, 10)
+        assert counts() == sample_counts()
 
     def test_a_scope_loads_only_what_it_names(self, db, settings):
         settings.ADDRESS_PROVINCES = [ISTANBUL]
@@ -202,7 +219,7 @@ class TestRecordsBlockTheRemoval:
         # Not "most of Ankara survived": the whole run is one transaction, so a
         # refusal rolls the refreshed rows back with it rather than leaving a
         # half-reconciled database behind a message saying the command failed.
-        assert counts() == (3, 6, 10)
+        assert counts() == sample_counts()
 
     def test_the_blocked_record_still_resolves_its_address(self, sample, settings):
         building = make_firm("Firm", "owner@example.com", neighborhood_id=KIZILAY)
@@ -282,7 +299,7 @@ class TestTheContainerBootPath:
 
         call_command("load_address_data", "--if-missing", path=SAMPLE_DATA)
 
-        assert counts() == (3, 6, 10)
+        assert counts() == sample_counts()
 
     def test_it_says_so_when_the_table_is_wider_than_the_scope(self, sample, settings, capsys):
         settings.ADDRESS_PROVINCES = [ISTANBUL]
