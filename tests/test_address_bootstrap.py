@@ -35,6 +35,23 @@ def counts() -> tuple[int, int, int]:
     )
 
 
+def sample_counts() -> tuple[int, int, int]:
+    """What the sample on disk holds, counted rather than written down here.
+
+    The sample is shared with the demo-data tests and gains rows when those need
+    a province they did not have. Numbers copied into an assertion turn that into
+    an unrelated failure somewhere else, which is a poor way to learn that a
+    fixture grew.
+    """
+    root = Path(SAMPLE_DATA)
+
+    def rows(name: str) -> int:
+        lines = (root / f"{name}.csv").read_text(encoding="utf-8").splitlines()[1:]
+        return sum(1 for line in lines if line)
+
+    return rows("province"), rows("district"), rows("neighborhood")
+
+
 @pytest.fixture
 def country(db) -> None:
     """The committed dataset, loaded the way a new environment loads it."""
@@ -98,7 +115,7 @@ class TestTheEntrypointFlag:
     def test_it_loads_into_an_empty_database(self, db):
         assert counts() == (0, 0, 0)
         call_command("load_address_data", "--if-missing", path=SAMPLE_DATA)
-        assert counts() == (3, 6, 10)
+        assert counts() == sample_counts()
 
     def test_it_does_nothing_when_the_data_is_already_there(self, db):
         call_command("load_address_data", path=SAMPLE_DATA)
@@ -118,7 +135,7 @@ class TestTheEntrypointFlag:
 
         call_command("load_address_data", "--if-missing", path=SAMPLE_DATA)
 
-        assert Neighborhood.objects.count() == 10
+        assert Neighborhood.objects.count() == sample_counts()[2]
 
     def test_without_the_flag_it_still_refreshes(self, db):
         # The yearly refresh path. `--if-missing` must not become the only way

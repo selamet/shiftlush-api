@@ -43,17 +43,33 @@ def client(db) -> APIClient:
     return api
 
 
+def sample_counts() -> tuple[int, int, int]:
+    """What the sample on disk holds, counted rather than written down.
+
+    Shared with the demo-data tests, which add a province when they need one.
+    A number copied into an assertion here turns that into a failure with
+    nothing to do with addresses.
+    """
+    root = Path(SAMPLE_DATA)
+
+    def rows(name: str) -> int:
+        lines = (root / f"{name}.csv").read_text(encoding="utf-8").splitlines()[1:]
+        return sum(1 for line in lines if line)
+
+    return rows("province"), rows("district"), rows("neighborhood")
+
+
 class TestLoader:
     def test_loads_all_three_levels(self, address_data):
-        assert Province.objects.count() == 3
-        assert District.objects.count() == 6
-        assert Neighborhood.objects.count() == 10
+        assert Province.objects.count() == sample_counts()[0]
+        assert District.objects.count() == sample_counts()[1]
+        assert Neighborhood.objects.count() == sample_counts()[2]
 
     def test_is_idempotent(self, address_data):
         # The dataset is refreshed about once a year; re-running must update
         # rather than duplicate or fail.
         call_command("load_address_data", path=SAMPLE_DATA)
-        assert Neighborhood.objects.count() == 10
+        assert Neighborhood.objects.count() == sample_counts()[2]
 
     def test_normalised_column_is_filled(self, address_data):
         istanbul = Province.objects.get(name="İstanbul")
@@ -121,7 +137,7 @@ class TestListingRules:
 
     def test_provinces_are_served_whole(self, client, address_data):
         # 81 rows is a dropdown, not a search.
-        assert len(client.get(reverse("province-list")).data) == 3
+        assert len(client.get(reverse("province-list")).data) == sample_counts()[0]
 
     def test_anonymous_callers_are_refused(self, address_data):
         assert APIClient().get(reverse("province-list")).status_code == 401
