@@ -50,6 +50,11 @@ class ComplexViewSet(TenantViewSet[Complex]):
     write_serializer_class = ComplexWriteSerializer
     filterset_fields = ["customer"]
     ordering_fields = ["name", "created_at"]
+    # Explicit, not just Meta.ordering: the building/elevator count annotation
+    # below puts a GROUP BY on this queryset, and Django does not carry a
+    # model's default ordering through one. Without this, two complexes with
+    # the same name have no tiebreaker and can swap places between pages.
+    ordering = ["name", "id"]
     customer_path = "customer_id"
 
     def get_base_queryset(self) -> QuerySet[Complex]:
@@ -74,6 +79,10 @@ class BuildingViewSet(TenantViewSet[Building]):
     write_serializer_class = BuildingWriteSerializer
     filterset_class = BuildingFilter
     ordering_fields = ["name", "created_at"]
+    # See ComplexViewSet.ordering — the elevator count annotation below puts a
+    # GROUP BY on this queryset, which the model's default ordering does not
+    # survive.
+    ordering = ["name", "id"]
     customer_path = "customer_id"
 
     def get_base_queryset(self) -> QuerySet[Building]:

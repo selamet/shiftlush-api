@@ -111,7 +111,7 @@ class Contract(CompanyOwnedModel):
 
     class Meta:
         db_table = "contract"
-        ordering = ["-start_date"]
+        ordering = ["-start_date", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["company", "contract_number"],
