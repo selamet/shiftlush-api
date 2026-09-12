@@ -29,7 +29,7 @@ class Complex(CompanyOwnedModel):
 
     class Meta:
         db_table = "complex"
-        ordering = ["name"]
+        ordering = ["name", "id"]
         verbose_name_plural = "complexes"
 
     def __str__(self) -> str:
@@ -83,7 +83,7 @@ class Building(CompanyOwnedModel):
 
     class Meta:
         db_table = "building"
-        ordering = ["name"]
+        ordering = ["name", "id"]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(type__in=BuildingType.values), name="building_type_valid"
