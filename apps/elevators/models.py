@@ -129,6 +129,11 @@ class Elevator(CompanyOwnedModel):
     inspection_body = models.CharField(max_length=150, blank=True)
     inspection_report_number = models.CharField(max_length=60, blank=True)
 
+    # Monthly maintenance visits — apps.maintenance owns writing these, via
+    # recalculate_next_maintenance(). Never set directly from a serializer.
+    last_maintenance_date = models.DateField(null=True, blank=True)
+    next_maintenance_date = models.DateField(null=True, blank=True)
+
     # Status -----------------------------------------------------------------
     status = models.CharField(
         max_length=32, choices=ElevatorStatus.choices, default=ElevatorStatus.UNCONTRACTED
@@ -173,6 +178,7 @@ class Elevator(CompanyOwnedModel):
             models.Index(fields=["company", "status"]),
             models.Index(fields=["building"]),
             models.Index(fields=["next_inspection_date"]),
+            models.Index(fields=["next_maintenance_date"]),
         ]
 
     def __str__(self) -> str:
