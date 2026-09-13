@@ -1259,8 +1259,9 @@ class TestMaintenanceVisitAPI:
         assert checklist_response.status_code == 200, checklist_response.data
         assert len(checklist_response.data["items"]) == 1
 
-        elevator.refresh_from_db()
-        assert elevator.last_maintenance_date == date.today()
+        with company_context(company.id):
+            elevator.refresh_from_db()
+            assert elevator.last_maintenance_date == date.today()
 
     def test_create_without_an_active_contract_is_a_422(self, visit_fixture):
         company, owner, elevator, contract = visit_fixture
@@ -1294,8 +1295,9 @@ class TestMaintenanceVisitAPI:
             },
         )
         assert response.status_code == 201, response.data
-        elevator.refresh_from_db()
-        assert elevator.next_maintenance_date is None
+        with company_context(company.id):
+            elevator.refresh_from_db()
+            assert elevator.next_maintenance_date is None
 
     def test_technician_cannot_edit_a_visit(self, visit_fixture):
         from apps.users.models import Role
