@@ -73,6 +73,10 @@ class ErrorCode(models.TextChoices):
         "ELEVATOR_ALREADY_CONTRACTED",
         "Elevator is already covered by an open contract",
     )
+    NO_ACTIVE_CONTRACT_FOR_ELEVATOR = (
+        "NO_ACTIVE_CONTRACT_FOR_ELEVATOR",
+        "The named contract is not active or does not cover this elevator",
+    )
     LAST_OWNER_CANNOT_BE_DEACTIVATED = (
         "LAST_OWNER_CANNOT_BE_DEACTIVATED",
         "A company must keep at least one active owner",

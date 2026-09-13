@@ -706,7 +706,10 @@ class TestRecalculateNextMaintenance:
         company, owner, elevator, contract = visit_fixture
         with company_context(company.id):
             services.recalculate_next_maintenance(elevator)
-        elevator.refresh_from_db()
+            # Inside company_context: Elevator is a CompanyOwnedModel, so
+            # refresh_from_db() is tenant-scoped and returns nothing once the
+            # context exits.
+            elevator.refresh_from_db()
         assert elevator.last_maintenance_date is None
         assert elevator.next_maintenance_date is None
 
@@ -725,7 +728,7 @@ class TestRecalculateNextMaintenance:
                 status=VisitStatus.COMPLETED,
             )
             services.recalculate_next_maintenance(elevator)
-        elevator.refresh_from_db()
+            elevator.refresh_from_db()
         assert elevator.last_maintenance_date == visit_date
         assert elevator.next_maintenance_date == visit_date + timedelta(
             days=elevator.maintenance_interval_days
@@ -745,7 +748,7 @@ class TestRecalculateNextMaintenance:
                 status=VisitStatus.ACCESS_DENIED,
             )
             services.recalculate_next_maintenance(elevator)
-        elevator.refresh_from_db()
+            elevator.refresh_from_db()
         assert elevator.last_maintenance_date is None
 
     def test_uses_the_latest_completed_visit_by_date_not_by_creation_order(self, visit_fixture):
@@ -773,7 +776,7 @@ class TestRecalculateNextMaintenance:
                 status=VisitStatus.COMPLETED,
             )
             services.recalculate_next_maintenance(elevator)
-        elevator.refresh_from_db()
+            elevator.refresh_from_db()
         assert elevator.last_maintenance_date == newer
 
 
@@ -798,13 +801,19 @@ class TestSetChecklist:
             services.set_checklist(
                 visit=visit,
                 items=[
-                    {"item": ChecklistItem.BRAKE_SYSTEM, "result": ChecklistResult.ATTENTION_NEEDED},
+                    {
+                        "item": ChecklistItem.BRAKE_SYSTEM,
+                        "result": ChecklistResult.ATTENTION_NEEDED,
+                    },
                     {"item": ChecklistItem.HOISTING_ROPES, "result": ChecklistResult.OK},
                 ],
             )
-        assert visit.items.count() == 2
-        brake = visit.items.get(item=ChecklistItem.BRAKE_SYSTEM)
-        assert brake.result == ChecklistResult.ATTENTION_NEEDED
+            # Inside company_context: MaintenanceVisitItem is a
+            # CompanyOwnedModel, so the reverse manager `visit.items` is
+            # tenant-scoped and returns nothing once the context exits.
+            assert visit.items.count() == 2
+            brake = visit.items.get(item=ChecklistItem.BRAKE_SYSTEM)
+            assert brake.result == ChecklistResult.ATTENTION_NEEDED
 ```
 
 - [ ] **Step 2: Run test to verify it fails**

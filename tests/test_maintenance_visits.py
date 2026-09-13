@@ -21,6 +21,8 @@ from apps.maintenance.models import (
 from apps.properties.models import Building, BuildingType
 from apps.users.services import register_company
 from core.context import company_context
+from core.error_codes import ErrorCode
+from core.exceptions import BusinessRuleError
 
 PASSWORD = "correct-horse-battery"
 
@@ -145,3 +147,165 @@ class TestElevatorMaintenanceFields:
         assert elevator.next_maintenance_date is None
         assert isinstance(elevator.maintenance_interval_days, int)
         assert date  # type: ignore  # imported for readability of the test body above
+
+
+class TestEnsureActiveContract:
+    def test_rejects_a_contract_that_does_not_cover_the_elevator(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            other_customer = Customer.objects.create(
+                company=company, type=CustomerType.CORPORATE, legal_name="Other"
+            )
+            other_contract = Contract.objects.create(
+                company=company,
+                customer=other_customer,
+                contract_number="C-3",
+                status=ContractStatus.ACTIVE,
+                scope=Scope.MAINTENANCE_ONLY,
+                start_date=date.today(),
+                end_date=date.today() + timedelta(days=365),
+                pricing_type=PricingType.FLAT,
+                monthly_fee="500.00",
+                vat_rate="20.00",
+            )
+            with pytest.raises(BusinessRuleError) as exc:
+                services.ensure_active_contract(elevator=elevator, contract=other_contract)
+        detail = exc.value.detail
+        assert not isinstance(detail, list | dict)
+        assert detail.code == ErrorCode.NO_ACTIVE_CONTRACT_FOR_ELEVATOR.value
+
+    def test_rejects_a_non_active_contract(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            contract.status = ContractStatus.DRAFT
+            contract.save(update_fields=["status"])
+            with pytest.raises(BusinessRuleError):
+                services.ensure_active_contract(elevator=elevator, contract=contract)
+
+    def test_accepts_an_active_contract_covering_the_elevator(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            services.ensure_active_contract(elevator=elevator, contract=contract)  # no raise
+
+
+class TestRecalculateNextMaintenance:
+    def test_no_completed_visit_leaves_dates_null(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            services.recalculate_next_maintenance(elevator)
+            # Inside company_context: Elevator is a CompanyOwnedModel, so
+            # refresh_from_db() is tenant-scoped and returns nothing once the
+            # context exits.
+            elevator.refresh_from_db()
+        assert elevator.last_maintenance_date is None
+        assert elevator.next_maintenance_date is None
+
+    def test_completed_visit_sets_both_dates(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        visit_date = date.today() - timedelta(days=5)
+        with company_context(company.id):
+            MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=visit_date,
+                status=VisitStatus.COMPLETED,
+            )
+            services.recalculate_next_maintenance(elevator)
+            elevator.refresh_from_db()
+        assert elevator.last_maintenance_date == visit_date
+        assert elevator.next_maintenance_date == visit_date + timedelta(
+            days=elevator.maintenance_interval_days
+        )
+
+    def test_incomplete_visit_does_not_move_the_date(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=date.today(),
+                status=VisitStatus.ACCESS_DENIED,
+            )
+            services.recalculate_next_maintenance(elevator)
+            elevator.refresh_from_db()
+        assert elevator.last_maintenance_date is None
+
+    def test_uses_the_latest_completed_visit_by_date_not_by_creation_order(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        older = date.today() - timedelta(days=40)
+        newer = date.today() - timedelta(days=2)
+        with company_context(company.id):
+            MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=newer,
+                status=VisitStatus.COMPLETED,
+            )
+            # Entered second, but an earlier visit date - a backdated entry.
+            MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=older,
+                status=VisitStatus.COMPLETED,
+            )
+            services.recalculate_next_maintenance(elevator)
+            elevator.refresh_from_db()
+        assert elevator.last_maintenance_date == newer
+
+
+class TestSetChecklist:
+    def test_replaces_the_full_set(self, visit_fixture):
+        from apps.maintenance import services
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            visit = MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=date.today(),
+                status=VisitStatus.COMPLETED,
+            )
+            services.set_checklist(
+                visit=visit,
+                items=[{"item": ChecklistItem.BRAKE_SYSTEM, "result": ChecklistResult.OK}],
+            )
+            services.set_checklist(
+                visit=visit,
+                items=[
+                    {
+                        "item": ChecklistItem.BRAKE_SYSTEM,
+                        "result": ChecklistResult.ATTENTION_NEEDED,
+                    },
+                    {"item": ChecklistItem.HOISTING_ROPES, "result": ChecklistResult.OK},
+                ],
+            )
+            # Inside company_context: MaintenanceVisitItem is a
+            # CompanyOwnedModel, so the reverse manager `visit.items` is
+            # tenant-scoped and returns nothing once the context exits.
+            assert visit.items.count() == 2
+            brake = visit.items.get(item=ChecklistItem.BRAKE_SYSTEM)
+            assert brake.result == ChecklistResult.ATTENTION_NEEDED

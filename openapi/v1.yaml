@@ -50,6 +50,7 @@ paths:
           - contract
           - customer
           - elevator
+          - maintenance_visit
           - user
         description: |-
           * `elevator` - Elevator
@@ -58,6 +59,7 @@ paths:
           * `customer` - Customer
           * `company` - Company
           * `user` - User
+          * `maintenance_visit` - Maintenance visit
       - name: ordering
         required: false
         in: query
@@ -2771,6 +2773,7 @@ components:
       - customer
       - company
       - user
+      - maintenance_visit
       type: string
       description: |-
         * `elevator` - Elevator
@@ -2779,6 +2782,7 @@ components:
         * `customer` - Customer
         * `company` - Company
         * `user` - User
+        * `maintenance_visit` - Maintenance visit
     AuditLog:
       type: object
       properties:
@@ -6484,6 +6488,7 @@ components:
       - INVITATION_ALREADY_PENDING
       - IDEMPOTENCY_KEY_REUSED
       - ELEVATOR_ALREADY_CONTRACTED
+      - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
       - ONLY_TECHNICIANS_ARE_ASSIGNED
       - CANNOT_DEACTIVATE_SELF
@@ -6527,6 +6532,7 @@ components:
         * `INVITATION_ALREADY_PENDING` - This address already holds an invitation that has not been accepted
         * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
+        * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
         * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Customer assignments apply to technicians only
         * `CANNOT_DEACTIVATE_SELF` - A user cannot deactivate their own account
