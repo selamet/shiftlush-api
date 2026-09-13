@@ -39,6 +39,7 @@ urlpatterns = [
                 path("", include("apps.elevators.api.v1.urls")),
                 path("", include("apps.contracts.api.v1.urls")),
                 path("", include("apps.attachments.api.v1.urls")),
+                path("", include("apps.maintenance.api.v1.urls")),
                 path("", include("apps.audit.api.v1.urls")),
             ]
         ),

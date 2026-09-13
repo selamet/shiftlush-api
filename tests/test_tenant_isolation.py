@@ -43,6 +43,7 @@ from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
 from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
+from apps.maintenance.models import MaintenanceVisit, VisitStatus
 from apps.properties.models import Building, BuildingType, Complex
 from apps.users import services
 from apps.users.models import Invitation, Role, User, UserCustomer
@@ -324,6 +325,14 @@ def _build_firm(letter: str, seed: int) -> Firm:
             role=Role.TECHNICIAN,
             is_email_verified=True,
         )
+        visit = MaintenanceVisit.objects.create(
+            company=company,
+            elevator=elevator,
+            contract=contract,
+            technician=colleague,
+            visit_date=TODAY,
+            status=VisitStatus.COMPLETED,
+        )
 
     return Firm(
         company=company,
@@ -338,6 +347,7 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "attachment": attachment,
             "invitation": invitation,
             "user": colleague,
+            "maintenance-visit": visit,
         },
     )
 

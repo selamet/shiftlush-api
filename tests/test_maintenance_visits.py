@@ -7,6 +7,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
+from django.urls import reverse
+from rest_framework.test import APIClient
 
 from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType, Scope
 from apps.customers.models import Customer, CustomerType
@@ -19,7 +21,8 @@ from apps.maintenance.models import (
     VisitStatus,
 )
 from apps.properties.models import Building, BuildingType
-from apps.users.services import register_company
+from apps.users.models import User
+from apps.users.services import issue_tokens, register_company
 from core.context import company_context
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
@@ -354,3 +357,103 @@ class TestMaintenanceVisitSerializers:
             )
             assert not serializer.is_valid()
             assert "not_a_real_field" in serializer.errors
+
+
+def api_for(user: User) -> APIClient:
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}")
+    return client
+
+
+class TestMaintenanceVisitAPI:
+    def test_owner_can_create_a_visit_and_set_its_checklist(self, visit_fixture):
+        company, owner, elevator, contract = visit_fixture
+        response = api_for(owner).post(
+            reverse("maintenance-visit-list"),
+            {
+                "elevator": str(elevator.id),
+                "contract": str(contract.id),
+                "technician": str(owner.id),
+                "visit_date": str(date.today()),
+                "status": VisitStatus.COMPLETED,
+            },
+        )
+        assert response.status_code == 201, response.data
+        visit_id = response.data["id"]
+
+        checklist_response = api_for(owner).post(
+            reverse("maintenance-visit-set-checklist", args=[visit_id]),
+            {"items": [{"item": ChecklistItem.BRAKE_SYSTEM, "result": ChecklistResult.OK}]},
+        )
+        assert checklist_response.status_code == 200, checklist_response.data
+        assert len(checklist_response.data["items"]) == 1
+
+        with company_context(company.id):
+            elevator.refresh_from_db()
+            assert elevator.last_maintenance_date == date.today()
+
+    def test_create_without_an_active_contract_is_a_422(self, visit_fixture):
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            contract.status = ContractStatus.DRAFT
+            contract.save(update_fields=["status"])
+
+        response = api_for(owner).post(
+            reverse("maintenance-visit-list"),
+            {
+                "elevator": str(elevator.id),
+                "contract": str(contract.id),
+                "technician": str(owner.id),
+                "visit_date": str(date.today()),
+                "status": VisitStatus.COMPLETED,
+            },
+        )
+        assert response.status_code == 422
+        assert response.data["error"]["code"] == ErrorCode.NO_ACTIVE_CONTRACT_FOR_ELEVATOR.value
+
+    def test_incomplete_status_does_not_move_next_maintenance_date(self, visit_fixture):
+        company, owner, elevator, contract = visit_fixture
+        response = api_for(owner).post(
+            reverse("maintenance-visit-list"),
+            {
+                "elevator": str(elevator.id),
+                "contract": str(contract.id),
+                "technician": str(owner.id),
+                "visit_date": str(date.today()),
+                "status": VisitStatus.ACCESS_DENIED,
+            },
+        )
+        assert response.status_code == 201, response.data
+        with company_context(company.id):
+            elevator.refresh_from_db()
+            assert elevator.next_maintenance_date is None
+
+    def test_technician_cannot_edit_a_visit(self, visit_fixture):
+        from apps.users.models import Role
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            visit = MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=date.today(),
+                status=VisitStatus.COMPLETED,
+            )
+            technician = User.objects.create_user(
+                company=company,
+                email="tech@example.com",
+                password=PASSWORD,
+                first_name="T",
+                last_name="Tech",
+                role=Role.TECHNICIAN,
+            )
+            technician.customer_assignments.create(
+                company=company, customer=Customer.objects.get(legal_name="Cust")
+            )
+
+        response = api_for(technician).patch(
+            reverse("maintenance-visit-detail", args=[visit.id]), {"work_notes": "changed"}
+        )
+        assert response.status_code == 403
