@@ -457,3 +457,40 @@ class TestMaintenanceVisitAPI:
             reverse("maintenance-visit-detail", args=[visit.id]), {"work_notes": "changed"}
         )
         assert response.status_code == 403
+
+    def test_technician_can_create_a_visit_and_set_its_own_checklist(self, visit_fixture):
+        from apps.users.models import Role
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            technician = User.objects.create_user(
+                company=company,
+                email="tech-assigned@example.com",
+                password=PASSWORD,
+                first_name="T",
+                last_name="Tech",
+                role=Role.TECHNICIAN,
+            )
+            technician.customer_assignments.create(
+                company=company, customer=Customer.objects.get(legal_name="Cust")
+            )
+
+        response = api_for(technician).post(
+            reverse("maintenance-visit-list"),
+            {
+                "elevator": str(elevator.id),
+                "contract": str(contract.id),
+                "technician": str(technician.id),
+                "visit_date": str(date.today()),
+                "status": VisitStatus.COMPLETED,
+            },
+        )
+        assert response.status_code == 201, response.data
+        visit_id = response.data["id"]
+
+        checklist_response = api_for(technician).post(
+            reverse("maintenance-visit-set-checklist", args=[visit_id]),
+            {"items": [{"item": ChecklistItem.BRAKE_SYSTEM, "result": ChecklistResult.OK}]},
+        )
+        assert checklist_response.status_code == 200, checklist_response.data
+        assert len(checklist_response.data["items"]) == 1

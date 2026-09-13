@@ -20,7 +20,7 @@ from core.viewsets import TenantViewSet
 
 
 class MaintenanceVisitFilter(django_filters.FilterSet):
-    customer = django_filters.UUIDFilter(field_name="elevator__customer_id")
+    customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
 
     class Meta:
         model = MaintenanceVisit
@@ -39,7 +39,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
     filterset_class = MaintenanceVisitFilter
     ordering_fields = ["visit_date", "created_at"]
     ordering = ["-visit_date", "id"]
-    customer_path = "elevator__customer_id"
+    customer_path = "elevator__building__customer_id"
 
     def get_base_queryset(self) -> QuerySet[MaintenanceVisit]:
         return MaintenanceVisit.objects.select_related(
