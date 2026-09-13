@@ -884,6 +884,8 @@ class TestEveryModelIsScoped:
             "customers.Customer",
             "customers.CustomerContact",
             "elevators.Elevator",
+            "maintenance.MaintenanceVisit",
+            "maintenance.MaintenanceVisitItem",
             "properties.Building",
             "properties.Complex",
             "users.Invitation",
