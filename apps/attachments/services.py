@@ -157,6 +157,23 @@ def _parse_key(company_id: uuid.UUID, storage_key: str) -> tuple[str, uuid.UUID,
     return object_type, object_id, category
 
 
+def peek_object_type_and_category(
+    company_id: uuid.UUID, storage_key: str
+) -> tuple[str, str] | tuple[None, None]:
+    """What `_parse_key` would say, without raising.
+
+    Used only for a permission check that has to happen before the object is
+    confirmed to exist - answering "not allowed" for a malformed or foreign
+    key is enough there; `confirm_upload` still does the real, raising parse
+    afterwards.
+    """
+    try:
+        object_type, _object_id, category = _parse_key(company_id, storage_key)
+    except NotFound:
+        return None, None
+    return object_type, category
+
+
 @transaction.atomic
 def confirm_upload(
     *,

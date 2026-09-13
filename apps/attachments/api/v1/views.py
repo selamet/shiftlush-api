@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
+from apps.attachments.api.v1.permissions import AttachmentPermission
 from apps.attachments.api.v1.serializers import (
     AttachmentConfirmSerializer,
     AttachmentSerializer,
@@ -21,7 +22,6 @@ from apps.attachments.models import Attachment, ObjectType
 from apps.attachments.services import confirm_upload, download_url, prepare_upload
 from apps.users.models import Role
 from core.idempotency import ReplayProtectedCreate, replay_exempt
-from core.permissions import RolePermission
 from core.requests import authenticated_company_id, authenticated_user
 
 
@@ -49,7 +49,7 @@ class AttachmentViewSet(
 
     resource = "attachment"
     serializer_class = AttachmentSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [AttachmentPermission]
     filterset_class = AttachmentFilter
     ordering = ["-created_at"]
     http_method_names = ["get", "post", "delete", "head", "options"]

@@ -5,14 +5,17 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
+from django.urls import reverse
+from rest_framework.test import APIClient
 
-from apps.attachments.models import ObjectType
+from apps.attachments.models import AttachmentCategory, ObjectType
 from apps.attachments.services import TARGET_MODELS, _target_exists
 from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType, Scope
 from apps.customers.models import Customer, CustomerType
 from apps.elevators.models import Elevator
 from apps.maintenance.models import MaintenanceVisit, VisitStatus
 from apps.properties.models import Building, BuildingType
+from apps.users.models import User
 from apps.users.services import register_company
 from core.context import company_context
 
@@ -81,3 +84,93 @@ class TestMaintenanceVisitIsAnAttachmentTarget:
 
         _, visit = a_visit
         assert not _target_exists(uuid.uuid4(), ObjectType.MAINTENANCE_VISIT, visit.id)
+
+
+class TestTechnicianAttachmentCarveOut:
+    def test_technician_can_request_an_upload_url_for_a_visit_photo(self, a_visit):
+        from apps.users.models import Role
+        from apps.users.services import issue_tokens
+
+        company, visit = a_visit
+        with company_context(company.id):
+            technician = User.objects.create_user(
+                company=company,
+                email="tech2@example.com",
+                password=PASSWORD,
+                first_name="T",
+                last_name="Tech",
+                role=Role.TECHNICIAN,
+            )
+            technician.customer_assignments.create(
+                company=company, customer=visit.elevator.building.customer
+            )
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(technician).access}")
+        response = client.post(
+            reverse("attachment-upload-url"),
+            {
+                "object_type": ObjectType.MAINTENANCE_VISIT,
+                "object_id": str(visit.id),
+                "category": AttachmentCategory.PHOTO,
+                "mime_type": "image/jpeg",
+                "size_bytes": 1000,
+            },
+        )
+        assert response.status_code == 200, response.data
+
+    def test_technician_cannot_request_an_upload_url_for_a_signed_contract(self, a_visit):
+        from apps.users.models import Role
+        from apps.users.services import issue_tokens
+
+        company, visit = a_visit
+        with company_context(company.id):
+            technician = User.objects.create_user(
+                company=company,
+                email="tech3@example.com",
+                password=PASSWORD,
+                first_name="T",
+                last_name="Tech",
+                role=Role.TECHNICIAN,
+            )
+            technician.customer_assignments.create(
+                company=company, customer=visit.elevator.building.customer
+            )
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(technician).access}")
+        response = client.post(
+            reverse("attachment-upload-url"),
+            {
+                "object_type": ObjectType.CONTRACT,
+                "object_id": str(visit.contract_id),
+                "category": AttachmentCategory.SIGNED_CONTRACT,
+                "mime_type": "application/pdf",
+                "size_bytes": 1000,
+            },
+        )
+        assert response.status_code == 403
+
+
+class TestPeekObjectTypeAndCategory:
+    def test_reads_back_what_prepare_upload_wrote(self, a_visit):
+        from apps.attachments.services import peek_object_type_and_category, prepare_upload
+
+        company, visit = a_visit
+        ticket = prepare_upload(
+            company_id=company.id,
+            object_type=ObjectType.MAINTENANCE_VISIT,
+            object_id=visit.id,
+            category=AttachmentCategory.PHOTO,
+            mime_type="image/jpeg",
+            size_bytes=1000,
+        )
+        object_type, category = peek_object_type_and_category(company.id, ticket.storage_key)
+        assert object_type == ObjectType.MAINTENANCE_VISIT
+        assert category == AttachmentCategory.PHOTO
+
+    def test_returns_none_none_for_garbage(self, a_visit):
+        from apps.attachments.services import peek_object_type_and_category
+
+        company, _ = a_visit
+        assert peek_object_type_and_category(company.id, "not-a-real-key") == (None, None)
