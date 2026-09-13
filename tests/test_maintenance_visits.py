@@ -309,3 +309,48 @@ class TestSetChecklist:
             assert visit.items.count() == 2
             brake = visit.items.get(item=ChecklistItem.BRAKE_SYSTEM)
             assert brake.result == ChecklistResult.ATTENTION_NEEDED
+
+
+class TestMaintenanceVisitSerializers:
+    def test_read_serializer_nests_items(self, visit_fixture):
+        from apps.maintenance.api.v1.serializers import MaintenanceVisitReadSerializer
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            visit = MaintenanceVisit.objects.create(
+                company=company,
+                elevator=elevator,
+                contract=contract,
+                technician=owner,
+                visit_date=date.today(),
+                status=VisitStatus.COMPLETED,
+            )
+            MaintenanceVisitItem.objects.create(
+                company=company,
+                visit=visit,
+                item=ChecklistItem.BRAKE_SYSTEM,
+                result=ChecklistResult.OK,
+            )
+            data = MaintenanceVisitReadSerializer(visit).data
+
+        assert data["status"] == VisitStatus.COMPLETED
+        assert len(data["items"]) == 1
+        assert data["items"][0]["item"] == ChecklistItem.BRAKE_SYSTEM
+
+    def test_write_serializer_rejects_unknown_fields(self, visit_fixture):
+        from apps.maintenance.api.v1.serializers import MaintenanceVisitWriteSerializer
+
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            serializer = MaintenanceVisitWriteSerializer(
+                data={
+                    "elevator": str(elevator.id),
+                    "contract": str(contract.id),
+                    "technician": str(owner.id),
+                    "visit_date": str(date.today()),
+                    "status": VisitStatus.COMPLETED,
+                    "not_a_real_field": "x",
+                }
+            )
+            assert not serializer.is_valid()
+            assert "not_a_real_field" in serializer.errors
