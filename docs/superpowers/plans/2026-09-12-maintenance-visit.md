@@ -1333,8 +1333,11 @@ class TestMaintenanceVisitAPI:
 
 Add the missing imports at the top of the test file if not already present:
 `from apps.contracts.models import ContractStatus` (already imported by
-Task 4's block above — reuse it) and `from core.error_codes import ErrorCode`
-(same).
+Task 4's block above — reuse it), `from core.error_codes import ErrorCode`
+(same), and `from apps.users.models import User` — Task 2's implementer
+removed this exact import as unused at the time (see that task's review
+history); it is needed again now for `api_for(user: User)`'s type
+annotation and `User.objects.create_user(...)` below.
 
 `technician.customer_assignments.create(company=..., customer=...)` is the
 verified call shape — `core/demo.py:560` does exactly this.
