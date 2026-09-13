@@ -290,8 +290,11 @@ class TestMaintenanceVisitModel:
                 result=ChecklistResult.OK,
             )
 
-        assert visit.items.count() == 1
-        assert item.visit_id == visit.id
+            # Inside company_context: MaintenanceVisitItem is a
+            # CompanyOwnedModel, so the reverse manager `visit.items` is
+            # tenant-scoped and returns nothing once the context exits.
+            assert visit.items.count() == 1
+            assert item.visit_id == visit.id
 
     def test_same_item_twice_on_one_visit_is_rejected(self, visit_fixture):
         from django.db import IntegrityError
