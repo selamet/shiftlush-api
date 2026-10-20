@@ -16,6 +16,7 @@ from apps.contracts.models import (
     VatStatus,
 )
 from core.error_codes import ErrorCode
+from core.exceptions import field_error
 
 # The financial fields, named once. The viewset drops them for roles that do
 # not carry money, and the same list decides what a serializer omits — so the
@@ -253,9 +254,7 @@ class ContractWriteSerializer(StrictMixin, serializers.ModelSerializer[Contract]
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end <= start:
-            raise serializers.ValidationError(
-                {"end_date": ErrorCode.END_DATE_BEFORE_START_DATE.value}
-            )
+            raise field_error("end_date", ErrorCode.END_DATE_BEFORE_START_DATE)
         return attrs
 
 

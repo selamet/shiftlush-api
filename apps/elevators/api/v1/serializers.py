@@ -19,6 +19,7 @@ from apps.elevators.models import (
     MachineRoom,
 )
 from core.error_codes import ErrorCode
+from core.exceptions import field_error
 from core.permissions import READ, may
 
 
@@ -269,9 +270,7 @@ class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer[Elevator]
             "next_inspection_date", getattr(self.instance, "next_inspection_date", None)
         )
         if last and nxt and nxt <= last:
-            raise serializers.ValidationError(
-                {"next_inspection_date": ErrorCode.END_DATE_BEFORE_START_DATE.value}
-            )
+            raise field_error("next_inspection_date", ErrorCode.END_DATE_BEFORE_START_DATE)
         return attrs
 
 
