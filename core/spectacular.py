@@ -17,6 +17,7 @@ from typing import Any
 
 from django.utils import translation
 from drf_spectacular.contrib.rest_framework_simplejwt import SimpleJWTScheme
+from drf_spectacular.openapi import AutoSchema
 
 
 # drf-spectacular registers extensions from an unannotated `__init_subclass__`.
@@ -103,3 +104,26 @@ def restore_language(result: Any, **kwargs: Any) -> Any:
     if _previous:
         translation.activate(_previous.pop() or "tr")
     return result
+
+
+class ReadShapeAutoSchema(AutoSchema):
+    """Describes a create's and an edit's response as the record they return.
+
+    Every viewset that splits reads from writes — `read_serializer_class` on
+    TenantViewSet, or `serializer_class` beside a `write_serializer_class` —
+    answers a POST or PATCH with the read shape: the id, the names, the derived
+    fields. The default schema assumes one serializer per action and described
+    the response as the request body echoed back, so the generated client typed
+    fourteen responses without an `id`. An explicit `@extend_schema(responses=)`
+    on a method still wins, as it subclasses this.
+    """
+
+    def get_response_serializers(self) -> Any:
+        view = self.view
+        if getattr(view, "action", None) in ("create", "update", "partial_update"):
+            read = getattr(view, "read_serializer_class", None)
+            if read is None and getattr(view, "write_serializer_class", None) is not None:
+                read = getattr(view, "serializer_class", None)
+            if read is not None:
+                return read
+        return super().get_response_serializers()

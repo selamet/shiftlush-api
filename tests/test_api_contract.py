@@ -187,3 +187,31 @@ class TestNullableAddressNames:
     def test_the_name_fields_are_declared_nullable(self, spec, schema, field):
         properties = spec["components"]["schemas"][schema]["properties"]
         assert properties[field].get("nullable") is True
+
+
+class TestTheContractDescribesWhatWritesReturn:
+    """A create or an edit answers with the record as it is read, id included.
+
+    TenantViewSet always did; the contract said otherwise for every endpoint
+    built on it, so the web client typed fourteen responses as the request body
+    they echoed — no `id`, none of the read-only fields — and cast around it.
+    """
+
+    def test_no_success_response_is_a_write_shape(self, spec):
+        offenders = []
+        for path, operations in spec["paths"].items():
+            for method, operation in operations.items():
+                if method not in ("post", "put", "patch"):
+                    continue
+                for code, response in operation.get("responses", {}).items():
+                    if not code.startswith("2"):
+                        continue
+                    schema = (
+                        response.get("content", {}).get("application/json", {}).get("schema", {})
+                    )
+                    ref = schema.get("$ref", "")
+                    if ref.endswith("Write"):
+                        offenders.append(
+                            f"{method.upper()} {path} {code} -> {ref.rsplit('/', 1)[-1]}"
+                        )
+        assert offenders == []

@@ -692,7 +692,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BuildingWrite'
+                $ref: '#/components/schemas/BuildingRead'
           description: ''
   /api/v1/buildings/{id}/:
     get:
@@ -758,7 +758,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BuildingWrite'
+                $ref: '#/components/schemas/BuildingRead'
           description: ''
     delete:
       operationId: buildings_destroy
@@ -894,7 +894,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ComplexWrite'
+                $ref: '#/components/schemas/ComplexRead'
           description: ''
   /api/v1/complexes/{id}/:
     get:
@@ -960,7 +960,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ComplexWrite'
+                $ref: '#/components/schemas/ComplexRead'
           description: ''
     delete:
       operationId: complexes_destroy
@@ -1090,7 +1090,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ContractWrite'
+                $ref: '#/components/schemas/ContractRead'
           description: ''
   /api/v1/contracts/{id}/:
     get:
@@ -1156,7 +1156,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ContractWrite'
+                $ref: '#/components/schemas/ContractRead'
           description: ''
     delete:
       operationId: contracts_destroy
@@ -1426,7 +1426,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerContactWrite'
+                $ref: '#/components/schemas/CustomerContactRead'
           description: ''
   /api/v1/customer-contacts/{id}/:
     get:
@@ -1492,7 +1492,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerContactWrite'
+                $ref: '#/components/schemas/CustomerContactRead'
           description: ''
     delete:
       operationId: customer_contacts_destroy
@@ -1609,7 +1609,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerWrite'
+                $ref: '#/components/schemas/CustomerRead'
           description: ''
   /api/v1/customers/{id}/:
     get:
@@ -1675,7 +1675,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CustomerWrite'
+                $ref: '#/components/schemas/CustomerRead'
           description: ''
     delete:
       operationId: customers_destroy
@@ -1929,7 +1929,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ElevatorWrite'
+                $ref: '#/components/schemas/ElevatorDetail'
           description: ''
   /api/v1/elevators/{id}/:
     get:
@@ -1995,7 +1995,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ElevatorWrite'
+                $ref: '#/components/schemas/ElevatorDetail'
           description: ''
     delete:
       operationId: elevators_destroy
@@ -2503,7 +2503,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MaintenanceVisitWrite'
+                $ref: '#/components/schemas/MaintenanceVisitRead'
           description: ''
     delete:
       operationId: maintenance_visits_destroy
@@ -3010,7 +3010,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlannedVisitWrite'
+                $ref: '#/components/schemas/PlannedVisitRead'
           description: ''
   /api/v1/planned-visits/bulk-assign/:
     post:
@@ -3711,64 +3711,6 @@ components:
         * `hotel` - Hotel
         * `school` - School
         * `industrial` - Industrial
-    BuildingWrite:
-      type: object
-      properties:
-        customer:
-          type: string
-          format: uuid
-        complex:
-          type: string
-          format: uuid
-          nullable: true
-        name:
-          type: string
-          maxLength: 150
-        type:
-          $ref: '#/components/schemas/BuildingType'
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        address_note:
-          type: string
-        latitude:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
-          nullable: true
-        longitude:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
-          nullable: true
-        floor_count:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        unit_count:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        is_active:
-          type: boolean
-      required:
-      - address_note
-      - customer
-      - name
-      - type
     BuildingWriteRequest:
       type: object
       properties:
@@ -4026,42 +3968,6 @@ components:
       - province_name
       - street
       - updated_at
-    ComplexWrite:
-      type: object
-      properties:
-        customer:
-          type: string
-          format: uuid
-        name:
-          type: string
-          maxLength: 150
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        latitude:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
-          nullable: true
-        longitude:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
-          nullable: true
-        notes:
-          type: string
-      required:
-      - customer
-      - name
     ComplexWriteRequest:
       type: object
       properties:
@@ -4332,57 +4238,6 @@ components:
         * `expired` - Expired
         * `terminated` - Terminated
         * `renewed` - Renewed
-    ContractWrite:
-      type: object
-      properties:
-        customer:
-          type: string
-          format: uuid
-        contract_number:
-          type: string
-          maxLength: 30
-        status:
-          $ref: '#/components/schemas/ContractStatus'
-        scope:
-          $ref: '#/components/schemas/ContractScope'
-        start_date:
-          type: string
-          format: date
-        end_date:
-          type: string
-          format: date
-        pricing_type:
-          $ref: '#/components/schemas/PricingTypeEnum'
-        monthly_fee:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
-          nullable: true
-        currency:
-          type: string
-          maxLength: 3
-        vat_rate:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
-        billing_period:
-          $ref: '#/components/schemas/BillingPeriodEnum'
-        auto_renew:
-          type: boolean
-        renewal_notice_days:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-        notes:
-          type: string
-      required:
-      - customer
-      - end_date
-      - pricing_type
-      - scope
-      - start_date
-      - vat_rate
     ContractWriteRequest:
       type: object
       properties:
@@ -4639,41 +4494,6 @@ components:
       - phone
       - role
       - updated_at
-    CustomerContactWrite:
-      type: object
-      description: |-
-        Rejects fields the serializer does not declare.
-
-        DRF ignores them, so a mistyped key returns 200 and the value silently
-        never arrives.
-      properties:
-        customer:
-          type: string
-          format: uuid
-        full_name:
-          type: string
-          maxLength: 120
-        role:
-          allOf:
-          - $ref: '#/components/schemas/ContactRole'
-          default: other
-        phone:
-          type: string
-          maxLength: 20
-        email:
-          oneOf:
-          - type: string
-            format: email
-            maxLength: 150
-          - type: string
-            maxLength: 0
-        is_primary:
-          type: boolean
-        notes:
-          type: string
-      required:
-      - customer
-      - full_name
     CustomerContactWriteRequest:
       type: object
       description: |-
@@ -4836,57 +4656,6 @@ components:
         * `corporate` - Corporate
         * `public` - Public
         * `individual` - Individual
-    CustomerWrite:
-      type: object
-      description: |-
-        Rejects fields the serializer does not declare.
-
-        DRF ignores them, so a mistyped key returns 200 and the value silently
-        never arrives.
-      properties:
-        type:
-          $ref: '#/components/schemas/CustomerType'
-        legal_name:
-          type: string
-          maxLength: 200
-        tax_office:
-          type: string
-          maxLength: 100
-        tax_number:
-          type: string
-          maxLength: 11
-        phone:
-          type: string
-          maxLength: 20
-        email:
-          oneOf:
-          - type: string
-            format: email
-            maxLength: 150
-          - type: string
-            maxLength: 0
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        unit_number:
-          type: string
-          maxLength: 20
-        notes:
-          type: string
-        is_active:
-          type: boolean
-      required:
-      - legal_name
-      - type
     CustomerWriteRequest:
       type: object
       description: |-
@@ -5422,150 +5191,6 @@ components:
         * `sealed` - Sealed
         * `out_of_service` - Out of service
         * `uncontracted` - Uncontracted
-    ElevatorWrite:
-      type: object
-      properties:
-        building:
-          type: string
-          format: uuid
-        registration_number:
-          type: string
-          maxLength: 30
-        internal_code:
-          type: string
-          maxLength: 30
-        name:
-          type: string
-          maxLength: 100
-        category:
-          oneOf:
-          - $ref: '#/components/schemas/ElevatorCategory'
-          - $ref: '#/components/schemas/BlankEnum'
-        drive_type:
-          oneOf:
-          - $ref: '#/components/schemas/DriveTypeEnum'
-          - $ref: '#/components/schemas/BlankEnum'
-        control_type:
-          oneOf:
-          - $ref: '#/components/schemas/ControlTypeEnum'
-          - $ref: '#/components/schemas/BlankEnum'
-        door_type:
-          oneOf:
-          - $ref: '#/components/schemas/DoorTypeEnum'
-          - $ref: '#/components/schemas/BlankEnum'
-        has_car_door:
-          type: boolean
-          nullable: true
-        machine_room:
-          oneOf:
-          - $ref: '#/components/schemas/MachineRoomEnum'
-          - $ref: '#/components/schemas/BlankEnum'
-        capacity_kg:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        capacity_persons:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        stop_count:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        entrance_count:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        speed_mps:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,2}(?:\.\d{0,2})?$
-          nullable: true
-        pit_depth_mm:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        headroom_mm:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        car_weight_kg:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        brand:
-          type: string
-          maxLength: 100
-        model:
-          type: string
-          maxLength: 100
-        serial_number:
-          type: string
-          maxLength: 100
-        manufacturer:
-          type: string
-          maxLength: 150
-        installer:
-          type: string
-          maxLength: 150
-        installation_date:
-          type: string
-          format: date
-          nullable: true
-        commissioning_date:
-          type: string
-          format: date
-          nullable: true
-        ce_certificate_number:
-          type: string
-          maxLength: 60
-        warranty_end_date:
-          type: string
-          format: date
-          nullable: true
-        last_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_label:
-          allOf:
-          - $ref: '#/components/schemas/InspectionLabelEnum'
-          default: none
-        next_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_body:
-          type: string
-          maxLength: 150
-        inspection_report_number:
-          type: string
-          maxLength: 60
-        status:
-          $ref: '#/components/schemas/ElevatorWriteStatusEnum'
-        maintenance_interval_days:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-        notes:
-          type: string
-      required:
-      - building
     ElevatorWriteRequest:
       type: object
       properties:
@@ -6109,44 +5734,6 @@ components:
         * `completed` - Completed
         * `incomplete` - Incomplete
         * `access_denied` - Access denied
-    MaintenanceVisitWrite:
-      type: object
-      description: |-
-        Rejects a field the client sent that this serializer does not declare.
-
-        Copied rather than imported - every app that needs this defines its own
-        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
-        there is no shared core.serializers module to pull it from.
-      properties:
-        elevator:
-          type: string
-          format: uuid
-        contract:
-          type: string
-          format: uuid
-        technician:
-          type: string
-          format: uuid
-        visit_date:
-          type: string
-          format: date
-        status:
-          $ref: '#/components/schemas/MaintenanceVisitStatus'
-        status_note:
-          type: string
-        work_notes:
-          type: string
-        parts_replaced:
-          type: string
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/SetChecklistItem'
-      required:
-      - contract
-      - elevator
-      - status
-      - visit_date
     MaintenanceVisitWriteRequest:
       type: object
       description: |-
@@ -7431,23 +7018,6 @@ components:
         * `planned` - Planned
         * `done` - Done
         * `cancelled` - Cancelled
-    PlannedVisitWrite:
-      type: object
-      description: |-
-        Rejects a field the client sent that this serializer does not declare.
-
-        Copied rather than imported - every app that needs this defines its own
-        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
-        there is no shared core.serializers module to pull it from.
-      properties:
-        technician:
-          type: string
-          format: uuid
-          nullable: true
-        planned_date:
-          type: string
-          format: date
-          nullable: true
     PricingTypeEnum:
       enum:
       - per_elevator
@@ -7619,19 +7189,6 @@ components:
       - last_used_at
       - signed_in_at
       - user_agent
-    SetChecklistItem:
-      type: object
-      properties:
-        item:
-          $ref: '#/components/schemas/MaintenanceChecklistItem'
-        result:
-          $ref: '#/components/schemas/MaintenanceChecklistResult'
-        note:
-          type: string
-          default: ''
-      required:
-      - item
-      - result
     SetChecklistItemRequest:
       type: object
       properties:

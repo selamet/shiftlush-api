@@ -139,6 +139,18 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Create and edit responses are described as what they return.**
+  - Every create (`POST`) and edit (`PATCH`) on the business endpoints has
+    always answered with the record as it is read: `id`, names, derived
+    fields.
+  - The contract described those responses as the request body echoed back.
+    That was 6 creates and 8 edits (buildings, complexes, contracts, customer
+    contacts, customers, elevators, maintenance visits, planned visits).
+  - It now names the read schema, and the unused `…Write` response components
+    are gone. Request bodies are unchanged.
+  - Nothing on the wire changed, only the description of it. A generated client
+    gains the fields it was already receiving.
+
 - **`POST /maintenance-visits/` replays a retried request for 30 days, not 24
   hours.** A phone can hold a visit in its outbox for days. If the first send
   landed and only the response was lost, a retry on day three now returns the
