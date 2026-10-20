@@ -1,6 +1,7 @@
-"""Overdue maintenance, checked daily (core/scheduling.py).
+"""Maintenance jobs, run daily (core/scheduling.py).
 
-M2: docs/superpowers/specs/2026-10-20-m2-notifications-design.md.
+M2: docs/superpowers/specs/2026-10-20-m2-notifications-design.md (overdue).
+M3: docs/superpowers/specs/2026-10-20-m3-maintenance-planning-design.md (plan).
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from django.tasks import task
 
 from apps.contracts.models import ContractStatus
 from apps.elevators.models import Elevator
+from apps.maintenance.services import generate_plan
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.users.models import Role, User
@@ -69,3 +71,23 @@ def maintenance_overdue() -> int:
                 )
             )
     return raised
+
+
+@task
+def plan_maintenance() -> dict[str, int]:
+    """Keep this month's and next month's maintenance plan complete (M3).
+
+    docs/superpowers/specs/2026-10-20-m3-maintenance-planning-design.md. Across
+    every firm, under the system context, like the other daily jobs: there is
+    no request to take a tenant from, and every row it writes carries its
+    lift's company. Idempotent through the unique (elevator, period).
+    """
+    today = local_today()
+    with system_context():
+        run = generate_plan(today=today)
+    return {
+        "created": run.created,
+        "updated": run.updated,
+        "cancelled": run.cancelled,
+        "notified": run.notified,
+    }

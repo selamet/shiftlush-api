@@ -36,6 +36,9 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("qr_label", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
     ("audit_log", READ): {Role.OWNER, Role.ADMIN},
     ("audit_log", WRITE): set(),
+    # M3: the plan is the technician's to read and the office's to arrange.
+    ("planned_visit", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+    ("planned_visit", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
 }
 
 

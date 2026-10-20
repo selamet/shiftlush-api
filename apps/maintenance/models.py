@@ -108,3 +108,72 @@ class MaintenanceVisitItem(CompanyOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.visit_id} / {self.item}"
+
+
+class PlannedVisitStatus(models.TextChoices):
+    PLANNED = "planned", "Planned"
+    DONE = "done", "Done"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class PlannedVisit(CompanyOwnedModel):
+    """One lift's maintenance visit for one month — the plan, not the record.
+
+    M3: docs/superpowers/specs/2026-10-20-m3-maintenance-planning-design.md.
+    The daily `plan_maintenance` job creates these for this month and next; a
+    recorded MaintenanceVisit closes one (apps.maintenance.services). Rows a
+    person has edited are marked so the job never overwrites or cancels them.
+    """
+
+    elevator = models.ForeignKey(
+        "elevators.Elevator", on_delete=models.PROTECT, related_name="planned_visits"
+    )
+    # "YYYY-MM". A string rather than the first of the month so the API filter
+    # and the unique key read the way the screen says it: "Ekim 2026".
+    period = models.CharField(max_length=7)
+    due_date = models.DateField()
+    planned_date = models.DateField(null=True, blank=True)
+    technician = models.ForeignKey(
+        "users.User",
+        on_delete=models.PROTECT,
+        related_name="planned_visits",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        max_length=20, choices=PlannedVisitStatus.choices, default=PlannedVisitStatus.PLANNED
+    )
+    # The visit that closed the row when `done`; while `planned`, the latest
+    # attempt (incomplete, access denied), so the plan can say "tried, not done".
+    visit = models.ForeignKey(
+        MaintenanceVisit,
+        on_delete=models.PROTECT,
+        related_name="planned_visits",
+        null=True,
+        blank=True,
+    )
+    manually_edited = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "planned_visit"
+        ordering = ["period", "due_date", "id"]
+        constraints = [
+            # A 30-day maximum interval makes one visit a month the obligation;
+            # a second row for the same lift and month would be planned twice.
+            models.UniqueConstraint(
+                fields=["elevator", "period"],
+                condition=models.Q(is_deleted=False),
+                name="uq_planned_visit_per_month",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=PlannedVisitStatus.values),
+                name="planned_visit_status_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "period", "status"]),
+            models.Index(fields=["technician", "period"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.elevator_id} / {self.period}"

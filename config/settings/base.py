@@ -481,6 +481,7 @@ SPECTACULAR_SETTINGS = {
         "MaintenanceVisitStatus": "apps.maintenance.models.VisitStatus.choices",
         "MaintenanceChecklistItem": "apps.maintenance.models.ChecklistItem.choices",
         "MaintenanceChecklistResult": "apps.maintenance.models.ChecklistResult.choices",
+        "PlannedVisitStatus": "apps.maintenance.models.PlannedVisitStatus.choices",
         "NotificationKind": "apps.notifications.models.NotificationKind.choices",
     },
 }

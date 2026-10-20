@@ -43,7 +43,7 @@ from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
 from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
-from apps.maintenance.models import MaintenanceVisit, VisitStatus
+from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType, Complex
 from apps.users import services
@@ -238,6 +238,13 @@ def _detail_routes() -> dict[str, frozenset[str]]:
 
 DETAIL_ROUTES = _detail_routes()
 
+# The query a list cannot be read without. The plan is always read a month at a
+# time, so `?period=` is required; without it the sweep below would prove a 400
+# rather than the boundary.
+LIST_PARAMS: dict[str, dict[str, str]] = {
+    "planned-visit": {"period": f"{TODAY:%Y-%m}"},
+}
+
 
 @dataclass(frozen=True)
 class Firm:
@@ -334,6 +341,13 @@ def _build_firm(letter: str, seed: int) -> Firm:
             visit_date=TODAY,
             status=VisitStatus.COMPLETED,
         )
+        planned = PlannedVisit.objects.create(
+            company=company,
+            elevator=elevator,
+            period=f"{TODAY:%Y-%m}",
+            due_date=TODAY,
+            technician=colleague,
+        )
 
     return Firm(
         company=company,
@@ -349,6 +363,7 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "invitation": invitation,
             "user": colleague,
             "maintenance-visit": visit,
+            "planned-visit": planned,
         },
     )
 
@@ -428,7 +443,7 @@ class TestEveryRoutedResource:
                 url = reverse(f"{basename}-list")
             except NoReverseMatch:  # pragma: no cover - every router has a list
                 continue
-            response = client.get(url)
+            response = client.get(url, LIST_PARAMS.get(basename, {}))
             assert response.status_code == 200, f"{basename}-list: {response.data}"
             rows = response.data["results"]
             theirs_pk = str(theirs.records[basename].pk)
@@ -922,6 +937,8 @@ class TestEveryModelIsScoped:
             "elevators.Elevator",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
+            # Over HTTP in the sweep above, and in tests/test_planned_visits.py.
+            "maintenance.PlannedVisit",
             # Over HTTP below (TestRoutesWithoutADetailView) and in depth in
             # tests/test_notifications.py.
             "notifications.Notification",
