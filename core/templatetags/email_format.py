@@ -7,7 +7,9 @@ filter only formats `date` objects — it prints nothing for a string.
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
+from pathlib import Path
 
 from django import template
 from django.utils import timezone
@@ -54,19 +56,12 @@ def _local_date(value: datetime) -> date:
 # Written out rather than taken from Django's `date:"F Y"`: that answers in
 # whatever language is active, and a worker or a management command has no
 # reason to have Turkish active. The e-mail is Turkish either way.
-_TR_MONTHS = (
-    "Ocak",
-    "Şubat",
-    "Mart",
-    "Nisan",
-    "Mayıs",
-    "Haziran",
-    "Temmuz",
-    "Ağustos",
-    "Eylül",
-    "Ekim",
-    "Kasım",
-    "Aralık",
+# The names live in core/data/, with the other Turkish data: a module holds no
+# user-facing Turkish (CI refuses it), so a correction is a data change.
+_TR_MONTHS: tuple[str, ...] = tuple(
+    json.loads(
+        (Path(__file__).resolve().parent.parent / "data" / "tr_months.json").read_text("utf-8")
+    )
 )
 
 
