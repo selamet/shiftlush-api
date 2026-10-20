@@ -9,7 +9,10 @@ inconsistent and nothing would say so.
 
 from __future__ import annotations
 
-from datetime import date
+import calendar
+from dataclasses import dataclass
+from datetime import date, timedelta
+from typing import Literal
 from uuid import UUID
 
 from django.db import transaction
@@ -199,3 +202,76 @@ def renew(
     contract.status = ContractStatus.RENEWED
     contract.save(update_fields=["status", "updated_at"])
     return successor
+
+
+def _add_months(day: date, months: int) -> date:
+    """`day` moved by whole calendar months, clamped to the end of a short month."""
+    years, month_index = divmod(day.month - 1 + months, 12)
+    year, month = day.year + years, month_index + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def next_term(start: date, end: date) -> tuple[date, date]:
+    """The term that follows `start` to `end`, starting the day after it ends.
+
+    The same shape, not the same number of days: a calendar year is followed by
+    a calendar year whether or not either has a 29 February, and six months
+    from 1 July by six months from 1 January. Only a term that is not a whole
+    number of months — or starts on a day no later month shares — is carried as
+    the same number of days.
+    """
+    new_start = end + timedelta(days=1)
+    months = (new_start.year - start.year) * 12 + new_start.month - start.month
+    if months > 0 and new_start.day == start.day and _add_months(start, months) == new_start:
+        return new_start, _add_months(new_start, months) - timedelta(days=1)
+    return new_start, new_start + (end - start)
+
+
+@dataclass(frozen=True)
+class ExpiryOutcome:
+    """What `expire` did, for the job that reports it."""
+
+    kind: Literal["expired", "auto_renewed", "auto_renewal_blocked"]
+    contract: Contract
+    successor: Contract | None
+
+
+@transaction.atomic
+def expire(contract: Contract, *, today: date) -> ExpiryOutcome | None:
+    """Close an ACTIVE contract whose end date has passed. None if it has not.
+
+    With `auto_renew`, it is renewed — same terms, same elevators, the next
+    term starting the day after this one ended, however late the job runs — and
+    the successor is **activated**. `renew()` alone leaves a draft, which is
+    right when a person renews and wrong here: every elevator on a draft refuses
+    a maintenance visit, and an auto-renewal nobody looks at would quietly stop
+    the technicians. The one exception is a contract with no VAT rate, whose
+    successor stays a draft — activating it would bill an invented rate.
+
+    Without it, the contract becomes EXPIRED and lets its elevators go, by the
+    same rule as `terminate()` and `renew()`: a finished contract holds no
+    open lines, or the partial unique index reserves its elevators forever.
+    """
+    if contract.status != ContractStatus.ACTIVE or contract.end_date >= today:
+        return None
+
+    if contract.auto_renew:
+        start, end = next_term(contract.start_date, contract.end_date)
+        successor = renew(contract=contract, start_date=start, end_date=end)
+        if successor.vat_rate is None:
+            return ExpiryOutcome("auto_renewal_blocked", contract, successor)
+        successor.status = ContractStatus.ACTIVE
+        successor.save(update_fields=["status", "updated_at"])
+        return ExpiryOutcome("auto_renewed", contract, successor)
+
+    released_on = contract.end_date + timedelta(days=1)
+    for line in ContractElevator.objects.filter(contract=contract, removed_at__isnull=True):
+        line.removed_at = released_on
+        line.save(update_fields=["removed_at", "updated_at"])
+        elevator = line.elevator
+        elevator.status = ElevatorStatus.UNCONTRACTED
+        elevator.save(update_fields=["status", "updated_at"])
+
+    contract.status = ContractStatus.EXPIRED
+    contract.save(update_fields=["status", "updated_at"])
+    return ExpiryOutcome("expired", contract, None)
