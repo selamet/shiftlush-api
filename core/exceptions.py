@@ -25,6 +25,16 @@ from core.error_codes import ErrorCode
 logger = logging.getLogger(__name__)
 
 
+def field_error(field: str, code: ErrorCode) -> exceptions.ValidationError:
+    """A business rule reported against one field, with the rule as its code.
+
+    DRF reads a field error's code from its ErrorDetail and ignores the text,
+    so `{field: code.value}` arrives as `invalid` and the client cannot say
+    which rule was broken. Raise this instead.
+    """
+    return exceptions.ValidationError({field: exceptions.ErrorDetail(code.label, code=code.value)})
+
+
 class BusinessRuleError(exceptions.APIException):
     """A request that is well-formed but not allowed by the domain.
 

@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.properties.models import Building, BuildingType, Complex
 from core.error_codes import ErrorCode
+from core.exceptions import field_error
 from core.serializers import AddressReadMixin
 
 
@@ -134,7 +135,5 @@ class BuildingWriteSerializer(StrictMixin, serializers.ModelSerializer[Building]
             and customer is not None
             and complex_obj.customer_id != customer.id
         ):
-            raise serializers.ValidationError(
-                {"complex": ErrorCode.BUILDING_CUSTOMER_MISMATCH.value}
-            )
+            raise field_error("complex", ErrorCode.BUILDING_CUSTOMER_MISMATCH)
         return attrs
