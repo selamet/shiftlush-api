@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import django_filters
 from django.db import transaction
 from django.db.models import QuerySet
@@ -45,6 +47,9 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
     # Visits are sent from a phone's outbox and retried on a bad connection;
     # without a key, a retry records the visit twice (spec 8.10).
     idempotency_key_required = True
+    # A phone can hold a visit in its outbox for days. If the first send landed
+    # and only the response was lost, the retry must still find its key (#99).
+    idempotency_retention = timedelta(days=30)
     read_serializer_class = MaintenanceVisitReadSerializer
     write_serializer_class = MaintenanceVisitWriteSerializer
     filterset_class = MaintenanceVisitFilter
