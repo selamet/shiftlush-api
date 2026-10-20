@@ -79,6 +79,18 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **What the visit screens needed** (all backwards compatible):
+  - **Elevator detail** returns `last_maintenance_date` and
+    `next_maintenance_date`. Both are read-only and derived from completed
+    visits.
+  - **`GET /maintenance-visits/technicians/`** returns the firm's active
+    technicians as `{id, name}`, for the "who did the work" field. It is open to
+    anyone who may read visits. The user list stays owners' and admins' only.
+  - **`GET /maintenance-visits/`** filters by `visit_date_after` and
+    `visit_date_before`, both inclusive.
+  - **The contract** now describes the create response as `MaintenanceVisitRead`,
+    which is what the view always returned. It used to describe the request body
+    without an `id`. Edit responses are described the same way.
 - **Breaking: `POST /maintenance-visits/` requires an `Idempotency-Key`
   header.**
   - Without it the request is `400 IDEMPOTENCY_KEY_REQUIRED`, and nothing is

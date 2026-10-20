@@ -77,6 +77,13 @@ def _each_item_once(items: list[dict[str, str]]) -> list[dict[str, str]]:
     return items
 
 
+class TechnicianOptionSerializer(serializers.Serializer[Any]):
+    """One choice in the "who did the work" field — a name and nothing else."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+
+
 class SetChecklistItemSerializer(serializers.Serializer[Any]):
     item = serializers.ChoiceField(choices=ChecklistItem.choices)
     result = serializers.ChoiceField(choices=ChecklistResult.choices)

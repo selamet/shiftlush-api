@@ -2379,6 +2379,16 @@ paths:
         schema:
           type: string
           format: uuid
+      - in: query
+        name: visit_date_after
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: visit_date_before
+        schema:
+          type: string
+          format: date
       tags:
       - maintenance-visits
       security:
@@ -2427,7 +2437,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MaintenanceVisitWrite'
+                $ref: '#/components/schemas/MaintenanceVisitRead'
           description: ''
   /api/v1/maintenance-visits/{id}/:
     get:
@@ -2546,6 +2556,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MaintenanceVisitRead'
+          description: ''
+  /api/v1/maintenance-visits/technicians/:
+    get:
+      operationId: maintenance_visits_technicians_list
+      description: |-
+        The firm's active technicians, by name, for the visit form.
+
+        The user list is owners' and admins' only — it carries e-mail addresses,
+        phone numbers and roles. Operations records visits too, and needs to
+        say who did the work; this answers exactly that and nothing more.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - access_denied
+          - completed
+          - incomplete
+        description: |-
+          * `completed` - Completed
+          * `incomplete` - Incomplete
+          * `access_denied` - Access denied
+      - in: query
+        name: technician
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: visit_date_after
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: visit_date_before
+        schema:
+          type: string
+          format: date
+      tags:
+      - maintenance-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TechnicianOption'
           description: ''
   /api/v1/neighborhoods/:
     get:
@@ -4756,6 +4832,16 @@ components:
         maintenance_interval_days:
           type: integer
           readOnly: true
+        last_maintenance_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        next_maintenance_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
         notes:
           type: string
           readOnly: true
@@ -4796,12 +4882,14 @@ components:
       - installer
       - internal_code
       - last_inspection_date
+      - last_maintenance_date
       - machine_room
       - maintenance_interval_days
       - manufacturer
       - model
       - name
       - next_inspection_date
+      - next_maintenance_date
       - notes
       - pit_depth_mm
       - qr_token
@@ -6780,6 +6868,19 @@ components:
       required:
       - item
       - result
+    TechnicianOption:
+      type: object
+      description: One choice in the "who did the work" field — a name and nothing
+        else.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     TerminateRequest:
       type: object
       properties:
