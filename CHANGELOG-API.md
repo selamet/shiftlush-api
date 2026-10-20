@@ -79,6 +79,17 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **`POST /maintenance-visits/` — `technician` must be an active user of your
+  own firm.**
+  - Before, any user id was accepted, including one from another firm, and the
+    response then read back that user's name. Such an id is now
+    `400 VALIDATION_ERROR`, reported on `technician` with the code
+    `does_not_exist` — the same answer as an id that was never issued.
+  - A technician may leave `technician` out, and the visit is recorded as theirs.
+  - A technician who names somebody else gets `TECHNICIAN_RECORDS_OWN_VISITS`
+    on the `technician` field.
+  - Everyone else still has to send the field.
+  - The same scoping applies to `PATCH`.
 - **Every endpoint is now rate limited, so `429 THROTTLED` is reachable
   API-wide.** Twenty requests a minute per address without a token, three
   hundred a minute per user with one (§8.13). Until now only

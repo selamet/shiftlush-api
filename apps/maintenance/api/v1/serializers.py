@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from rest_framework import serializers
 
@@ -11,6 +11,9 @@ from apps.maintenance.models import (
     MaintenanceVisitItem,
     VisitStatus,
 )
+from apps.users.models import Role, User
+from core.error_codes import ErrorCode
+from core.requests import authenticated_user
 
 
 class StrictMixin:
@@ -68,6 +71,9 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
 
 class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[MaintenanceVisit]):
     status = serializers.ChoiceField(choices=VisitStatus.choices)
+    # Scoped in get_fields below. Not required here because a technician may
+    # leave it out; validate() requires it from everybody else.
+    technician = serializers.PrimaryKeyRelatedField(queryset=User.objects.none(), required=False)
 
     class Meta:
         model = MaintenanceVisit
@@ -81,6 +87,46 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
             "work_notes",
             "parts_replaced",
         ]
+
+    def get_fields(self) -> dict[str, Any]:
+        fields = super().get_fields()
+        # User is the one model whose default manager is not tenant-scoped, so
+        # the elevator and contract fields are safe by default and this one is
+        # not: without this, a visit could name a user from another firm and
+        # its response would read back that user's name. Someone outside the
+        # firm, or no longer active in it, is "does not exist" — the same
+        # answer as an id that was never issued.
+        #
+        # With no signed-in user — schema generation, a serializer built by
+        # hand — the declared `none()` stands: nobody can be named.
+        user = getattr(self.context.get("request"), "user", None)
+        company_id = getattr(user, "company_id", None)
+        if company_id is not None:
+            technician = cast(serializers.PrimaryKeyRelatedField[User], fields["technician"])
+            technician.queryset = User.objects.filter(company_id=company_id, is_active=True)
+        return fields
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        user = authenticated_user(self.context["request"])
+        named = attrs.get("technician")
+
+        if user.role == Role.TECHNICIAN:
+            # A visit is a statement that the named person did the work. A
+            # technician makes that statement about themselves only, and does
+            # not have to repeat their own name to do it.
+            if named is not None and named.pk != user.pk:
+                code = ErrorCode.TECHNICIAN_RECORDS_OWN_VISITS
+                raise serializers.ValidationError(
+                    {"technician": serializers.ErrorDetail(code.label, code=code.value)}
+                )
+            if self.instance is None:
+                attrs["technician"] = user
+        elif named is None and self.instance is None:
+            raise serializers.ValidationError(
+                {"technician": serializers.ErrorDetail("This field is required.", code="required")}
+            )
+        return attrs
 
 
 class SetChecklistItemSerializer(serializers.Serializer[Any]):
