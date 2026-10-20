@@ -14,6 +14,7 @@ class ObjectType(models.TextChoices):
     USER = "user", "User"
     MAINTENANCE_VISIT = "maintenance_visit", "Maintenance visit"
     FAULT = "fault", "Fault"
+    INSPECTION = "inspection", "Inspection"
 
 
 class AttachmentCategory(models.TextChoices):

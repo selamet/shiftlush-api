@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "apps.attachments",
     "apps.maintenance",
     "apps.faults",
+    "apps.inspections",
     "apps.notifications",
     # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
     "django_tasks_db",
@@ -491,6 +492,10 @@ SPECTACULAR_SETTINGS = {
         "FaultChannel": "apps.faults.models.FaultChannel.choices",
         "FaultPriority": "apps.faults.models.FaultPriority.choices",
         "FaultStatus": "apps.faults.models.FaultStatus.choices",
+        "InspectionResultLabel": "apps.inspections.models.Label.choices",
+        "InspectionKind": "apps.inspections.models.InspectionKind.choices",
+        "NonConformityStatus": "apps.inspections.models.NonConformityStatus.choices",
+        "InspectionDueType": "apps.inspections.api.v1.serializers.DueType.choices",
         "NotificationKind": "apps.notifications.models.NotificationKind.choices",
     },
 }

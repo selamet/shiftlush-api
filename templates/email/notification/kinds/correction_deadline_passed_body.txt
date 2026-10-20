@@ -1,0 +1,1 @@
+{% load email_format %}{{ building_name }} binasındaki {{ elevator_name }} asansörünün kusurlarını giderme süresi {{ correction_deadline|tr_date }} tarihinde doldu ve {{ open_nonconformities }} uygunsuzluk hâlâ açık. Asansör belediye tarafından mühürlenebilir. Bu e-posta, bildirim tercihlerinizden bağımsız olarak gönderilir.

@@ -90,17 +90,21 @@ class TestTheRuleIsTheCode:
         ]
 
     def test_an_inspection_due_before_the_last_one(self, firm):
+        # M5 moved this rule from the elevator form to the inspection record,
+        # which is now the only thing that writes the elevator's dates.
         owner, _, _, elevator, _ = firm
-        response = api_for(owner).patch(
-            reverse("elevator-detail", args=[elevator.id]),
+        response = api_for(owner).post(
+            reverse("inspection-list"),
             {
-                "last_inspection_date": str(TODAY),
-                "next_inspection_date": str(TODAY - timedelta(days=1)),
+                "elevator": str(elevator.id),
+                "inspected_on": str(TODAY),
+                "label": "green",
+                "next_inspection_due": str(TODAY - timedelta(days=1)),
             },
         )
         assert details(response) == [
             {
-                "field": "next_inspection_date",
+                "field": "next_inspection_due",
                 "code": ErrorCode.END_DATE_BEFORE_START_DATE.value,
             }
         ]

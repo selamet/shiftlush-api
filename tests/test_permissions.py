@@ -43,6 +43,9 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     # closes, cancels and corrects them. Accounting has no access.
     ("fault", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
     ("fault", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+    # M5: the office records inspections; technicians read them.
+    ("inspection", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+    ("inspection", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     ("fault_office", READ): set(),
     ("fault_office", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
 }

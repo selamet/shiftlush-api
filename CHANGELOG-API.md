@@ -187,9 +187,56 @@ carried as compatibility shims nobody will ever remove.
   preference list marks it `locked: true` (a new read-only field on every
   entry), and turning it off is `400` with the new code
   `NOTIFICATION_EMAIL_LOCKED`.
+- **Periodic inspections** (M5) — what the accredited inspection body found,
+  and what is due before the municipality seals a lift.
+  - `GET/POST /inspections/`, `GET/PATCH /inspections/{id}/`. Write: owner,
+    admin, operations. Read: those, and technicians for their customers' lifts.
+    Accountants have no access. No `DELETE`. Filters: `elevator`, `label`,
+    `kind`, `due_before` (next inspection, inclusive), `correction_before`
+    (inclusive), `has_open_nonconformities`.
+  - `POST` takes `elevator`, `kind` (`periodic` or `follow_up`, which needs
+    `follows`), `inspected_on`, `inspection_body`, `report_number`, `label`,
+    an optional `next_inspection_due` (a year on by default; a follow-up keeps
+    the cycle of the inspection it follows) and an optional `nonconformities`
+    list. `next_inspection_due` must fall after `inspected_on`
+    (`END_DATE_BEFORE_START_DATE`, the code the elevator form used to give).
+  - The read side carries `correction_deadline` (derived from the label:
+    yellow 120 days, red 60, blue by the next inspection, green none — a
+    follow-up counts from the original inspection), `days_left`,
+    `lift_usable`, `sealed_if_missed` and the `nonconformities`.
+  - `PATCH` corrects an inspection, and links its report PDF with `report`:
+    an attachment of this inspection (`object_type: "inspection"`, new) filed
+    as `inspection_report`. Anything else is `422 ATTACHMENT_TARGET_MISMATCH`.
+  - Recording one updates the elevator's five inspection fields from the
+    latest inspection. A red label puts an `active` lift `out_of_service`; a
+    later non-red result puts it back.
+  - `POST /inspections/{id}/nonconformities/`, `GET/PATCH /nonconformities/{id}/`
+    (`status`, `fixed_on`, `description`; fixed with no date means today).
+  - `POST /nonconformities/{id}/open-fault/` opens an M4 fault for the defect,
+    `high` for red and `normal` otherwise, and links it in `fault`. `201`; `200`
+    with the existing fault if it already has one.
+  - `GET /inspections/due/?days=` — inspections and open correction deadlines
+    in the window (default 60 days), overdue ones included, ordered by date.
+  - New notification kinds `inspection_due`, `correction_deadline_near`,
+    `correction_deadline_passed` and `inspection_red_label`; the last two are
+    always e-mailed and listed as `locked`.
+  - New enums `InspectionResultLabel`, `InspectionKind`, `NonConformityStatus`,
+    `InspectionDueType`.
 
 ### Changed
 
+- **Breaking: the elevator's inspection fields are read-only.**
+  - `last_inspection_date`, `inspection_label`, `next_inspection_date`,
+    `inspection_body` and `inspection_report_number` are no longer accepted by
+    `POST` and `PATCH /elevators/`. Sending one is `400`, as for any unknown
+    field. They are still returned.
+  - The latest recorded inspection writes them, so the elevator cannot
+    disagree with what the inspector said. Record an inspection instead.
+  - Made in place, because v1 is unreleased and the only client
+    (`shiftlush-web`) is changing its elevator form in the same milestone.
+- **The notification kind enum grew** (four inspection kinds). A client that
+  switches on `kind` must handle values it does not know; `oasdiff` reports
+  each addition to the preference list as a breaking response change.
 - **Foreign-key filters work.** `?elevator=`, `?customer=`, `?building=` and
   every other filter on a firm-owned record were answered with
   `400 VALIDATION_ERROR` (`invalid_choice`) for any id, including the

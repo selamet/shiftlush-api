@@ -1,0 +1,1 @@
+Düzeltme süresi yaklaşıyor: {{ elevator_name }} ({{ building_name }}), {{ days_left }} gün kaldı

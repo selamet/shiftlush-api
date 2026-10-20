@@ -51,6 +51,7 @@ paths:
           - customer
           - elevator
           - fault
+          - inspection
           - maintenance_visit
           - user
         description: |-
@@ -62,6 +63,7 @@ paths:
           * `user` - User
           * `maintenance_visit` - Maintenance visit
           * `fault` - Fault
+          * `inspection` - Inspection
       - name: ordering
         required: false
         in: query
@@ -2523,6 +2525,247 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReverseGeocode'
           description: ''
+  /api/v1/inspections/:
+    get:
+      operationId: inspections_list
+      description: |-
+        Inspections, recorded by the office and read by technicians.
+
+        No DELETE: an inspection is a third party's statement about the lift, and a
+        wrong one is corrected (PATCH), not removed.
+      parameters:
+      - in: query
+        name: correction_before
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: due_before
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: has_open_nonconformities
+        schema:
+          type: boolean
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - follow_up
+          - periodic
+        description: |-
+          * `periodic` - Periodic
+          * `follow_up` - Follow-up
+      - in: query
+        name: label
+        schema:
+          type: string
+          enum:
+          - blue
+          - green
+          - red
+          - yellow
+        description: |-
+          * `green` - Green
+          * `blue` - Blue
+          * `yellow` - Yellow
+          * `red` - Red
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - inspections
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInspectionReadList'
+          description: ''
+    post:
+      operationId: inspections_create
+      description: |-
+        Inspections, recorded by the office and read by technicians.
+
+        No DELETE: an inspection is a third party's statement about the lift, and a
+        wrong one is corrected (PATCH), not removed.
+      tags:
+      - inspections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InspectionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InspectionCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRead'
+          description: ''
+  /api/v1/inspections/{id}/:
+    get:
+      operationId: inspections_retrieve
+      description: |-
+        Inspections, recorded by the office and read by technicians.
+
+        No DELETE: an inspection is a third party's statement about the lift, and a
+        wrong one is corrected (PATCH), not removed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inspection.
+        required: true
+      tags:
+      - inspections
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRead'
+          description: ''
+    patch:
+      operationId: inspections_partial_update
+      description: |-
+        Inspections, recorded by the office and read by technicians.
+
+        No DELETE: an inspection is a third party's statement about the lift, and a
+        wrong one is corrected (PATCH), not removed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inspection.
+        required: true
+      tags:
+      - inspections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionRead'
+          description: ''
+  /api/v1/inspections/{id}/nonconformities/:
+    post:
+      operationId: inspections_nonconformities_create
+      description: Record one more defect the inspector found.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inspection.
+        required: true
+      tags:
+      - inspections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NonConformityEntryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NonConformityEntryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NonConformityEntryRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NonConformity'
+          description: ''
+  /api/v1/inspections/due/:
+    get:
+      operationId: inspections_due_list
+      description: |-
+        What is due across the firm: inspections, and correction deadlines.
+
+        Inspections come from each lift's next inspection date (which the latest
+        inspection sets, or Phase 1 data where none is recorded). Corrections are
+        the yellow and red deadlines of each lift's current inspection while a
+        defect is still open. Overdue items stay on the list until dealt with —
+        they are the ones that end in a seal. Ordered by date.
+      parameters:
+      - in: query
+        name: days
+        schema:
+          type: integer
+        description: How far ahead to look, in days (default 60, at most 365). Anything
+          already overdue is always included.
+      tags:
+      - inspections
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DueItem'
+          description: ''
   /api/v1/invitations/:
     get:
       operationId: invitations_list
@@ -3037,6 +3280,84 @@ paths:
                 items:
                   $ref: '#/components/schemas/Neighborhood'
           description: ''
+  /api/v1/nonconformities/{id}/:
+    get:
+      operationId: nonconformities_retrieve
+      description: 'A defect an inspection found: fixed, waived, or sent to a technician.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this non conformity.
+        required: true
+      tags:
+      - nonconformities
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NonConformity'
+          description: ''
+    patch:
+      operationId: nonconformities_partial_update
+      description: 'A defect an inspection found: fixed, waived, or sent to a technician.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this non conformity.
+        required: true
+      tags:
+      - nonconformities
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NonConformity'
+          description: ''
+  /api/v1/nonconformities/{id}/open-fault/:
+    post:
+      operationId: nonconformities_open_fault_create
+      description: |-
+        Open an M4 fault on the lift to fix this defect, and link it.
+
+        201 with the fault's id in `fault` when one was opened; 200 when the
+        defect already had one, which is returned instead of a second.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this non conformity.
+        required: true
+      tags:
+      - nonconformities
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NonConformity'
+          description: ''
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NonConformity'
+          description: ''
   /api/v1/notifications/:
     get:
       operationId: notifications_list
@@ -3050,10 +3371,14 @@ paths:
           - contract_auto_renewed
           - contract_expired
           - contract_renewal_due
+          - correction_deadline_near
+          - correction_deadline_passed
           - fault_assigned
           - fault_emergency
           - fault_reported
           - fault_resolved
+          - inspection_due
+          - inspection_red_label
           - maintenance_overdue
           - visit_assigned
         description: |-
@@ -3067,6 +3392,10 @@ paths:
           * `fault_emergency` - Emergency fault reported
           * `fault_assigned` - Fault assigned
           * `fault_resolved` - Fault resolved
+          * `inspection_due` - Periodic inspection due
+          * `correction_deadline_near` - Correction deadline near
+          * `correction_deadline_passed` - Correction deadline passed
+          * `inspection_red_label` - Red inspection label
       - name: ordering
         required: false
         in: query
@@ -3910,6 +4239,7 @@ components:
       - user
       - maintenance_visit
       - fault
+      - inspection
       type: string
       description: |-
         * `elevator` - Elevator
@@ -3920,6 +4250,7 @@ components:
         * `user` - User
         * `maintenance_visit` - Maintenance visit
         * `fault` - Fault
+        * `inspection` - Inspection
     AuditLog:
       type: object
       properties:
@@ -5205,6 +5536,49 @@ components:
         * `geared_electric` - Geared electric
         * `gearless_electric` - Gearless electric
         * `hydraulic` - Hydraulic
+    DueItem:
+      type: object
+      description: 'One thing due: a periodic inspection, or a correction deadline.'
+      properties:
+        type:
+          $ref: '#/components/schemas/InspectionDueType'
+        date:
+          type: string
+          format: date
+        days_left:
+          type: integer
+        elevator:
+          type: string
+          format: uuid
+        elevator_name:
+          type: string
+        building_name:
+          type: string
+        customer_name:
+          type: string
+        label:
+          type: string
+          description: The lift's current label.
+        inspection:
+          type: string
+          format: uuid
+          nullable: true
+        open_nonconformities:
+          type: integer
+        sealed_if_missed:
+          type: boolean
+      required:
+      - building_name
+      - customer_name
+      - date
+      - days_left
+      - elevator
+      - elevator_name
+      - inspection
+      - label
+      - open_nonconformities
+      - sealed_if_missed
+      - type
     ElevatorByQr:
       type: object
       description: |-
@@ -5745,24 +6119,6 @@ components:
           type: string
           format: date
           nullable: true
-        last_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_label:
-          allOf:
-          - $ref: '#/components/schemas/InspectionLabelEnum'
-          default: none
-        next_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_body:
-          type: string
-          maxLength: 150
-        inspection_report_number:
-          type: string
-          maxLength: 60
         status:
           $ref: '#/components/schemas/ElevatorWriteStatusEnum'
         maintenance_interval_days:
@@ -6072,6 +6428,62 @@ components:
       - confidence
       - id
       - name
+    InspectionCreateRequest:
+      type: object
+      description: What the inspector's report says. The deadline is the server's.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InspectionKind'
+          default: periodic
+        follows:
+          type: string
+          format: uuid
+          nullable: true
+        inspected_on:
+          type: string
+          format: date
+        inspection_body:
+          type: string
+          maxLength: 150
+        report_number:
+          type: string
+          maxLength: 60
+        label:
+          $ref: '#/components/schemas/InspectionResultLabel'
+        next_inspection_due:
+          type: string
+          format: date
+          nullable: true
+          description: Defaults to a year after `inspected_on`; for a follow-up, to
+            the date the inspection it follows set.
+        nonconformities:
+          type: array
+          items:
+            $ref: '#/components/schemas/NonConformityEntryRequest'
+      required:
+      - elevator
+      - inspected_on
+      - label
+    InspectionDueType:
+      enum:
+      - inspection
+      - correction
+      type: string
+      description: |-
+        * `inspection` - Periodic inspection
+        * `correction` - Correction deadline
+    InspectionKind:
+      enum:
+      - periodic
+      - follow_up
+      type: string
+      description: |-
+        * `periodic` - Periodic
+        * `follow_up` - Follow-up
     InspectionLabelEnum:
       enum:
       - green
@@ -6086,6 +6498,128 @@ components:
         * `yellow` - Yellow
         * `red` - Red
         * `none` - None
+    InspectionRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InspectionKind'
+          readOnly: true
+        follows:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        inspected_on:
+          type: string
+          format: date
+          readOnly: true
+        inspection_body:
+          type: string
+          readOnly: true
+        report_number:
+          type: string
+          readOnly: true
+        label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionResultLabel'
+          readOnly: true
+        report:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        next_inspection_due:
+          type: string
+          format: date
+          readOnly: true
+        correction_deadline:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        days_left:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Days until `correction_deadline` by the Istanbul calendar;
+            negative once it has passed, null when the label needs no correction.
+        lift_usable:
+          type: boolean
+          readOnly: true
+          description: Whether the regulation lets the lift run under this label.
+        sealed_if_missed:
+          type: boolean
+          readOnly: true
+          description: Whether missing `correction_deadline` gets the lift sealed.
+        nonconformities:
+          type: array
+          items:
+            $ref: '#/components/schemas/NonConformity'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - building_name
+      - correction_deadline
+      - created_at
+      - customer
+      - customer_name
+      - days_left
+      - elevator
+      - elevator_name
+      - follows
+      - id
+      - inspected_on
+      - inspection_body
+      - kind
+      - label
+      - lift_usable
+      - next_inspection_due
+      - nonconformities
+      - report
+      - report_number
+      - sealed_if_missed
+      - updated_at
+    InspectionResultLabel:
+      enum:
+      - green
+      - blue
+      - yellow
+      - red
+      type: string
+      description: |-
+        * `green` - Green
+        * `blue` - Blue
+        * `yellow` - Yellow
+        * `red` - Red
     Invitation:
       type: object
       properties:
@@ -6513,6 +7047,79 @@ components:
         * `neighborhood` - Neighborhood
         * `village` - Village
         * `town` - Town
+    NonConformity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        inspection:
+          type: string
+          format: uuid
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        severity:
+          allOf:
+          - $ref: '#/components/schemas/InspectionResultLabel'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/NonConformityStatus'
+          readOnly: true
+        fixed_on:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        fault:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - description
+      - fault
+      - fixed_on
+      - id
+      - inspection
+      - severity
+      - status
+      - updated_at
+    NonConformityEntryRequest:
+      type: object
+      description: One defect, as the inspection form sends it.
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        severity:
+          $ref: '#/components/schemas/InspectionResultLabel'
+      required:
+      - description
+      - severity
+    NonConformityStatus:
+      enum:
+      - open
+      - fixed
+      - waived
+      type: string
+      description: |-
+        * `open` - Open
+        * `fixed` - Fixed
+        * `waived` - Waived
     Notification:
       type: object
       properties:
@@ -6564,6 +7171,10 @@ components:
       - fault_emergency
       - fault_assigned
       - fault_resolved
+      - inspection_due
+      - correction_deadline_near
+      - correction_deadline_passed
+      - inspection_red_label
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -6576,6 +7187,10 @@ components:
         * `fault_emergency` - Emergency fault reported
         * `fault_assigned` - Fault assigned
         * `fault_resolved` - Fault resolved
+        * `inspection_due` - Periodic inspection due
+        * `correction_deadline_near` - Correction deadline near
+        * `correction_deadline_passed` - Correction deadline passed
+        * `inspection_red_label` - Red inspection label
     NotificationPreference:
       type: object
       properties:
@@ -6855,6 +7470,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FaultRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedInspectionReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionRead'
         pagination:
           type: object
           required:
@@ -7474,24 +8119,6 @@ components:
           type: string
           format: date
           nullable: true
-        last_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_label:
-          allOf:
-          - $ref: '#/components/schemas/InspectionLabelEnum'
-          default: none
-        next_inspection_date:
-          type: string
-          format: date
-          nullable: true
-        inspection_body:
-          type: string
-          maxLength: 150
-        inspection_report_number:
-          type: string
-          maxLength: 60
         status:
           $ref: '#/components/schemas/ElevatorWriteStatusEnum'
         maintenance_interval_days:
@@ -7531,6 +8158,42 @@ components:
           type: boolean
           writeOnly: true
           default: false
+    PatchedInspectionCreateRequest:
+      type: object
+      description: What the inspector's report says. The deadline is the server's.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InspectionKind'
+          default: periodic
+        follows:
+          type: string
+          format: uuid
+          nullable: true
+        inspected_on:
+          type: string
+          format: date
+        inspection_body:
+          type: string
+          maxLength: 150
+        report_number:
+          type: string
+          maxLength: 60
+        label:
+          $ref: '#/components/schemas/InspectionResultLabel'
+        next_inspection_due:
+          type: string
+          format: date
+          nullable: true
+          description: Defaults to a year after `inspected_on`; for a follow-up, to
+            the date the inspection it follows set.
+        nonconformities:
+          type: array
+          items:
+            $ref: '#/components/schemas/NonConformityEntryRequest'
     PatchedMaintenanceVisitWriteRequest:
       type: object
       description: |-

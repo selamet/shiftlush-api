@@ -44,6 +44,7 @@ from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
 from apps.faults.models import Fault, FaultChannel
+from apps.inspections.models import Inspection, Label, NonConformity
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType, Complex
@@ -350,6 +351,17 @@ def _build_firm(letter: str, seed: int) -> Firm:
             reported_by=owner,
             description=f"Fault of {letter}",
         )
+        inspection = Inspection.objects.create(
+            company=company,
+            elevator=elevator,
+            inspected_on=TODAY,
+            label=Label.YELLOW,
+            next_inspection_due=TODAY + timedelta(days=365),
+            correction_deadline=TODAY + timedelta(days=120),
+        )
+        nonconformity = NonConformity.objects.create(
+            company=company, inspection=inspection, description="Kapi kilidi", severity=Label.YELLOW
+        )
         planned = PlannedVisit.objects.create(
             company=company,
             elevator=elevator,
@@ -374,6 +386,8 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "maintenance-visit": visit,
             "planned-visit": planned,
             "fault": fault,
+            "inspection": inspection,
+            "nonconformity": nonconformity,
         },
     )
 
@@ -948,6 +962,9 @@ class TestEveryModelIsScoped:
             # Over HTTP in the sweep above; the public report in
             # tests/test_public_fault_report.py.
             "faults.Fault",
+            # Over HTTP in the sweep above, and in tests/test_inspections.py.
+            "inspections.Inspection",
+            "inspections.NonConformity",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
             # Over HTTP in the sweep above, and in tests/test_planned_visits.py.

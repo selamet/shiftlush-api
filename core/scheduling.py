@@ -64,6 +64,7 @@ def get_schedules() -> list[DailySchedule]:
     from apps.attachments.tasks import purge_attachments
     from apps.contracts.tasks import contract_expiry, contract_renewal_notice
     from apps.faults.tasks import purge_public_reporter_data
+    from apps.inspections.tasks import correction_deadline_notice, inspection_due_notice
     from apps.maintenance.tasks import maintenance_overdue, plan_maintenance
     from core.tasks import prune_task_results, purge_idempotency_keys
 
@@ -80,6 +81,8 @@ def get_schedules() -> list[DailySchedule]:
         DailySchedule("purge_public_reporter_data", purge_public_reporter_data, time(3, 45)),
         # Before the working day, so the e-mails are waiting when it starts.
         DailySchedule("contract_renewal_notice", contract_renewal_notice, time(6, 0)),
+        DailySchedule("inspection_due_notice", inspection_due_notice, time(6, 15)),
+        DailySchedule("correction_deadline_notice", correction_deadline_notice, time(6, 30)),
         DailySchedule("maintenance_overdue", maintenance_overdue, time(7, 0)),
     ]
 
