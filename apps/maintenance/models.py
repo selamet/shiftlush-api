@@ -89,7 +89,7 @@ class MaintenanceVisitItem(CompanyOwnedModel):
 
     class Meta:
         db_table = "maintenance_visit_item"
-        ordering = ["visit_id", "item"]
+        ordering = ["visit_id", "item", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["visit", "item"],

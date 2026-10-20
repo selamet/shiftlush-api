@@ -395,7 +395,7 @@ REST_FRAMEWORK = {
     "ALLOWED_VERSIONS": ["v1"],
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
-        "rest_framework.filters.OrderingFilter",
+        "core.filters.StableOrderingFilter",
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Money crosses the wire as a string so JavaScript's float arithmetic never

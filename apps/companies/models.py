@@ -55,7 +55,7 @@ class Company(SoftDeleteModel):
 
     class Meta:
         db_table = "company"
-        ordering = ["display_name"]
+        ordering = ["display_name", "id"]
         verbose_name_plural = "companies"
 
     def __str__(self) -> str:

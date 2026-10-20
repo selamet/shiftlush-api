@@ -177,7 +177,7 @@ class ContractElevator(CompanyOwnedModel):
 
     class Meta:
         db_table = "contract_elevator"
-        ordering = ["-added_at"]
+        ordering = ["-added_at", "-id"]
         constraints = [
             # An elevator can sit in only one open contract at a time, enforced
             # here rather than in application code.

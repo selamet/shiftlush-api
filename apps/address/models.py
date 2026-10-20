@@ -24,7 +24,7 @@ class Province(models.Model):
 
     class Meta:
         db_table = "province"
-        ordering = ["name"]
+        ordering = ["name", "id"]
 
     def __str__(self) -> str:
         return self.name
@@ -38,7 +38,7 @@ class District(models.Model):
 
     class Meta:
         db_table = "district"
-        ordering = ["name"]
+        ordering = ["name", "id"]
         indexes = [models.Index(fields=["province", "name_normalized"])]
 
     def __str__(self) -> str:
@@ -67,7 +67,7 @@ class Neighborhood(models.Model):
 
     class Meta:
         db_table = "neighborhood"
-        ordering = ["name"]
+        ordering = ["name", "id"]
         indexes = [
             models.Index(fields=["district"]),
             # Typeahead matches on substrings, which a plain b-tree cannot

@@ -51,7 +51,7 @@ class AttachmentViewSet(
     serializer_class = AttachmentSerializer
     permission_classes = [AttachmentPermission]
     filterset_class = AttachmentFilter
-    ordering = ["-created_at"]
+    ordering = ["-created_at", "-id"]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self) -> QuerySet[Attachment]:

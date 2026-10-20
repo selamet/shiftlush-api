@@ -122,7 +122,7 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
 
     class Meta:
         db_table = "user"
-        ordering = ["first_name", "last_name"]
+        ordering = ["first_name", "last_name", "id"]
         constraints = [
             models.CheckConstraint(condition=models.Q(role__in=Role.values), name="user_role_valid")
         ]
@@ -181,7 +181,7 @@ class Invitation(CompanyOwnedModel):
 
     class Meta:
         db_table = "invitation"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(role__in=Role.values), name="invitation_role_valid"
@@ -223,7 +223,7 @@ class RefreshSession(models.Model):
 
     class Meta:
         db_table = "refresh_session"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["user", "revoked_at"]),
             # Revoking a session means revoking every row in its chain, and the
@@ -258,7 +258,7 @@ class OneTimeToken(models.Model):
 
     class Meta:
         db_table = "one_time_token"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["user", "purpose", "used_at"])]
         constraints = [
             models.CheckConstraint(
