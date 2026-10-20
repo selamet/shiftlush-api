@@ -94,6 +94,27 @@ infrastructure everything after M1 needs.
 
 ### M1 — Maintenance visit on the phone (M)
 
+**Status (2026-10-20): shipped.** Design:
+`2026-10-20-m1-maintenance-visit-mobile-design.md`.
+- **Backend.**
+  - #97: `Idempotency-Key` required on visit create, inline `items`, and an
+    atomic create.
+  - #98: maintenance dates on the elevator detail, a technician list for the
+    visit form, a date filter, and the create response in the contract.
+- **Web.**
+  - selamet/shiftlush-web#102: the visit form, the visit list and detail, and
+    the elevator's maintenance history.
+  - selamet/shiftlush-web#103: the offline outbox.
+  - selamet/shiftlush-web#104: the PWA shell.
+- **Found on the way.**
+  - #95: a visit could name a user from another firm.
+  - #96: three business rules reached the client as `invalid`.
+- **Open:** #99, two outbox edge cases.
+- **Not verified yet:** a real end-to-end run on a phone. Smoke render covers
+  every route for every role, and the units cover the form and the outbox, but
+  nobody has yet scanned a label in a machine room.
+
+
 The backend exists; this makes it usable.
 
 - **Technician flow:** scan the QR (`ScanScreen` exists) → elevator
