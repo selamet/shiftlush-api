@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.elevators",
     "apps.contracts",
     "apps.attachments",
+    "apps.maintenance",
     "apps.audit",
 ]
 
@@ -466,6 +467,9 @@ SPECTACULAR_SETTINGS = {
         "AttachmentObjectType": "apps.attachments.models.ObjectType.choices",
         "AttachmentCategory": "apps.attachments.models.AttachmentCategory.choices",
         "ContractScope": "apps.contracts.models.Scope.choices",
+        "MaintenanceVisitStatus": "apps.maintenance.models.VisitStatus.choices",
+        "MaintenanceChecklistItem": "apps.maintenance.models.ChecklistItem.choices",
+        "MaintenanceChecklistResult": "apps.maintenance.models.ChecklistResult.choices",
     },
 }
 

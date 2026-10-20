@@ -103,6 +103,21 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     },
+    "maintenance_visit": {
+        # A technician records their own visit; Operations can too, on
+        # behalf of a technician without an account yet. Accounting has no
+        # reason to see this and Operations already covers Owner/Admin's
+        # oversight need without adding them here separately.
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+    },
+    # A visit is not a technician's to correct after the fact - see
+    # resource_by_action on MaintenanceVisitViewSet, the same mechanism the
+    # QR-label endpoint uses to split "print" from "edit the elevator".
+    "maintenance_visit_edit": {
+        READ: set(),
+        WRITE: {Role.OWNER, Role.ADMIN},
+    },
 }
 
 
