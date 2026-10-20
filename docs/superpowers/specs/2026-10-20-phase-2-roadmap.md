@@ -138,6 +138,20 @@ The backend exists; this makes it usable.
 
 ### M2 — Notifications and the contract lifecycle (M)
 
+**Status (2026-10-20): shipped.** Design: `2026-10-20-m2-notifications-design.md`.
+- **#101:** notifications, with per-recipient dedupe and e-mail after commit
+  on the worker; Turkish templates; the API; per-kind e-mail preferences.
+- **#102:** `expire()`, plus the daily `contract_expiry`,
+  `contract_renewal_notice` and `maintenance_overdue` jobs. They run in
+  production. The first run changed nothing, because no contract or elevator
+  qualified.
+- **selamet/shiftlush-web#105:** the bell, `/notifications`, and the e-mail
+  preferences.
+- **Not verified yet:** a real notification e-mail arriving in an inbox. The
+  first one will go out when a contract enters its notice window or a covered
+  lift goes overdue.
+
+
 This milestone goes first among the new modules because it runs on data every
 firm already has, and because the modules after it publish into it.
 
