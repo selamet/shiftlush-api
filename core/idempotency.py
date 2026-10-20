@@ -31,6 +31,17 @@ HEADER = "Idempotency-Key"
 RETENTION = timedelta(hours=24)
 
 
+def retention_for(view: Any) -> timedelta:
+    """How long a stored response is replayed for this view.
+
+    24 hours covers a person tapping "save" twice on a bad connection. A view
+    whose creates are retried from a device outbox — where a phone can sit in a
+    basement for days between an ambiguous send and its retry — declares
+    `idempotency_retention` to keep its keys longer.
+    """
+    return getattr(view, "idempotency_retention", RETENTION)
+
+
 def _expired() -> QuerySet[IdempotencyKey]:
     return IdempotencyKey.objects.filter(expires_at__lte=timezone.now())
 
@@ -118,7 +129,7 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
                     "request_hash": fingerprint,
                     "response_status": response.status_code,
                     "response_body": json.loads(json.dumps(response_data, default=str)),
-                    "expires_at": timezone.now() + RETENTION,
+                    "expires_at": timezone.now() + retention_for(self),
                 },
             )
         return response

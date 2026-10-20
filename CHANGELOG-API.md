@@ -104,6 +104,12 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **`POST /maintenance-visits/` replays a retried request for 30 days, not 24
+  hours.** A phone can hold a visit in its outbox for days. If the first send
+  landed and only the response was lost, a retry on day three now returns the
+  same visit instead of recording it again. Every other create keeps the
+  24-hour window.
+
 - **Contracts now end on their own.** A daily job (00:30 Istanbul) closes every
   `ACTIVE` contract whose `end_date` has passed:
   - **Without `auto_renew`:** it becomes `expired`, and its elevators become

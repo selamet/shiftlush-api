@@ -8,12 +8,13 @@ it, and either records everything or nothing.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from unittest import mock
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.maintenance.models import (
@@ -168,3 +169,43 @@ class TestAllOrNothing:
         assert response.status_code == 500
         assert not MaintenanceVisit.unscoped.exists()
         assert not MaintenanceVisitItem.unscoped.exists()
+
+
+class TestARetryDaysLaterIsStillTheSameVisit:
+    """#99: a phone can sit offline for days with a visit in its outbox.
+
+    If the first send reached the server and only the response was lost, the
+    retry arrives whenever the phone next has signal. With the default 24-hour
+    key, a retry on day three found no key and recorded the visit again.
+    """
+
+    def test_the_key_outlives_a_long_offline_stretch(self, visit_fixture):
+        _, owner, elevator, contract = visit_fixture
+        payload = body(elevator, contract, owner, items=FULL_CHECKLIST)
+        first = post(owner, payload, key="offline-for-days")
+
+        later = timezone.now() + timedelta(days=21)
+        with mock.patch("core.idempotency.timezone.now", return_value=later):
+            retry = post(owner, payload, key="offline-for-days")
+
+        assert retry.status_code == 201
+        assert retry.data["id"] == first.data["id"]
+        assert MaintenanceVisit.unscoped.count() == 1
+
+    def test_the_visit_key_is_kept_for_thirty_days(self, visit_fixture):
+        from core.models import IdempotencyKey
+
+        _, owner, elevator, contract = visit_fixture
+        post(owner, body(elevator, contract, owner), key="kept")
+
+        stored = IdempotencyKey.objects.get(key="kept")
+        assert stored.expires_at - stored.created_at > timedelta(days=30) - timedelta(minutes=1)
+
+    def test_other_creates_keep_the_default_window(self):
+        # Only the endpoint a device outbox retries needs the long window; a
+        # month of stored responses for every create would be a table nobody
+        # needed.
+        from apps.customers.api.v1.views import CustomerViewSet
+        from core.idempotency import RETENTION, retention_for
+
+        assert retention_for(CustomerViewSet()) == RETENTION
