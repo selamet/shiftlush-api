@@ -118,6 +118,23 @@ REFERRER_POLICY = "same-origin"
 # endpoint is closed here and served only behind an IP restriction.
 SPECTACULAR_SETTINGS = {**SPECTACULAR_SETTINGS, "SERVE_PUBLIC": False}
 
+# The worker and scheduler containers log through these, and Django's default
+# console handler only writes when DEBUG is on — without this, `docker compose
+# logs worker` shows nothing, not even a failed task. Not propagated, so a
+# failure does not also go to mail_admins; Sentry's logging integration sees
+# the record either way, because it hooks the logger rather than a handler.
+_STDOUT_INFO = {"handlers": ["stdout"], "level": "INFO", "propagate": False}
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"stdout": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout"}},
+    "loggers": {
+        "django.tasks": _STDOUT_INFO,
+        "django_tasks_db": _STDOUT_INFO,
+        "core.management.commands.run_scheduler": _STDOUT_INFO,
+    },
+}
+
 # Reporting starts here rather than in `base`, so that importing the settings in
 # a test or a shell never opens a connection to a third party.
 SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="production")

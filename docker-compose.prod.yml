@@ -5,7 +5,9 @@ services:
   api:
     build: .
     restart: unless-stopped
-    environment:
+    # Anchored so `worker` and `scheduler` read exactly what the API reads. A
+    # second copy of this list is a second place to forget a variable.
+    environment: &app-environment
       - DJANGO_SETTINGS_MODULE=config.settings.production
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
@@ -88,3 +90,47 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  # Runs what `scheduler` (and, from M2, the API) enqueues. Same image, its own
+  # process: a slow job never holds a gunicorn worker. The queue is the
+  # database (django-tasks-db), so there is no broker to depend on.
+  #
+  # Neither this nor `scheduler` runs entrypoint.sh: three containers applying
+  # migrations at once is a race, and the API already does it. Waiting for the
+  # API to be healthy is waiting for the migrations to be in.
+  worker:
+    build: .
+    restart: unless-stopped
+    environment: *app-environment
+    entrypoint: ["python", "manage.py"]
+    # Polls every 5 s when idle: one indexed query, and nothing queued today
+    # needs to start sooner than that.
+    command: ["db_worker", "--interval", "5"]
+    depends_on:
+      api:
+        condition: service_healthy
+    # Measured: 69 MiB idle after running all three daily jobs, from this
+    # image. The real attachment purge also imports botocore, which the API's
+    # figures put at most ~40 MB more, so ~110 MB is the realistic ceiling and
+    # 192m clears it by ~75%. Steady growth past that is a leak, not a reason
+    # to raise this.
+    mem_limit: 192m
+    memswap_limit: 192m
+    # db_worker finishes the task in hand on SIGTERM; give it the time to.
+    stop_grace_period: 60s
+
+  # Enqueues scheduled jobs as they fall due (core/scheduling.py). Only
+  # enqueues, so it stays small and never blocks on a job.
+  scheduler:
+    build: .
+    restart: unless-stopped
+    environment: *app-environment
+    entrypoint: ["python", "manage.py"]
+    command: ["run_scheduler"]
+    depends_on:
+      api:
+        condition: service_healthy
+    # Measured: 69 MiB idle. It only enqueues, so it never imports botocore
+    # or renders anything; 128m is ~85% headroom.
+    mem_limit: 128m
+    memswap_limit: 128m

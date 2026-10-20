@@ -376,6 +376,20 @@ wheels = [
 ]
 
 [[package]]
+name = "django-tasks-db"
+version = "0.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "django-stubs-ext" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/e9/fd12dc51bb25c52658bbf329a6f2454b215d063fca8c8342458a474dae16/django_tasks_db-0.13.0.tar.gz", hash = "sha256:09630d417cf722b07e1439b837403e18e86455908ba532fa6795b0d23dc3ff23", size = 29608, upload-time = "2026-08-28T15:05:32.098Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/d2/8b10117fca37a2d1f2e45f4878ffa07cf6c0c8df1920e250db30e2228b9e/django_tasks_db-0.13.0-py3-none-any.whl", hash = "sha256:a3a47250b09d40e9b289851d2a550d840d29e59ee3e7115129831e291bb35576", size = 31991, upload-time = "2026-08-28T15:05:30.767Z" },
+]
+
+[[package]]
 name = "django-zen-queries"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -938,6 +952,7 @@ dependencies = [
     { name = "django-environ" },
     { name = "django-filter" },
     { name = "django-storages", extra = ["s3"] },
+    { name = "django-tasks-db" },
     { name = "djangorestframework" },
     { name = "djangorestframework-simplejwt" },
     { name = "drf-spectacular" },
@@ -976,6 +991,7 @@ requires-dist = [
     { name = "django-environ", specifier = ">=0.12" },
     { name = "django-filter", specifier = ">=25.1" },
     { name = "django-storages", extras = ["s3"], specifier = ">=1.14" },
+    { name = "django-tasks-db", specifier = ">=0.13" },
     { name = "djangorestframework", specifier = ">=3.16" },
     { name = "djangorestframework-simplejwt", specifier = ">=5.5" },
     { name = "drf-spectacular", specifier = ">=0.28" },

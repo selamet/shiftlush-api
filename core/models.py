@@ -170,3 +170,30 @@ class IdempotencyKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.endpoint} {self.key}"
+
+
+class ScheduledRun(models.Model):
+    """One run of one scheduled job, claimed before its task is enqueued.
+
+    The unique (job, period) is the whole of the scheduler's idempotency: see
+    core/scheduling.py. Infrastructure, like IdempotencyKey, so no tenant and
+    no soft delete.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    job = models.CharField(max_length=100)
+    # The local date for a daily job, e.g. "2026-10-20". A string so a monthly
+    # schedule can use "2026-10" without a schema change.
+    period = models.CharField(max_length=20)
+    task_id = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "scheduled_run"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "period"], name="uq_scheduled_run_per_period")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.job} {self.period}"

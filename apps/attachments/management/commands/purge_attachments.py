@@ -9,8 +9,8 @@ The row is never removed, only its `storage_key`. An audit entry saying a
 document was deleted is worth nothing if the record of which document went with
 it.
 
-Scheduling belongs to the deployment (a daily cron or a scheduled container).
-This command is written now so that scheduling is the only thing left to decide.
+Runs daily as a scheduled task (core/scheduling.py). This command stays for a
+one-off run or a `--dry-run` by hand.
 """
 
 from __future__ import annotations

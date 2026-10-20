@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     "apps.contracts",
     "apps.attachments",
     "apps.maintenance",
+    # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
+    "django_tasks_db",
     "apps.audit",
 ]
 
@@ -164,6 +166,14 @@ CACHES = {
 #: broker up must pass `{"global_keyprefix": f"{REDIS_KEY_PREFIX}:"}` as a
 #: transport option.
 REDIS_QUEUE_URL = env("REDIS_QUEUE_URL", default="")
+
+# Background work goes through django.tasks (spec 2.5: not Celery). Django 6.1
+# ships no backend that a worker can run, so production uses django-tasks-db,
+# which keeps the queue in the application database: a task enqueued in a
+# transaction commits or rolls back with the rows it is about. REDIS_QUEUE_URL
+# above is provisioned but unread — nothing here needs a broker at this volume.
+# Development and tests override this with the immediate backend.
+TASKS = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}
 
 # --------------------------------------------------------------------------
 # Address data
