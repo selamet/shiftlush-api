@@ -89,6 +89,10 @@ class TestTheContractItself:
                     continue
                 if path in public or path.startswith("/api/v1/invitations/verify/"):
                     continue
+                # The public fault report from the QR sticker (M4): anonymous by
+                # design, and the only write that is.
+                if path == "/api/v1/public/elevators/{qr_token}/faults/":
+                    continue
                 # An endpoint published without a scheme reads to a generated
                 # client as one that needs no token, and the mistake is only
                 # found by the person who gets a 401 they did not expect.

@@ -63,6 +63,7 @@ def get_schedules() -> list[DailySchedule]:
     # import time, and attachments' tasks pull in its services and models.
     from apps.attachments.tasks import purge_attachments
     from apps.contracts.tasks import contract_expiry, contract_renewal_notice
+    from apps.faults.tasks import purge_public_reporter_data
     from apps.maintenance.tasks import maintenance_overdue, plan_maintenance
     from core.tasks import prune_task_results, purge_idempotency_keys
 
@@ -76,6 +77,7 @@ def get_schedules() -> list[DailySchedule]:
         DailySchedule("purge_idempotency_keys", purge_idempotency_keys, time(3, 0)),
         DailySchedule("purge_attachments", purge_attachments, time(3, 15)),
         DailySchedule("prune_task_results", prune_task_results, time(3, 30)),
+        DailySchedule("purge_public_reporter_data", purge_public_reporter_data, time(3, 45)),
         # Before the working day, so the e-mails are waiting when it starts.
         DailySchedule("contract_renewal_notice", contract_renewal_notice, time(6, 0)),
         DailySchedule("maintenance_overdue", maintenance_overdue, time(7, 0)),

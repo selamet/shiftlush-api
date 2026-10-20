@@ -1,0 +1,1 @@
+{{ building_name }} binasındaki {{ elevator_name }} asansörünün {{ reference }} numaralı arızası size atandı.{% if priority == "emergency" %} Asansörde mahsur kalan var.{% elif priority == "high" %} Asansör çalışmıyor.{% endif %}

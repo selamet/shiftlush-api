@@ -34,6 +34,12 @@ class NotificationKind(models.TextChoices):
       one assignment action gave the recipient in that month. Raised with
       subject_type "plan" and the recipient's own id as subject_id — the
       subject is their work list, not one row.
+    - ``fault_reported``, ``fault_emergency`` — reference, elevator_name,
+      building_name, priority, channel, description (the first 200
+      characters). Raised with subject_type "fault".
+    - ``fault_assigned`` — reference, elevator_name, building_name, priority.
+    - ``fault_resolved`` — reference, elevator_name, building_name,
+      technician_name.
 
     Adding a kind is a backwards-compatible change to the contract; it also
     needs an entry in EMAIL_DEFAULTS below and two template partials.
@@ -48,6 +54,10 @@ class NotificationKind(models.TextChoices):
     )
     MAINTENANCE_OVERDUE = "maintenance_overdue", "Maintenance overdue"
     VISIT_ASSIGNED = "visit_assigned", "Planned visits assigned"
+    FAULT_REPORTED = "fault_reported", "Fault reported"
+    FAULT_EMERGENCY = "fault_emergency", "Emergency fault reported"
+    FAULT_ASSIGNED = "fault_assigned", "Fault assigned"
+    FAULT_RESOLVED = "fault_resolved", "Fault resolved"
 
 
 #: Whether a kind is e-mailed to somebody who has never said otherwise. A
@@ -58,7 +68,9 @@ class NotificationKind(models.TextChoices):
 #: Contract events are rare and carry money; overdue maintenance is daily
 #: operational noise for most readers, who see it in the app anyway. An
 #: assignment is a technician's work list changing, which is worth hearing about
-#: away from the app — and it comes once per action, not once per lift.
+#: away from the app — and it comes once per action, not once per lift. A
+#: reported or assigned fault is somebody's next hour; a resolved one is news
+#: the office reads on the board.
 EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.CONTRACT_RENEWAL_DUE: True,
     NotificationKind.CONTRACT_EXPIRED: True,
@@ -66,7 +78,18 @@ EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.CONTRACT_AUTO_RENEWAL_BLOCKED: True,
     NotificationKind.MAINTENANCE_OVERDUE: False,
     NotificationKind.VISIT_ASSIGNED: True,
+    NotificationKind.FAULT_REPORTED: True,
+    NotificationKind.FAULT_EMERGENCY: True,
+    NotificationKind.FAULT_ASSIGNED: True,
+    NotificationKind.FAULT_RESOLVED: False,
 }
+
+#: Kinds that are e-mailed whatever the recipient's preference says. A trapped
+#: passenger is not a preference (M4): the person who could get there first
+#: may be the one who turned fault e-mails off last week. Such a kind is listed
+#: in the preferences as `locked`, and turning its e-mail off is refused rather
+#: than stored and ignored.
+EMAIL_ALWAYS: frozenset[str] = frozenset({NotificationKind.FAULT_EMERGENCY})
 
 
 class Notification(CompanyOwnedModel):

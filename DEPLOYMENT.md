@@ -107,6 +107,15 @@ failures against a sign-in, and this caller is already signed in. Throttle state
 lives in the default cache, so without `REDIS_URL` the count is per process and
 several workers multiply the effective limit by their number.
 
+**`PUBLIC_FAULT_TOKEN_RATE_LIMIT`** and **`PUBLIC_FAULT_ADDRESS_RATE_LIMIT`**
+(defaults `5/hour` and `20/hour`) bound `POST /public/elevators/{qr_token}/faults/`,
+the fault report a resident sends from the lift's QR sticker — the one write that
+takes no token. The first counts per sticker, the second per caller address, and
+both apply at once. Repeated reports of one lift within 30 minutes merge into one
+fault anyway, so a higher sticker limit buys no real reports; raise the address
+limit only if a large site's residents share one NAT address. The same Redis note
+applies: without it, each worker counts on its own.
+
 ## Bringing up a new environment
 
 Everything here happens once, against a database and a box that have never run
@@ -339,6 +348,7 @@ they wait for the API to be healthy, which is after its migrations.
 | `purge_idempotency_keys` | 03:00 | deletes keys past their replay window |
 | `purge_attachments` | 03:15 | deletes the stored bytes of attachments soft-deleted over `ATTACHMENT_PURGE_AFTER_DAYS` ago |
 | `prune_task_results` | 03:30 | drops task results: successes after 7 days, failures after 30 |
+| `purge_public_reporter_data` | 03:45 | blanks the name and phone of public QR fault reports closed or cancelled more than 90 days ago |
 | `contract_renewal_notice` | 06:00 | notifies owners and admins `renewal_notice_days` before a contract ends |
 | `maintenance_overdue` | 07:00 | notifies the office and the assigned technicians when a covered elevator is past its maintenance date |
 

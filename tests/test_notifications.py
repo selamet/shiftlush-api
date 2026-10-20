@@ -24,6 +24,7 @@ from rest_framework.test import APIClient
 
 from apps.audit.models import AuditLog
 from apps.notifications.models import (
+    EMAIL_ALWAYS,
     EMAIL_DEFAULTS,
     Notification,
     NotificationKind,
@@ -42,6 +43,7 @@ from core.templatetags.email_format import tr_date
 PASSWORD = "correct-horse-battery"
 CONTRACT_ID = uuid.UUID("01900000-0000-7000-8000-000000000001")
 ELEVATOR_ID = uuid.UUID("01900000-0000-7000-8000-000000000002")
+FAULT_ID = uuid.UUID("01900000-0000-7000-8000-000000000003")
 
 #: A plausible `data` for every kind, as the jobs will raise it.
 SAMPLE_DATA: dict[str, dict[str, object]] = {
@@ -74,6 +76,41 @@ SAMPLE_DATA: dict[str, dict[str, object]] = {
         "next_maintenance_date": date(2026, 10, 15),
     },
     NotificationKind.VISIT_ASSIGNED: {"period": "2026-10", "count": 12},
+    NotificationKind.FAULT_REPORTED: {
+        "reference": "K7M2QX",
+        "elevator_name": "A Blok",
+        "building_name": "Yıldız Sitesi",
+        "priority": "high",
+        "channel": "public_qr",
+        "description": "Kapı kapanmıyor",
+    },
+    NotificationKind.FAULT_EMERGENCY: {
+        "reference": "K7M2QX",
+        "elevator_name": "A Blok",
+        "building_name": "Yıldız Sitesi",
+        "priority": "emergency",
+        "channel": "staff",
+        "description": "Kabinde biri mahsur",
+    },
+    NotificationKind.FAULT_ASSIGNED: {
+        "reference": "K7M2QX",
+        "elevator_name": "A Blok",
+        "building_name": "Yıldız Sitesi",
+        "priority": "normal",
+    },
+    NotificationKind.FAULT_RESOLVED: {
+        "reference": "K7M2QX",
+        "elevator_name": "A Blok",
+        "building_name": "Yıldız Sitesi",
+        "technician_name": "Ali Usta",
+    },
+}
+
+FAULT_KINDS = {
+    NotificationKind.FAULT_REPORTED,
+    NotificationKind.FAULT_EMERGENCY,
+    NotificationKind.FAULT_ASSIGNED,
+    NotificationKind.FAULT_RESOLVED,
 }
 
 SUBJECT_OF = {
@@ -81,6 +118,8 @@ SUBJECT_OF = {
     if kind == NotificationKind.MAINTENANCE_OVERDUE
     else ("plan", ELEVATOR_ID)
     if kind == NotificationKind.VISIT_ASSIGNED
+    else ("fault", FAULT_ID)
+    if kind in FAULT_KINDS
     else ("contract", CONTRACT_ID)
     for kind in NotificationKind.values
 }
@@ -643,7 +682,10 @@ class TestMarkingRead:
 
 
 def defaults() -> list[dict[str, object]]:
-    return [{"kind": kind, "email": EMAIL_DEFAULTS[kind]} for kind in NotificationKind.values]
+    return [
+        {"kind": kind, "email": EMAIL_DEFAULTS[kind], "locked": kind in EMAIL_ALWAYS}
+        for kind in NotificationKind.values
+    ]
 
 
 class TestPreferences:
@@ -659,8 +701,14 @@ class TestPreferences:
     def test_put_round_trips(self, firm):
         company, owner, _ = firm
         client = api_for(owner)
+        # Every kind flipped, except the ones that cannot be turned off.
         wanted = [
-            {"kind": kind, "email": not EMAIL_DEFAULTS[kind]} for kind in NotificationKind.values
+            {
+                "kind": kind,
+                "email": True if kind in EMAIL_ALWAYS else not EMAIL_DEFAULTS[kind],
+                "locked": kind in EMAIL_ALWAYS,
+            }
+            for kind in NotificationKind.values
         ]
 
         response = client.put(reverse("notification-preferences"), wanted, format="json")
@@ -767,3 +815,49 @@ class TestAcrossFirms:
             format="json",
         )
         assert api_for(other_owner).get(reverse("notification-preferences")).data == defaults()
+
+
+class TestAKindThatIsAlwaysEmailed:
+    """fault_emergency: a trapped passenger is not a preference (M4)."""
+
+    def test_it_is_emailed_even_to_somebody_who_turned_it_off(
+        self, firm, django_capture_on_commit_callbacks
+    ):
+        company, owner, _ = firm
+        # Written straight to the table: the API refuses to store this, but a row
+        # from before the kind was locked, or a hand edit, must not win either.
+        with company_context(company.id):
+            NotificationPreference.objects.create(
+                company=company, user=owner, kind=NotificationKind.FAULT_EMERGENCY, email=False
+            )
+        with django_capture_on_commit_callbacks(execute=True):
+            with company_context(company.id):
+                raise_for([owner], kind=NotificationKind.FAULT_EMERGENCY)
+        assert [message.to[0] for message in django_mail.outbox] == [owner.email]
+        assert "mahsur kalan" in django_mail.outbox[0].subject
+        assert f"/faults/{FAULT_ID}" in django_mail.outbox[0].body
+
+    def test_it_is_listed_as_locked_and_on(self, firm):
+        _, owner, _ = firm
+        rows = api_for(owner).get(reverse("notification-preferences")).data
+        (emergency,) = [row for row in rows if row["kind"] == NotificationKind.FAULT_EMERGENCY]
+        assert emergency == {
+            "kind": NotificationKind.FAULT_EMERGENCY,
+            "email": True,
+            "locked": True,
+        }
+        assert all(row["locked"] is False for row in rows if row is not emergency)
+
+    def test_turning_it_off_is_refused(self, firm):
+        company, owner, _ = firm
+        response = api_for(owner).put(
+            reverse("notification-preferences"),
+            [{"kind": NotificationKind.FAULT_EMERGENCY, "email": False}],
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "0.email", "code": ErrorCode.NOTIFICATION_EMAIL_LOCKED.value}
+        ]
+        with company_context(company.id):
+            assert not NotificationPreference.objects.exists()

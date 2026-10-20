@@ -33,6 +33,10 @@ MASKED_FIELDS = frozenset(
         "qr_token",
         "request_hash",
         "response_body",
+        # A public fault reporter's contact details (M4). Blanked from the fault
+        # 90 days after it closes; a copy kept here would outlive that promise.
+        "reporter_name",
+        "reporter_phone",
     }
 )
 

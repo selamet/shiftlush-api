@@ -18,6 +18,8 @@ HTML part (escaped here) and the text part (body.txt, unescaped).
     {% include "email/_button.html" with label="Sözleşmeyi görüntüle" %}
   {% elif subject_type == "elevator" %}
     {% include "email/_button.html" with label="Asansörü görüntüle" %}
+  {% elif subject_type == "fault" %}
+    {% include "email/_button.html" with label="Arızayı görüntüle" %}
   {% elif subject_type == "plan" %}
     {% include "email/_button.html" with label="Bakım listemi aç" %}
   {% else %}

@@ -1,0 +1,1 @@
+Arıza çözüldü: {{ elevator_name }} ({{ building_name }})

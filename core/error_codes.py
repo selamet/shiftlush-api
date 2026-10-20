@@ -81,6 +81,14 @@ class ErrorCode(models.TextChoices):
         "NO_ACTIVE_CONTRACT_FOR_ELEVATOR",
         "The named contract is not active or does not cover this elevator",
     )
+    FAULT_TRANSITION_NOT_ALLOWED = (
+        "FAULT_TRANSITION_NOT_ALLOWED",
+        "The fault is not in a state this action can be taken from",
+    )
+    NOTIFICATION_EMAIL_LOCKED = (
+        "NOTIFICATION_EMAIL_LOCKED",
+        "This notification is always e-mailed and cannot be turned off",
+    )
     LAST_OWNER_CANNOT_BE_DEACTIVATED = (
         "LAST_OWNER_CANNOT_BE_DEACTIVATED",
         "A company must keep at least one active owner",

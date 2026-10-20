@@ -114,6 +114,7 @@ def send_email_verification(*, to: str, first_name: str, token: str) -> None:
 NOTIFICATION_SUBJECT_PATHS = {
     "contract": "contracts",
     "elevator": "elevators",
+    "fault": "faults",
 }
 
 #: Subjects that are a screen rather than a record, so the link carries no id.
