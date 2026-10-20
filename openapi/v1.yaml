@@ -2324,6 +2324,221 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvitationPreview'
           description: ''
+  /api/v1/maintenance-visits/:
+    get:
+      operationId: maintenance_visits_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - access_denied
+          - completed
+          - incomplete
+        description: |-
+          * `completed` - Completed
+          * `incomplete` - Incomplete
+          * `access_denied` - Access denied
+      - in: query
+        name: technician
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - maintenance-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMaintenanceVisitReadList'
+          description: ''
+    post:
+      operationId: maintenance_visits_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - maintenance-visits
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceVisitWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MaintenanceVisitWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MaintenanceVisitWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVisitWrite'
+          description: ''
+  /api/v1/maintenance-visits/{id}/:
+    get:
+      operationId: maintenance_visits_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this maintenance visit.
+        required: true
+      tags:
+      - maintenance-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVisitRead'
+          description: ''
+    patch:
+      operationId: maintenance_visits_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this maintenance visit.
+        required: true
+      tags:
+      - maintenance-visits
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMaintenanceVisitWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMaintenanceVisitWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMaintenanceVisitWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVisitWrite'
+          description: ''
+    delete:
+      operationId: maintenance_visits_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this maintenance visit.
+        required: true
+      tags:
+      - maintenance-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/maintenance-visits/{id}/set-checklist/:
+    post:
+      operationId: maintenance_visits_set_checklist_create
+      description: |-
+        Replace this visit's checklist rows with exactly what is sent.
+
+        A second call, matching how Contract's elevators are managed via
+        add-elevators rather than nested inside the contract payload - see
+        the plan's file-structure note on why this diverges from the design
+        doc's original nested-serializer sketch.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this maintenance visit.
+        required: true
+      tags:
+      - maintenance-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVisitRead'
+          description: ''
   /api/v1/neighborhoods/:
     get:
       operationId: neighborhoods_list
@@ -5211,6 +5426,231 @@ components:
         * `present` - Present
         * `absent` - Absent
         * `partial` - Partial
+    MaintenanceChecklistItem:
+      enum:
+      - brake_system
+      - hoisting_ropes
+      - landing_doors
+      - car_door_safety_edge
+      - limit_switches
+      - guide_rail_lubrication
+      - car_lighting
+      - emergency_lighting
+      - emergency_alarm_intercom
+      - control_panel_buttons
+      - leveling_accuracy
+      - overload_device
+      - automatic_rescue_device
+      - pit_condition
+      - machine_room_condition
+      - earthing_grounding
+      type: string
+      description: |-
+        * `brake_system` - Brake system
+        * `hoisting_ropes` - Hoisting ropes and cables
+        * `landing_doors` - Landing doors and locks
+        * `car_door_safety_edge` - Car door and safety edge
+        * `limit_switches` - Limit switches
+        * `guide_rail_lubrication` - Guide rail lubrication
+        * `car_lighting` - Car lighting
+        * `emergency_lighting` - Emergency lighting
+        * `emergency_alarm_intercom` - Emergency alarm / intercom
+        * `control_panel_buttons` - Control panel and call buttons
+        * `leveling_accuracy` - Floor leveling accuracy
+        * `overload_device` - Overload sensor
+        * `automatic_rescue_device` - Automatic rescue device (ARD) test
+        * `pit_condition` - Pit condition and cleanliness
+        * `machine_room_condition` - Machine room condition and ventilation
+        * `earthing_grounding` - Earthing / grounding
+    MaintenanceChecklistResult:
+      enum:
+      - ok
+      - attention_needed
+      - not_applicable
+      type: string
+      description: |-
+        * `ok` - OK
+        * `attention_needed` - Attention needed
+        * `not_applicable` - Not applicable
+    MaintenanceVisitItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        item:
+          $ref: '#/components/schemas/MaintenanceChecklistItem'
+        result:
+          $ref: '#/components/schemas/MaintenanceChecklistResult'
+        note:
+          type: string
+      required:
+      - id
+      - item
+      - result
+    MaintenanceVisitItemRequest:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/MaintenanceChecklistItem'
+        result:
+          $ref: '#/components/schemas/MaintenanceChecklistResult'
+        note:
+          type: string
+      required:
+      - item
+      - result
+    MaintenanceVisitRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        contract:
+          type: string
+          format: uuid
+          readOnly: true
+        technician:
+          type: string
+          format: uuid
+          readOnly: true
+        technician_name:
+          type: string
+          readOnly: true
+        visit_date:
+          type: string
+          format: date
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/MaintenanceVisitStatus'
+          readOnly: true
+        status_note:
+          type: string
+          readOnly: true
+        work_notes:
+          type: string
+          readOnly: true
+        parts_replaced:
+          type: string
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceVisitItem'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - contract
+      - created_at
+      - elevator
+      - elevator_name
+      - id
+      - items
+      - parts_replaced
+      - status
+      - status_note
+      - technician
+      - technician_name
+      - updated_at
+      - visit_date
+      - work_notes
+    MaintenanceVisitStatus:
+      enum:
+      - completed
+      - incomplete
+      - access_denied
+      type: string
+      description: |-
+        * `completed` - Completed
+        * `incomplete` - Incomplete
+        * `access_denied` - Access denied
+    MaintenanceVisitWrite:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported - every app that needs this defines its own
+        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
+        there is no shared core.serializers module to pull it from.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        contract:
+          type: string
+          format: uuid
+        technician:
+          type: string
+          format: uuid
+        visit_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/MaintenanceVisitStatus'
+        status_note:
+          type: string
+        work_notes:
+          type: string
+        parts_replaced:
+          type: string
+      required:
+      - contract
+      - elevator
+      - status
+      - technician
+      - visit_date
+    MaintenanceVisitWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported - every app that needs this defines its own
+        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
+        there is no shared core.serializers module to pull it from.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        contract:
+          type: string
+          format: uuid
+        technician:
+          type: string
+          format: uuid
+        visit_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/MaintenanceVisitStatus'
+        status_note:
+          type: string
+        work_notes:
+          type: string
+        parts_replaced:
+          type: string
+      required:
+      - contract
+      - elevator
+      - status
+      - technician
+      - visit_date
     MimeTypeEnum:
       enum:
       - application/pdf
@@ -5517,6 +5957,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Invitation'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedMaintenanceVisitReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaintenanceVisitRead'
         pagination:
           type: object
           required:
@@ -6042,6 +6512,35 @@ components:
           minimum: -9223372036854775808
           format: int64
         notes:
+          type: string
+    PatchedMaintenanceVisitWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported - every app that needs this defines its own
+        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
+        there is no shared core.serializers module to pull it from.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        contract:
+          type: string
+          format: uuid
+        technician:
+          type: string
+          format: uuid
+        visit_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/MaintenanceVisitStatus'
+        status_note:
+          type: string
+        work_notes:
+          type: string
+        parts_replaced:
           type: string
     PatchedUserUpdateRequest:
       type: object

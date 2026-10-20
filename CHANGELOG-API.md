@@ -67,6 +67,15 @@ carried as compatibility shims nobody will ever remove.
 - **`ErrorCode` and `ErrorResponse`** components, generated from
   `core/error_codes.py`. Every code the API can return is in the contract, and
   the frontend's CI fails if one of them has no Turkish message.
+- **Maintenance visits** — `POST/GET /maintenance-visits/`,
+  `GET/PATCH/DELETE /maintenance-visits/{id}/`,
+  `POST /maintenance-visits/{id}/set-checklist/`. Records a technician's
+  routine maintenance visit against an elevator, with a 16-item checklist,
+  and recalculates the elevator's `next_maintenance_date`. A technician may
+  create their own visit and attach an optional photo to it, but only
+  `OWNER`/`ADMIN` may edit or delete one afterwards. Elevators gain read-only
+  `last_maintenance_date` and `next_maintenance_date`, and attachments accept
+  `maintenance_visit` as an `object_type`.
 
 ### Changed
 

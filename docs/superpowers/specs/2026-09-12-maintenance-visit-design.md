@@ -168,12 +168,13 @@ Two additions to `core/permissions.MATRIX`:
   `ordering` attribute is what actually survives that. This viewset has no
   such annotation planned, but the explicit attribute costs nothing and
   removes the question later.
-- `items` (the checklist rows) is a **writable nested serializer** on create
-  and update, sent in the same request as the visit — unlike
-  `ContractElevator`, which is attached to a `Contract` incrementally over
-  its lifetime via a separate `add-elevators` action, a checklist is a
-  fixed-size form filled in once. Splitting it into a second call would only
-  add a round trip with no matching real-world step.
+- `items` (the checklist rows) are set via a separate action —
+  `POST /maintenance-visits/{id}/set-checklist/`, replacing the full set in
+  one call — the same shape `Contract`/`ContractElevator` already uses via
+  `add-elevators`, rather than a writable nested serializer on
+  `MaintenanceVisit` itself. See the implementation plan
+  (`docs/superpowers/plans/2026-09-12-maintenance-visit.md`) for why this
+  changed during planning.
 
 **Attachment permission carve-out.** Today `MATRIX["attachment"][WRITE]` is
 `{OWNER, ADMIN, OPERATIONS}` — a `TECHNICIAN` cannot upload any attachment.
