@@ -181,6 +181,10 @@ class ElevatorDetailSerializer(serializers.ModelSerializer[Elevator]):
             "inspection_report_number",
             "status",
             "maintenance_interval_days",
+            # Derived from completed visits (apps.maintenance.services), never
+            # written by a client — see read_only_fields.
+            "last_maintenance_date",
+            "next_maintenance_date",
             "notes",
             "created_at",
             "updated_at",

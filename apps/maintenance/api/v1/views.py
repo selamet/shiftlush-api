@@ -16,14 +16,18 @@ from apps.maintenance.api.v1.serializers import (
     MaintenanceVisitReadSerializer,
     MaintenanceVisitWriteSerializer,
     SetChecklistSerializer,
+    TechnicianOptionSerializer,
 )
 from apps.maintenance.models import MaintenanceVisit
+from apps.users.models import Role, User
 from core.requests import authenticated_user
 from core.viewsets import TenantViewSet
 
 
 class MaintenanceVisitFilter(django_filters.FilterSet):
     customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
+    # `visit_date_after` / `visit_date_before`, both inclusive.
+    visit_date = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = MaintenanceVisit
@@ -33,6 +37,7 @@ class MaintenanceVisitFilter(django_filters.FilterSet):
 class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
     resource = "maintenance_visit"
     resource_by_action = {
+        "technicians": "maintenance_visit",
         "update": "maintenance_visit_edit",
         "partial_update": "maintenance_visit_edit",
         "destroy": "maintenance_visit_edit",
@@ -85,7 +90,10 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
                     "visit sent again from a device outbox is recorded once."
                 ),
             )
-        ]
+        ],
+        # The view answers with the read shape, id included; without this the
+        # contract described the request body as the response.
+        responses={201: MaintenanceVisitReadSerializer},
     )
     @transaction.atomic
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:
@@ -95,6 +103,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         read = self.read_serializer_class(write.instance, context=self.get_serializer_context())
         return Response(read.data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(responses={200: MaintenanceVisitReadSerializer})
     @transaction.atomic
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
         instance = self.get_object()
@@ -103,6 +112,27 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         self.perform_update(write)
         read = self.read_serializer_class(write.instance, context=self.get_serializer_context())
         return Response(read.data)
+
+    @extend_schema(responses={200: TechnicianOptionSerializer(many=True)})
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def technicians(self, request: Request) -> Response:
+        """The firm's active technicians, by name, for the visit form.
+
+        The user list is owners' and admins' only — it carries e-mail addresses,
+        phone numbers and roles. Operations records visits too, and needs to
+        say who did the work; this answers exactly that and nothing more.
+        """
+        company_id = authenticated_user(request).company_id
+        if company_id is None:
+            return Response([])
+        technicians = User.objects.filter(
+            company_id=company_id, role=Role.TECHNICIAN, is_active=True
+        ).order_by("first_name", "last_name", "id")
+        rows = [
+            {"id": user.id, "name": f"{user.first_name} {user.last_name}".strip()}
+            for user in technicians
+        ]
+        return Response(TechnicianOptionSerializer(rows, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="set-checklist")
     def set_checklist(self, request: Request, pk: str | None = None) -> Response:
