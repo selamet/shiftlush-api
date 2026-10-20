@@ -39,7 +39,7 @@ class AuditLog(models.Model):
 
     class Meta:
         db_table = "audit_log"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["company_id", "-created_at"]),
             models.Index(fields=["table_name", "record_id"]),

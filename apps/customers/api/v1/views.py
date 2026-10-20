@@ -55,6 +55,10 @@ class CustomerViewSet(TenantViewSet[Customer]):
     write_serializer_class = CustomerWriteSerializer
     filterset_class = CustomerFilter
     ordering_fields = ["legal_name", "created_at"]
+    # Explicit, not just Meta.ordering: the count annotations below put a
+    # GROUP BY on this queryset, which the model's default ordering does not
+    # survive. See ComplexViewSet.ordering.
+    ordering = ["legal_name", "id"]
     # The technician sees only assigned customers; on this model the path to
     # Customer is the row itself.
     customer_path = "id"

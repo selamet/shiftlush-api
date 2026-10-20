@@ -67,7 +67,7 @@ class Attachment(CompanyOwnedModel):
 
     class Meta:
         db_table = "attachment"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["object_type", "object_id"])]
         constraints = [
             models.CheckConstraint(

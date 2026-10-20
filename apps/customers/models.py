@@ -64,7 +64,7 @@ class Customer(CompanyOwnedModel):
 
     class Meta:
         db_table = "customer"
-        ordering = ["legal_name"]
+        ordering = ["legal_name", "id"]
         indexes = [
             models.Index(fields=["company", "legal_name_normalized"], name="customer_name_norm_idx")
         ]
@@ -128,7 +128,7 @@ class CustomerContact(CompanyOwnedModel):
 
     class Meta:
         db_table = "customer_contact"
-        ordering = ["-is_primary", "full_name"]
+        ordering = ["-is_primary", "full_name", "id"]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(role__in=ContactRole.values),

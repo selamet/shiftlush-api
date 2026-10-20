@@ -145,7 +145,7 @@ class Elevator(CompanyOwnedModel):
 
     class Meta:
         db_table = "elevator"
-        ordering = ["name"]
+        ordering = ["name", "id"]
         constraints = [
             # Every unique key carries the soft-delete condition, or a deleted
             # record holds its registration number forever and the user is told

@@ -70,7 +70,7 @@ class UserViewSet(
     queryset = User.objects.none()
     permission_classes = [RolePermission]
     filterset_class = UserFilter
-    ordering = ["first_name", "last_name"]
+    ordering = ["first_name", "last_name", "id"]
     ordering_fields = ["first_name", "last_name", "role", "created_at"]
     http_method_names = ["get", "patch", "post", "put", "head", "options"]
 
@@ -170,7 +170,7 @@ class InvitationViewSet(
     resource = "invitation"
     serializer_class = InvitationSerializer
     permission_classes = [RolePermission]
-    ordering = ["-created_at"]
+    ordering = ["-created_at", "-id"]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self) -> QuerySet[Invitation]:

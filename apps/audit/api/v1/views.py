@@ -75,7 +75,7 @@ class AuditLogViewSet(mixins.ListModelMixin, GenericViewSet[AuditLog]):
     serializer_class = AuditLogSerializer
     permission_classes = [RolePermission]
     filterset_class = AuditLogFilter
-    ordering = ["-created_at"]
+    ordering = ["-created_at", "-id"]
 
     def get_serializer(self, *args: Any, **kwargs: Any) -> Any:
         page = args[0] if args else None
