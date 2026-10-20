@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import django_filters
+from django.db import transaction
 from django.db.models import QuerySet
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -34,6 +37,9 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         "partial_update": "maintenance_visit_edit",
         "destroy": "maintenance_visit_edit",
     }
+    # Visits are sent from a phone's outbox and retried on a bad connection;
+    # without a key, a retry records the visit twice (spec 8.10).
+    idempotency_key_required = True
     read_serializer_class = MaintenanceVisitReadSerializer
     write_serializer_class = MaintenanceVisitWriteSerializer
     filterset_class = MaintenanceVisitFilter
@@ -67,6 +73,21 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         super().perform_destroy(instance)
         services.recalculate_next_maintenance(elevator)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "Idempotency-Key",
+                OpenApiTypes.STR,
+                OpenApiParameter.HEADER,
+                required=True,
+                description=(
+                    "Generated once per visit form and reused on every retry, so a "
+                    "visit sent again from a device outbox is recorded once."
+                ),
+            )
+        ]
+    )
+    @transaction.atomic
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:
         write = self.get_serializer(data=request.data)
         write.is_valid(raise_exception=True)
@@ -74,6 +95,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         read = self.read_serializer_class(write.instance, context=self.get_serializer_context())
         return Response(read.data, status=status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
         instance = self.get_object()
         write = self.get_serializer(instance, data=request.data, partial=True)

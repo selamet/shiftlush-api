@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from django.core.exceptions import FieldDoesNotExist
@@ -37,8 +38,13 @@ PASSWORD = test_maintenance_visits.PASSWORD
 
 
 def api_for(user: User) -> APIClient:
+    # A fresh key per client: visit creates require one (M1), and each test
+    # builds a new client per request.
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}")
+    client.credentials(
+        HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
     return client
 
 
