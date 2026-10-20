@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import django_filters
 from django.db.models import QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -30,12 +29,13 @@ from apps.users.models import Invitation, Role, User
 from core.context import require_current_company_id
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
+from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate
 from core.permissions import RolePermission
 from core.requests import authenticated_company, authenticated_user
 
 
-class UserFilter(django_filters.FilterSet):
+class UserFilter(TenantFilterSet):
     class Meta:
         model = User
         fields = ["role", "is_active"]

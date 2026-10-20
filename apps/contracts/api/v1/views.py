@@ -23,12 +23,13 @@ from apps.contracts.api.v1.serializers import (
 from apps.contracts.models import Contract, ContractElevator
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
+from core.filters import TenantFilterSet
 from core.permissions import READ, may
 from core.requests import authenticated_company_id, authenticated_user
 from core.viewsets import TenantViewSet
 
 
-class ContractFilter(django_filters.FilterSet):
+class ContractFilter(TenantFilterSet):
     search = django_filters.CharFilter(method="filter_search")
     # See BuildingFilter: an FK-derived filter binds an empty queryset at
     # start-up and then rejects every id it is given.

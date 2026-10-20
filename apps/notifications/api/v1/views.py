@@ -35,10 +35,11 @@ from apps.notifications.api.v1.serializers import (
     UpdatedCountSerializer,
 )
 from apps.notifications.models import Notification
+from core.filters import TenantFilterSet
 from core.requests import authenticated_company_id, authenticated_user
 
 
-class NotificationFilter(django_filters.FilterSet):
+class NotificationFilter(TenantFilterSet):
     unread = django_filters.BooleanFilter(method="filter_unread")
 
     class Meta:

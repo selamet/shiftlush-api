@@ -25,6 +25,7 @@ from apps.elevators.models import Elevator
 from apps.elevators.services import regenerate_qr_token, save_with_qr_token
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse, ServiceUnavailable
+from core.filters import TenantFilterSet
 from core.permissions import RolePermission
 from core.requests import authenticated_user
 from core.viewsets import TenantViewSet
@@ -32,7 +33,7 @@ from core.viewsets import TenantViewSet
 JOINS = ("building", "building__customer", "building__complex")
 
 
-class ElevatorFilter(django_filters.FilterSet):
+class ElevatorFilter(TenantFilterSet):
     search = django_filters.CharFilter(method="filter_search")
     customer = django_filters.UUIDFilter(field_name="building__customer_id")
     # Same reason as `customer` above, which was already declared by hand.

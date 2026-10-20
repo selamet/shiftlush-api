@@ -190,6 +190,12 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Foreign-key filters work.** `?elevator=`, `?customer=`, `?building=` and
+  every other filter on a firm-owned record were answered with
+  `400 VALIDATION_ERROR` (`invalid_choice`) for any id, including the
+  elevator page's maintenance history. They now filter. Another firm's id
+  still matches nothing.
+
 - **Create and edit responses are described as what they return.**
   - Every create (`POST`) and edit (`PATCH`) on the business endpoints has
     always answered with the record as it is read: `id`, names, derived

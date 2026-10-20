@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import django_filters
 from django.conf import settings
 from django.db.models import Q, QuerySet
 from drf_spectacular.utils import extend_schema
@@ -21,11 +20,12 @@ from apps.attachments.api.v1.serializers import (
 from apps.attachments.models import Attachment, ObjectType
 from apps.attachments.services import confirm_upload, download_url, prepare_upload
 from apps.users.models import Role
+from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate, replay_exempt
 from core.requests import authenticated_company_id, authenticated_user
 
 
-class AttachmentFilter(django_filters.FilterSet):
+class AttachmentFilter(TenantFilterSet):
     class Meta:
         model = Attachment
         # The question this endpoint is nearly always asked: what is attached to
