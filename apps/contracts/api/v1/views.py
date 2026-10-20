@@ -52,6 +52,11 @@ class ContractViewSet(TenantViewSet[Contract]):
     write_serializer_class = ContractWriteSerializer
     filterset_class = ContractFilter
     ordering_fields = ["contract_number", "start_date", "end_date", "created_at"]
+    # Explicit, not just Meta.ordering: the elevator count annotation below
+    # puts a GROUP BY on this queryset, which the model's default ordering
+    # does not survive — two contracts started the same day would otherwise
+    # have no tiebreaker between pages.
+    ordering = ["-start_date", "id"]
 
     def get_base_queryset(self) -> QuerySet[Contract]:
         return (
