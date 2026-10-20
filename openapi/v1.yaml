@@ -2663,6 +2663,183 @@ paths:
                 items:
                   $ref: '#/components/schemas/Neighborhood'
           description: ''
+  /api/v1/notifications/:
+    get:
+      operationId: notifications_list
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - contract_auto_renewal_blocked
+          - contract_auto_renewed
+          - contract_expired
+          - contract_renewal_due
+          - maintenance_overdue
+        description: |-
+          * `contract_renewal_due` - Contract renewal due
+          * `contract_expired` - Contract expired
+          * `contract_auto_renewed` - Contract auto-renewed
+          * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
+          * `maintenance_overdue` - Maintenance overdue
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /api/v1/notifications/{id}/read/:
+    post:
+      operationId: notifications_read_create
+      description: 'Mark one notification read. Idempotent: the first read time is
+        kept.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this notification.
+        required: true
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/v1/notifications/preferences/:
+    get:
+      operationId: notifications_preferences_list
+      description: |-
+        Every kind with the caller's e-mail flag; PUT replaces them.
+
+        GET always lists every kind, defaults filled in, so the settings screen
+        never has to know what the defaults are. PUT takes the same list back;
+        a kind left out returns to its default, and an unknown kind is a 400.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationPreference'
+          description: ''
+    put:
+      operationId: notifications_preferences_update
+      description: |-
+        Every kind with the caller's e-mail flag; PUT replaces them.
+
+        GET always lists every kind, defaults filled in, so the settings screen
+        never has to know what the defaults are. PUT takes the same list back;
+        a kind left out returns to its default, and an unknown kind is a 400.
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationPreferenceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationPreferenceRequest'
+          multipart/form-data:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationPreferenceRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationPreference'
+          description: ''
+  /api/v1/notifications/read-all/:
+    post:
+      operationId: notifications_read_all_create
+      description: |-
+        Mark every unread notification of the caller's read.
+
+        Answers with how many changed, so a client can tell "nothing to do"
+        from "done" without asking for the count again. A queryset update, so
+        no signal fires — which is fine, Notification is not audited.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatedCount'
+          description: ''
+  /api/v1/notifications/unread-count/:
+    get:
+      operationId: notifications_unread_count_retrieve
+      description: |-
+        How many of the caller's notifications are unread, for the bell.
+
+        Its own endpoint rather than a field on the list, because the bell asks
+        every minute from every open tab and needs one indexed count, not a page.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+          description: ''
   /api/v1/provinces/:
     get:
       operationId: provinces_list
@@ -5809,6 +5986,79 @@ components:
         * `neighborhood` - Neighborhood
         * `village` - Village
         * `town` - Town
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/NotificationKind'
+          readOnly: true
+        subject_type:
+          type: string
+          readOnly: true
+        subject_id:
+          type: string
+          format: uuid
+          readOnly: true
+        data:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - data
+      - id
+      - kind
+      - read_at
+      - subject_id
+      - subject_type
+    NotificationKind:
+      enum:
+      - contract_renewal_due
+      - contract_expired
+      - contract_auto_renewed
+      - contract_auto_renewal_blocked
+      - maintenance_overdue
+      type: string
+      description: |-
+        * `contract_renewal_due` - Contract renewal due
+        * `contract_expired` - Contract expired
+        * `contract_auto_renewed` - Contract auto-renewed
+        * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
+        * `maintenance_overdue` - Maintenance overdue
+    NotificationPreference:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/NotificationKind'
+        email:
+          type: boolean
+      required:
+      - email
+      - kind
+    NotificationPreferenceRequest:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/NotificationKind'
+        email:
+          type: boolean
+      required:
+      - email
+      - kind
     PaginatedAttachmentList:
       type: object
       required:
@@ -6089,6 +6339,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MaintenanceVisitRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedNotificationList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
         pagination:
           type: object
           required:
@@ -6922,6 +7202,23 @@ components:
         * `province` - province
         * `district` - district
         * `neighborhood` - neighborhood
+    UnreadCount:
+      type: object
+      properties:
+        count:
+          type: integer
+          readOnly: true
+      required:
+      - count
+    UpdatedCount:
+      type: object
+      description: How many notifications a bulk action changed.
+      properties:
+        count:
+          type: integer
+          readOnly: true
+      required:
+      - count
     UploadUrlRequestRequest:
       type: object
       properties:

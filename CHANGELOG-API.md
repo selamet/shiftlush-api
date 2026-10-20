@@ -76,6 +76,31 @@ carried as compatibility shims nobody will ever remove.
   `OWNER`/`ADMIN` may edit or delete one afterwards. Elevators gain read-only
   `last_maintenance_date` and `next_maintenance_date`, and attachments accept
   `maintenance_visit` as an `object_type`.
+- **Notifications** — the signed-in user's own, and nobody else's. Every role
+  may use these; an owner cannot read a colleague's.
+  - `GET /notifications/` — newest first, paginated, `?unread=true|false` and
+    `?kind=`. Each row is `{id, kind, subject_type, subject_id, data, read_at,
+    created_at}`.
+  - **No sentence in the response.** The client renders the Turkish from
+    `kind` (the new `NotificationKind` enum) and `data`, which holds the facts
+    the sentence needs, captured when it was raised. Dates in `data` are ISO
+    strings. `subject_type` (`contract`, `elevator`) and `subject_id` are for
+    the link.
+  - `GET /notifications/unread-count/` — `{count}`, for the bell.
+  - `POST /notifications/{id}/read/` — idempotent; marking twice keeps the first
+    `read_at`. Somebody else's id is `404 NOT_FOUND`, as for one that never
+    existed. Answers with the notification.
+  - `POST /notifications/read-all/` — answers `{count}`, how many changed.
+  - `GET /notifications/preferences/` — every kind with its `email` flag,
+    defaults filled in: on for the four contract kinds, off for
+    `maintenance_overdue`. In-app delivery is always on.
+  - `PUT /notifications/preferences/` — the same list back. It replaces the
+    flags: a kind left out returns to its default, and an unknown kind or the
+    same kind twice is `400 VALIDATION_ERROR`.
+  - Nothing here creates a record, so none of it takes `Idempotency-Key`; both
+    POSTs converge on a retry by themselves.
+  - Only the server raises notifications (the M2 contract jobs). An e-mail copy
+    goes out after the job commits, when the recipient's preference allows it.
 
 ### Changed
 

@@ -1,8 +1,8 @@
 """Outgoing e-mail.
 
 Three e-mails exist in phase 1 — an invitation, a password reset and an address
-verification — and every one of them carries a single-use link. That shapes the
-rules here:
+verification — and every one of them carries a single-use link. M2 adds a
+fourth, the e-mail copy of an in-app notification. That shapes the rules here:
 
   - A send failure never rolls back the thing it announces. Mail goes out after
     the transaction commits, so a mail server that is briefly down cannot undo
@@ -105,5 +105,57 @@ def send_email_verification(*, to: str, first_name: str, token: str) -> None:
             "first_name": first_name,
             "url": f"{settings.FRONTEND_URL}/verify-email/{token}",
             "valid_for_hours": 24,
+        },
+    )
+
+
+#: Where a notification's button leads, by its subject type. A type missing here
+#: still gets a working link — to the notification list — rather than a guess.
+NOTIFICATION_SUBJECT_PATHS = {
+    "contract": "contracts",
+    "elevator": "elevators",
+}
+
+
+def notification_url(*, subject_type: str, subject_id: str) -> str:
+    path = NOTIFICATION_SUBJECT_PATHS.get(subject_type)
+    if path is None:
+        return f"{settings.FRONTEND_URL}/notifications"
+    return f"{settings.FRONTEND_URL}/{path}/{subject_id}"
+
+
+def send_notification(
+    *,
+    to: str,
+    first_name: str,
+    kind: str,
+    subject_type: str,
+    subject_id: str,
+    data: dict[str, Any],
+) -> None:
+    """E-mail one in-app notification.
+
+    Sent now rather than after commit: the caller is the notification task,
+    which notify() only enqueues once its transaction has committed, so there
+    is nothing left to wait for.
+
+    One shell for every kind (`email/notification/`) and two partials per kind
+    under `email/notification/kinds/` — the subject line and the sentence — so a
+    new kind is two new files and no code. `data` is spread into the context so
+    the partials read `{{ contract_number }}` directly; the keys set here come
+    after it, so a fact named `url` cannot redirect the button.
+    """
+    _send(
+        template="notification",
+        subject_key=f"notification.{kind}",
+        to=to,
+        context={
+            **data,
+            "first_name": first_name,
+            "kind": kind,
+            "subject_type": subject_type,
+            "url": notification_url(subject_type=subject_type, subject_id=subject_id),
+            "kind_subject_template": f"email/notification/kinds/{kind}_subject.txt",
+            "kind_body_template": f"email/notification/kinds/{kind}_body.txt",
         },
     )

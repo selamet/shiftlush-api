@@ -44,6 +44,7 @@ from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
 from apps.maintenance.models import MaintenanceVisit, VisitStatus
+from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType, Complex
 from apps.users import services
 from apps.users.models import Invitation, Role, User, UserCustomer
@@ -495,6 +496,31 @@ class TestRoutesWithoutADetailView:
         assert rows, "no entries at all, so nothing was actually filtered"
         assert {row["company_id"] for row in rows} == {str(ours.company.id)}
 
+    def test_another_firms_notification_cannot_be_read_or_marked(self, two_firms):
+        # Notifications have no detail route — only `{id}/read/` — so the sweep
+        # above does not reach them. The id is real and belongs to their owner.
+        ours, theirs = two_firms
+        with company_context(theirs.company.id):
+            theirs_notification = Notification.objects.create(
+                company=theirs.company,
+                recipient=theirs.owner,
+                kind=NotificationKind.CONTRACT_EXPIRED,
+                subject_type="contract",
+                subject_id=theirs.records["contract"].pk,
+                dedupe_key="isolation",
+            )
+        client = api_for(ours.owner)
+
+        response = client.post(reverse("notification-read", args=[theirs_notification.pk]))
+        assert response.status_code == 404
+        assert error_code(response) == ErrorCode.NOT_FOUND.value
+
+        client.post(reverse("notification-read-all"))
+        listed = client.get(reverse("notification-list")).data["results"]
+        assert str(theirs_notification.pk) not in {row["id"] for row in listed}
+        with system_context():
+            assert Notification.unscoped.get(pk=theirs_notification.pk).read_at is None
+
     def test_the_company_endpoint_answers_only_for_your_own(self, two_firms):
         ours, theirs = two_firms
         response = api_for(ours.owner).get(reverse("company"))
@@ -896,6 +922,10 @@ class TestEveryModelIsScoped:
             "elevators.Elevator",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
+            # Over HTTP below (TestRoutesWithoutADetailView) and in depth in
+            # tests/test_notifications.py.
+            "notifications.Notification",
+            "notifications.NotificationPreference",
             "properties.Building",
             "properties.Complex",
             "users.Invitation",

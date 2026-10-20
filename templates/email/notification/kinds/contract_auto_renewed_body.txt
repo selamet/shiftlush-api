@@ -1,0 +1,1 @@
+{% load email_format %}{% if customer_name %}{{ customer_name }} ile yapılan {% endif %}{{ contract_number }} numaralı sözleşmenin süresi {{ end_date|tr_date }} tarihinde doldu ve sözleşme otomatik olarak yenilendi. Yeni sözleşme {{ successor_contract_number }} numarasıyla aynı koşullarda yürürlüğe girdi.

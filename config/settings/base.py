@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "apps.contracts",
     "apps.attachments",
     "apps.maintenance",
+    "apps.notifications",
     # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
     "django_tasks_db",
     "apps.audit",
@@ -480,6 +481,7 @@ SPECTACULAR_SETTINGS = {
         "MaintenanceVisitStatus": "apps.maintenance.models.VisitStatus.choices",
         "MaintenanceChecklistItem": "apps.maintenance.models.ChecklistItem.choices",
         "MaintenanceChecklistResult": "apps.maintenance.models.ChecklistResult.choices",
+        "NotificationKind": "apps.notifications.models.NotificationKind.choices",
     },
 }
 

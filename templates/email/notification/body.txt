@@ -1,0 +1,11 @@
+{% autoescape off %}Merhaba {{ first_name }},
+
+{% include kind_body_template %}
+Ayrıntılar için:
+{{ url }}
+
+Bu e-postayı bildirim tercihleriniz nedeniyle aldınız. E-posta bildirimlerini ShiftLush'ta Ayarlar bölümünden türüne göre kapatabilirsiniz.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi
+{% endautoescape %}
