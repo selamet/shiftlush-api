@@ -8,7 +8,8 @@ from datetime import date, timedelta
 
 import pytest
 from django.urls import reverse
-from rest_framework.test import APIClient
+from rest_framework.request import Request
+from rest_framework.test import APIClient, APIRequestFactory
 
 from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType, Scope
 from apps.customers.models import Customer, CustomerType
@@ -344,8 +345,13 @@ class TestMaintenanceVisitSerializers:
         from apps.maintenance.api.v1.serializers import MaintenanceVisitWriteSerializer
 
         company, owner, elevator, contract = visit_fixture
+        # The technician field is scoped to the signed-in user's firm, so the
+        # serializer needs to know who is asking.
+        request = Request(APIRequestFactory().post("/"))
+        request.user = owner
         with company_context(company.id):
             serializer = MaintenanceVisitWriteSerializer(
+                context={"request": request},
                 data={
                     "elevator": str(elevator.id),
                     "contract": str(contract.id),
@@ -353,7 +359,7 @@ class TestMaintenanceVisitSerializers:
                     "visit_date": str(date.today()),
                     "status": VisitStatus.COMPLETED,
                     "not_a_real_field": "x",
-                }
+                },
             )
             assert not serializer.is_valid()
             assert "not_a_real_field" in serializer.errors
