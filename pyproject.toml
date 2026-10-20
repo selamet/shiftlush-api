@@ -126,7 +126,7 @@ ignore_missing_imports = true
 # documented API, and the alternative — a `type: ignore` on seven class
 # statements — hides any *other* error mypy finds on those lines.
 [[tool.mypy.overrides]]
-module = ["apps.*.api.v1.views", "apps.users.api.v1.team_views"]
+module = ["apps.*.api.v1.views", "apps.users.api.v1.team_views", "core.filters"]
 disallow_subclassing_any = false
 
 # Tests are checked, but not for their own annotations. Every rule that finds a

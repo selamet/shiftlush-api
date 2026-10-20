@@ -20,6 +20,7 @@ from apps.customers.api.v1.serializers import (
 from apps.customers.models import Customer, CustomerContact
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
+from core.filters import TenantFilterSet
 from core.idempotency import replay_protected
 from core.requests import authenticated_user
 from core.serializers import ADDRESS_JOIN
@@ -27,7 +28,7 @@ from core.text import normalize
 from core.viewsets import TenantViewSet
 
 
-class CustomerFilter(django_filters.FilterSet):
+class CustomerFilter(TenantFilterSet):
     search = django_filters.CharFilter(method="filter_search")
 
     class Meta:

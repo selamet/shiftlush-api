@@ -12,11 +12,12 @@ from apps.properties.api.v1.serializers import (
 from apps.properties.models import Building, Complex
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
+from core.filters import TenantFilterSet
 from core.serializers import ADDRESS_JOIN
 from core.viewsets import TenantViewSet
 
 
-class BuildingFilter(django_filters.FilterSet):
+class BuildingFilter(TenantFilterSet):
     search = django_filters.CharFilter(method="filter_search")
     # Declared rather than derived from the foreign key. django-filter builds a
     # ModelChoiceFilter for an FK and evaluates its queryset when the class is

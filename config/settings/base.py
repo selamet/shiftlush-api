@@ -406,7 +406,7 @@ REST_FRAMEWORK = {
     # A version outside this list 404s rather than quietly falling back to v1.
     "ALLOWED_VERSIONS": ["v1"],
     "DEFAULT_FILTER_BACKENDS": (
-        "django_filters.rest_framework.DjangoFilterBackend",
+        "core.filters.TenantFilterBackend",
         "core.filters.StableOrderingFilter",
     ),
     "DEFAULT_SCHEMA_CLASS": "core.spectacular.ReadShapeAutoSchema",

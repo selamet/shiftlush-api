@@ -10,6 +10,7 @@ from rest_framework.viewsets import GenericViewSet
 from apps.audit.models import AuditLog
 from apps.users.models import User
 from core.context import require_current_company_id
+from core.filters import TenantFilterSet
 from core.permissions import RolePermission
 
 
@@ -50,7 +51,7 @@ class AuditLogSerializer(serializers.ModelSerializer[AuditLog]):
         read_only_fields = fields
 
 
-class AuditLogFilter(django_filters.FilterSet):
+class AuditLogFilter(TenantFilterSet):
     since = django_filters.IsoDateTimeFilter(field_name="created_at", lookup_expr="gte")
     until = django_filters.IsoDateTimeFilter(field_name="created_at", lookup_expr="lte")
 

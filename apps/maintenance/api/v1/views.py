@@ -32,13 +32,14 @@ from apps.maintenance.api.v1.serializers import (
 )
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
 from apps.users.models import Role, User
+from core.filters import TenantFilterSet
 from core.permissions import RolePermission
 from core.requests import authenticated_user
 from core.scheduling import local_today
 from core.viewsets import TenantViewSet
 
 
-class MaintenanceVisitFilter(django_filters.FilterSet):
+class MaintenanceVisitFilter(TenantFilterSet):
     customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
     # `visit_date_after` / `visit_date_before`, both inclusive.
     visit_date = django_filters.DateFromToRangeFilter()
@@ -194,7 +195,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
 # ---------------------------------------------------------------------------
 
 
-class PlannedVisitFilter(django_filters.FilterSet):
+class PlannedVisitFilter(TenantFilterSet):
     period = django_filters.CharFilter(
         required=True,
         validators=[RegexValidator(r"^\d{4}-(0[1-9]|1[0-2])$", code="invalid")],

@@ -28,11 +28,12 @@ from apps.faults.api.v1.serializers import (
 )
 from apps.faults.models import Fault, FaultPriority
 from apps.users.models import Role
+from core.filters import TenantFilterSet
 from core.requests import authenticated_user
 from core.viewsets import TenantViewSet
 
 
-class FaultFilter(django_filters.FilterSet):
+class FaultFilter(TenantFilterSet):
     customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
     # `reported_at_after` / `reported_at_before`, both inclusive.
     reported_at = django_filters.IsoDateTimeFromToRangeFilter()
