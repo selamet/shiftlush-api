@@ -197,7 +197,19 @@ def _only(name: str) -> list[DailySchedule]:
     return [s for s in scheduling.get_schedules() if s.name == name]
 
 
+@pytest.fixture
+def keep_the_test_connection():
+    # Each tick calls close_old_connections(), which closes a connection whose
+    # autocommit differs from its setting — true of every connection inside a
+    # test's transaction, so on PostgreSQL the tick would close the test's own
+    # connection. Django's test client disconnects the same handler for the
+    # same reason.
+    with mock.patch("core.management.commands.run_scheduler.close_old_connections"):
+        yield
+
+
 @pytest.mark.django_db
+@pytest.mark.usefixtures("keep_the_test_connection")
 class TestTheCommand:
     def test_once_runs_a_single_tick_and_returns(self, capsys: Any):
         with mock.patch.object(scheduling, "get_schedules", return_value=[NIGHTLY]):
