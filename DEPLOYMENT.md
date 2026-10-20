@@ -58,7 +58,7 @@ it is exploited. `.env` on the server is the only place they exist.
 | `DJANGO_ALLOWED_HOSTS` | `shiftlush-api.selamet.dev` |
 | `DATABASE_URL` | `sslmode=verify-full`; the image points libpq at the system CA bundle. **This is not end-to-end encryption to Postgres** — see "What `verify-full` actually covers" below |
 | `REDIS_URL` | the cache, `rediss://` on port 6379. Keys are namespaced with the `shiftlush:` prefix — the shared server's ACL refuses anything outside it |
-| `REDIS_QUEUE_URL` | the queue broker, `rediss://` on port 6380 — a second instance because it never evicts. The only optional variable here: nothing reads it until background work exists |
+| `REDIS_QUEUE_URL` | a queue broker, `rediss://` on port 6380 — a second instance because it never evicts. The only optional variable here, and still unread: background jobs queue in PostgreSQL instead (see "Background jobs") |
 | `CORS_ALLOWED_ORIGINS` | the frontend origin |
 | `CSRF_TRUSTED_ORIGINS` | the same origin — Django checks it separately from CORS |
 | `FIELD_ENCRYPTION_KEY` | **Rotating this without re-encrypting makes every stored national ID unreadable.** |
@@ -315,6 +315,51 @@ questions. A DSN that is set but malformed, an `init` that never ran, and a
 client that was started and closed all leave `SENTRY_DSN` looking correct while
 nothing is sent.
 
+## Background jobs
+
+Two containers beside the API, from the same image:
+
+| Service | Runs | Does |
+|---|---|---|
+| `worker` | `manage.py db_worker` | executes queued `django.tasks` tasks |
+| `scheduler` | `manage.py run_scheduler` | enqueues scheduled jobs as they fall due |
+
+The queue is the application database (`django-tasks-db`), not Redis: a task
+enqueued inside a transaction commits or rolls back with the rows it is about,
+and there is no broker to go down. Neither container runs `entrypoint.sh` —
+they wait for the API to be healthy, which is after its migrations.
+
+**What runs, and when** (Istanbul time, daily — the list is
+`core/scheduling.py`):
+
+| Job | At | Does |
+|---|---|---|
+| `purge_idempotency_keys` | 03:00 | deletes keys past their replay window |
+| `purge_attachments` | 03:15 | deletes the stored bytes of attachments soft-deleted over `ATTACHMENT_PURGE_AFTER_DAYS` ago |
+| `prune_task_results` | 03:30 | drops task results: successes after 7 days, failures after 30 |
+
+Each job runs once per local day. A scheduler that was down at 03:00 runs it
+when it comes back the same day; a fully missed day is not replayed. Each run
+is recorded in `scheduled_run` before its task is enqueued, so restarting the
+scheduler, or running two, starts nothing twice.
+
+**Checking it:**
+
+```bash
+docker compose logs --tail 50 scheduler   # "enqueued <job>" lines
+docker compose logs --tail 50 worker      # "Task id=… path=… state=SUCCESSFUL"
+```
+
+A task that raises is stored as `FAILED` and logged at `ERROR` by
+`django.tasks` with its traceback, which Sentry's logging integration reports
+when `SENTRY_DSN` is set. To run whatever is due right now, by hand:
+
+```bash
+docker compose exec scheduler python manage.py run_scheduler --once
+```
+
+The two purge commands still exist for a one-off or a `--dry-run`.
+
 ## Rolling back
 
 ```bash
@@ -424,6 +469,17 @@ If the container starts being OOM-killed, raising this number is the wrong fix.
 Steady state is 293 MB, so anything approaching 768 MB is a leak, and a higher
 ceiling only buys the leak more time to reach the host. Fewer workers, or
 `--max-requests` to recycle them, are the honest answers.
+
+`worker` and `scheduler` are capped too. Both were measured at **69 MiB**
+idle, after running all three daily jobs, from this image:
+
+| | limit | why |
+|---|---|---|
+| `worker` | `192m` | the real attachment purge imports botocore, up to ~110 MB; ~75% over that |
+| `scheduler` | `128m` | only enqueues, never imports botocore; ~85% over 69 MiB |
+
+That measurement used SQLite rather than PostgreSQL, so psycopg was not
+loaded. Check `docker stats --no-stream` after the first deploy.
 
 When the limit is hit the kernel kills the container, `restart: unless-stopped`
 brings it back, and the outage is one application for a few seconds instead of

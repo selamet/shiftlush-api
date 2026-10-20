@@ -10,3 +10,7 @@ CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]
 # Invitation and password-reset mails go to the console rather than a real
 # outbox, so a developer never sends one by accident.
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Tasks run inline when they are enqueued, so working locally needs no worker
+# running. `manage.py run_scheduler --once` runs whatever is due.
+TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}

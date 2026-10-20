@@ -53,6 +53,18 @@ Sizes are relative: **S** ≈ 1–2 PRs, **M** ≈ 3–5, **L** ≈ 6+.
 
 ### M0 — Foundations (S–M)
 
+**Status (2026-10-20): done.**
+1. #81 and #93: every ordering ends in the primary key, including a client's
+   `?ordering=`, and pytest treats `UnorderedObjectListWarning` as an error.
+2. Branch protection is on in both repos: the CI check is required, and the
+   branch must be up to date with `main`.
+3. Background jobs: `django-tasks-db`, `worker`, `scheduler`
+   (`2026-10-20-background-jobs-design.md`). The proof jobs are the two purges
+   that were waiting for a scheduler, not M2's contract job.
+4. selamet/shiftlush-web#101: contract pulled, and the Turkish message added.
+   The `shiftlush-web-SL-62` worktree is still to be checked and removed.
+
+
 Close out what is already known to be wrong, and lay down the one piece of
 infrastructure everything after M1 needs.
 

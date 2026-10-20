@@ -32,6 +32,7 @@ dependencies = [
     # problem this solves in one middleware.
     "whitenoise>=6.8",
     "sentry-sdk[django]>=2.20",
+    "django-tasks-db>=0.13",
 ]
 
 [dependency-groups]

@@ -6,8 +6,8 @@ twice. Every key presented once — which is nearly all of them, since the heade
 is insurance against a retry that usually never happens — is never read again
 and never removed, so the table grows for the lifetime of the deployment.
 
-Scheduling belongs to the deployment (a daily cron or a scheduled container).
-This command is written now so that scheduling is the only thing left to decide.
+Runs daily as a scheduled task (core/scheduling.py). This command stays for a
+one-off run or a `--dry-run` by hand.
 """
 
 from __future__ import annotations

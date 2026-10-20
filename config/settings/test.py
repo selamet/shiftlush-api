@@ -58,3 +58,6 @@ REST_FRAMEWORK = {
         "user": None,
     },
 }
+
+# Inline, so a test can see what a task did rather than only that it was queued.
+TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
