@@ -50,6 +50,7 @@ paths:
           - contract
           - customer
           - elevator
+          - fault
           - maintenance_visit
           - user
         description: |-
@@ -60,6 +61,7 @@ paths:
           * `company` - Company
           * `user` - User
           * `maintenance_visit` - Maintenance visit
+          * `fault` - Fault
       - name: ordering
         required: false
         in: query
@@ -2105,6 +2107,378 @@ paths:
                 type: string
                 format: binary
           description: ''
+  /api/v1/faults/:
+    get:
+      operationId: faults_list
+      description: |-
+        Faults and their transitions.
+
+        Each transition is its own action so that no timestamp can be written by a
+        client. PATCH is the office's, and covers only what a person may correct:
+        priority, description and the billable flag. There is no DELETE — a fault
+        reported by mistake is cancelled, with a reason, and stays on the record.
+
+        `arrive` and `resolve` are open to technicians in the matrix, and narrowed
+        here to the one the fault is assigned to; the office may record either on
+        their behalf.
+      parameters:
+      - in: query
+        name: channel
+        schema:
+          type: string
+          enum:
+          - public_qr
+          - staff
+        description: |-
+          * `staff` - Staff
+          * `public_qr` - Public QR report
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: priority
+        schema:
+          type: string
+          enum:
+          - emergency
+          - high
+          - normal
+        description: |-
+          * `emergency` - Emergency
+          * `high` - High
+          * `normal` - Normal
+      - in: query
+        name: reported_at_after
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: reported_at_before
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - assigned
+          - cancelled
+          - closed
+          - on_site
+          - open
+          - resolved
+        description: |-
+          * `open` - Open
+          * `assigned` - Assigned
+          * `on_site` - On site
+          * `resolved` - Resolved
+          * `closed` - Closed
+          * `cancelled` - Cancelled
+      - in: query
+        name: technician
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - faults
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFaultReadList'
+          description: ''
+    post:
+      operationId: faults_create
+      description: |-
+        Faults and their transitions.
+
+        Each transition is its own action so that no timestamp can be written by a
+        client. PATCH is the office's, and covers only what a person may correct:
+        priority, description and the billable flag. There is no DELETE — a fault
+        reported by mistake is cancelled, with a reason, and stays on the record.
+
+        `arrive` and `resolve` are open to technicians in the matrix, and narrowed
+        here to the one the fault is assigned to; the office may record either on
+        their behalf.
+      tags:
+      - faults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FaultCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FaultCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FaultCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/:
+    get:
+      operationId: faults_retrieve
+      description: |-
+        Faults and their transitions.
+
+        Each transition is its own action so that no timestamp can be written by a
+        client. PATCH is the office's, and covers only what a person may correct:
+        priority, description and the billable flag. There is no DELETE — a fault
+        reported by mistake is cancelled, with a reason, and stays on the record.
+
+        `arrive` and `resolve` are open to technicians in the matrix, and narrowed
+        here to the one the fault is assigned to; the office may record either on
+        their behalf.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+    patch:
+      operationId: faults_partial_update
+      description: |-
+        Faults and their transitions.
+
+        Each transition is its own action so that no timestamp can be written by a
+        client. PATCH is the office's, and covers only what a person may correct:
+        priority, description and the billable flag. There is no DELETE — a fault
+        reported by mistake is cancelled, with a reason, and stays on the record.
+
+        `arrive` and `resolve` are open to technicians in the matrix, and narrowed
+        here to the one the fault is assigned to; the office may record either on
+        their behalf.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/arrive/:
+    post:
+      operationId: faults_arrive_create
+      description: The technician is at the lift. From `assigned`.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/assign/:
+    post:
+      operationId: faults_assign_create
+      description: Send a technician, or send a different one. From `open` or `assigned`.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/cancel/:
+    post:
+      operationId: faults_cancel_create
+      description: A duplicate or a false alarm. Any state before `resolved`; a reason
+        is required.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/close/:
+    post:
+      operationId: faults_close_create
+      description: The office has checked the work. From `resolved`.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
+  /api/v1/faults/{id}/resolve/:
+    post:
+      operationId: faults_resolve_create
+      description: The work is done. From `on_site`. Derives `billable`.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - faults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaultRead'
+          description: ''
   /api/v1/geocode/reverse:
     get:
       operationId: geocode_reverse_retrieve
@@ -2676,6 +3050,10 @@ paths:
           - contract_auto_renewed
           - contract_expired
           - contract_renewal_due
+          - fault_assigned
+          - fault_emergency
+          - fault_reported
+          - fault_resolved
           - maintenance_overdue
           - visit_assigned
         description: |-
@@ -2685,6 +3063,10 @@ paths:
           * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
           * `maintenance_overdue` - Maintenance overdue
           * `visit_assigned` - Planned visits assigned
+          * `fault_reported` - Fault reported
+          * `fault_emergency` - Emergency fault reported
+          * `fault_assigned` - Fault assigned
+          * `fault_resolved` - Fault resolved
       - name: ordering
         required: false
         in: query
@@ -3100,6 +3482,44 @@ paths:
                 items:
                   $ref: '#/components/schemas/Province'
           description: ''
+  /api/v1/public/elevators/{qr_token}/faults/:
+    post:
+      operationId: public_elevators_faults_create
+      description: Answers 202 with a reference and nothing else. A report on a lift
+        that already has an open public report from the last 30 minutes is added to
+        it, and that report's reference is returned. `someone_trapped` makes it an
+        emergency and `elevator_stopped` makes it high priority; there is no other
+        way to set a priority here. Throttled per sticker and per address.
+      summary: Report a fault from the lift's QR sticker, without an account
+      parameters:
+      - in: path
+        name: qr_token
+        schema:
+          type: string
+        required: true
+      tags:
+      - public
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicFaultReportRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PublicFaultReportRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PublicFaultReportRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicFaultReceipt'
+          description: ''
+        '404':
+          description: No lift carries this sticker.
   /api/v1/users/:
     get:
       operationId: users_list
@@ -3364,6 +3784,14 @@ components:
           nullable: true
       required:
       - elevator_ids
+    AssignRequest:
+      type: object
+      properties:
+        technician:
+          type: string
+          format: uuid
+      required:
+      - technician
     AssignedCustomersRequest:
       type: object
       properties:
@@ -3481,6 +3909,7 @@ components:
       - company
       - user
       - maintenance_visit
+      - fault
       type: string
       description: |-
         * `elevator` - Elevator
@@ -3490,6 +3919,7 @@ components:
         * `company` - Company
         * `user` - User
         * `maintenance_visit` - Maintenance visit
+        * `fault` - Fault
     AuditLog:
       type: object
       properties:
@@ -3795,6 +4225,15 @@ components:
           readOnly: true
       required:
       - count
+    CancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required:
+      - reason
     Company:
       type: object
       properties:
@@ -5362,6 +5801,252 @@ components:
           maxLength: 128
       required:
       - token
+    FaultChannel:
+      enum:
+      - staff
+      - public_qr
+      type: string
+      description: |-
+        * `staff` - Staff
+        * `public_qr` - Public QR report
+    FaultCreateRequest:
+      type: object
+      description: |-
+        A fault entered by somebody at the firm.
+
+        The state, the channel and every timestamp are the server's. A trapped
+        passenger makes it an emergency whatever `priority` says, so a phone form
+        in a hurry cannot under-state one.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/FaultPriority'
+          default: normal
+        technician:
+          type: string
+          format: uuid
+          nullable: true
+        stopped_elevator:
+          type: boolean
+        someone_trapped:
+          type: boolean
+          writeOnly: true
+          default: false
+      required:
+      - description
+      - elevator
+    FaultPriority:
+      enum:
+      - emergency
+      - high
+      - normal
+      type: string
+      description: |-
+        * `emergency` - Emergency
+        * `high` - High
+        * `normal` - Normal
+    FaultRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/FaultChannel'
+          readOnly: true
+        reported_by:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        reported_by_name:
+          type: string
+          nullable: true
+          readOnly: true
+        reporter_name:
+          type: string
+          readOnly: true
+        reporter_phone:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        additional_reports:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/FaultPriority'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/FaultStatus'
+          readOnly: true
+        technician:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        technician_name:
+          type: string
+          nullable: true
+          readOnly: true
+        stopped_elevator:
+          type: boolean
+          readOnly: true
+        reported_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        on_site_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancel_reason:
+          type: string
+          readOnly: true
+        resolution_notes:
+          type: string
+          readOnly: true
+        parts_used:
+          type: string
+          readOnly: true
+        billable:
+          type: boolean
+          readOnly: true
+          nullable: true
+        billable_overridden:
+          type: boolean
+          readOnly: true
+        response_time_seconds:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Seconds from the report to the technician arriving; null until
+            they arrive.
+        resolution_time_seconds:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Seconds from the report to its resolution; null until resolved.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - additional_reports
+      - assigned_at
+      - billable
+      - billable_overridden
+      - building
+      - building_name
+      - cancel_reason
+      - cancelled_at
+      - channel
+      - closed_at
+      - created_at
+      - customer
+      - customer_name
+      - description
+      - elevator
+      - elevator_name
+      - id
+      - on_site_at
+      - parts_used
+      - priority
+      - reference
+      - reported_at
+      - reported_by
+      - reported_by_name
+      - reporter_name
+      - reporter_phone
+      - resolution_notes
+      - resolution_time_seconds
+      - resolved_at
+      - response_time_seconds
+      - status
+      - stopped_elevator
+      - technician
+      - technician_name
+      - updated_at
+    FaultStatus:
+      enum:
+      - open
+      - assigned
+      - on_site
+      - resolved
+      - closed
+      - cancelled
+      type: string
+      description: |-
+        * `open` - Open
+        * `assigned` - Assigned
+        * `on_site` - On site
+        * `resolved` - Resolved
+        * `closed` - Closed
+        * `cancelled` - Cancelled
     GeocodeMatch:
       type: object
       description: One level of the address, resolved to a row the client can select.
@@ -5875,6 +6560,10 @@ components:
       - contract_auto_renewal_blocked
       - maintenance_overdue
       - visit_assigned
+      - fault_reported
+      - fault_emergency
+      - fault_assigned
+      - fault_resolved
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -5883,6 +6572,10 @@ components:
         * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
         * `maintenance_overdue` - Maintenance overdue
         * `visit_assigned` - Planned visits assigned
+        * `fault_reported` - Fault reported
+        * `fault_emergency` - Emergency fault reported
+        * `fault_assigned` - Fault assigned
+        * `fault_resolved` - Fault resolved
     NotificationPreference:
       type: object
       properties:
@@ -5890,9 +6583,15 @@ components:
           $ref: '#/components/schemas/NotificationKind'
         email:
           type: boolean
+        locked:
+          type: boolean
+          readOnly: true
+          description: Always e-mailed, whatever `email` is set to; turning it off
+            is refused.
       required:
       - email
       - kind
+      - locked
     NotificationPreferenceRequest:
       type: object
       properties:
@@ -6126,6 +6825,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ElevatorList'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedFaultReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FaultRead'
         pagination:
           type: object
           required:
@@ -6772,6 +7501,36 @@ components:
           format: int64
         notes:
           type: string
+    PatchedFaultCreateRequest:
+      type: object
+      description: |-
+        A fault entered by somebody at the firm.
+
+        The state, the channel and every timestamp are the server's. A trapped
+        passenger makes it an emergency whatever `priority` says, so a phone form
+        in a hurry cannot under-state one.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/FaultPriority'
+          default: normal
+        technician:
+          type: string
+          format: uuid
+          nullable: true
+        stopped_elevator:
+          type: boolean
+        someone_trapped:
+          type: boolean
+          writeOnly: true
+          default: false
     PatchedMaintenanceVisitWriteRequest:
       type: object
       description: |-
@@ -7040,6 +7799,43 @@ components:
       required:
       - id
       - name
+    PublicFaultReceipt:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: Six characters to quote when calling about the fault. Nothing
+            else is returned.
+      required:
+      - reference
+    PublicFaultReportRequest:
+      type: object
+      description: What a resident standing at the lift can tell us, and nothing else.
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        someone_trapped:
+          type: boolean
+          default: false
+        elevator_stopped:
+          type: boolean
+          default: false
+        reporter_name:
+          type: string
+          default: ''
+          maxLength: 100
+        reporter_phone:
+          type: string
+          default: ''
+          maxLength: 30
+        website:
+          type: string
+          default: ''
+          description: Leave empty. A form that fills this in is treated as automated.
+      required:
+      - description
     RegisterRequest:
       type: object
       description: |-
@@ -7099,6 +7895,18 @@ components:
       required:
       - end_date
       - start_date
+    ResolveRequest:
+      type: object
+      properties:
+        resolution_notes:
+          type: string
+          default: ''
+        parts_used:
+          type: string
+          default: ''
+        restore_service:
+          type: boolean
+          default: false
     ReverseGeocode:
       type: object
       description: |-
@@ -7508,6 +8316,8 @@ components:
       - IDEMPOTENCY_KEY_REQUIRED
       - ELEVATOR_ALREADY_CONTRACTED
       - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
+      - FAULT_TRANSITION_NOT_ALLOWED
+      - NOTIFICATION_EMAIL_LOCKED
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
       - ONLY_TECHNICIANS_ARE_ASSIGNED
       - TECHNICIAN_RECORDS_OWN_VISITS
@@ -7554,6 +8364,8 @@ components:
         * `IDEMPOTENCY_KEY_REQUIRED` - This request must carry an Idempotency-Key header
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
         * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
+        * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
+        * `NOTIFICATION_EMAIL_LOCKED` - This notification is always e-mailed and cannot be turned off
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
         * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Customer assignments apply to technicians only
         * `TECHNICIAN_RECORDS_OWN_VISITS` - A technician records maintenance visits in their own name only

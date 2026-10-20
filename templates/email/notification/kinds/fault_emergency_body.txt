@@ -1,0 +1,1 @@
+{{ building_name }} binasındaki {{ elevator_name }} asansöründe mahsur kalan olduğu bildirildi. Bildirim numarası {{ reference }}.{% if description %} Açıklama: “{{ description }}”{% endif %} Bu e-posta, bildirim tercihlerinizden bağımsız olarak gönderilir.

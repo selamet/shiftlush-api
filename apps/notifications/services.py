@@ -12,12 +12,13 @@ import json
 import uuid
 from collections.abc import Iterable, Mapping
 from functools import partial
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
 
 from apps.notifications.models import (
+    EMAIL_ALWAYS,
     EMAIL_DEFAULTS,
     Notification,
     NotificationKind,
@@ -30,6 +31,8 @@ from apps.users.models import User
 class PreferenceEntry(TypedDict):
     kind: str
     email: bool
+    #: Output only: the kind is in EMAIL_ALWAYS and its e-mail cannot be turned off.
+    locked: NotRequired[bool]
 
 
 def normalize_data(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -148,6 +151,8 @@ def _wants_email(user_ids: set[uuid.UUID], kind: str) -> set[uuid.UUID]:
     """The users among `user_ids` whose preference, or the default, says e-mail."""
     if not user_ids:
         return set()
+    if kind in EMAIL_ALWAYS:
+        return set(user_ids)
     # `unscoped` with an explicit user filter: these are the recipients' own
     # rows, and the tenant manager would return nothing at all when notify() is
     # called with no company in context — silently replacing every user's
@@ -165,7 +170,11 @@ def preferences_for(user: User) -> list[PreferenceEntry]:
     """Every kind with the user's e-mail flag, defaults filled in, in enum order."""
     explicit = dict(NotificationPreference.objects.filter(user=user).values_list("kind", "email"))
     return [
-        {"kind": kind, "email": explicit.get(kind, EMAIL_DEFAULTS[kind])}
+        {
+            "kind": kind,
+            "email": kind in EMAIL_ALWAYS or explicit.get(kind, EMAIL_DEFAULTS[kind]),
+            "locked": kind in EMAIL_ALWAYS,
+        }
         for kind in NotificationKind.values
     ]
 

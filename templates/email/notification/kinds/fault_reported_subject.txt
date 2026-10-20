@@ -1,0 +1,1 @@
+Arıza bildirildi: {{ elevator_name }} ({{ building_name }})

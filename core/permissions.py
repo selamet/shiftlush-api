@@ -124,6 +124,19 @@ MATRIX: dict[str, dict[str, set[str]]] = {
     # resource rather than a read/edit pair like the visit's: every write here
     # (PATCH, bulk-assign) belongs to the same three roles. Accounting has no
     # reason to see it, as with visits.
+    # Faults (M4). Anyone who goes to lifts may report one, and the technician
+    # works the ones sent to them (arrive, resolve — narrowed to the assigned
+    # technician in FaultViewSet). Sending, closing, cancelling and correcting
+    # are the office's, as `fault_office`. Accounting reads closed faults
+    # through billing (M7), not here.
+    "fault": {
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+    },
+    "fault_office": {
+        READ: set(),
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    },
     "planned_visit": {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},

@@ -4,7 +4,8 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.notifications.models import Notification, NotificationKind
+from apps.notifications.models import EMAIL_ALWAYS, Notification, NotificationKind
+from core.error_codes import ErrorCode
 
 
 class NotificationSerializer(serializers.ModelSerializer[Notification]):
@@ -47,6 +48,20 @@ class NotificationPreferenceListSerializer(serializers.ListSerializer[Any]):
 class NotificationPreferenceSerializer(serializers.Serializer[Any]):
     kind = serializers.ChoiceField(choices=NotificationKind.choices)
     email = serializers.BooleanField()
+    locked = serializers.BooleanField(
+        read_only=True,
+        help_text="Always e-mailed, whatever `email` is set to; turning it off is refused.",
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        # Refused rather than stored and ignored: a settings screen that shows a
+        # box unticked while the e-mails keep coming would be lying.
+        if attrs["kind"] in EMAIL_ALWAYS and not attrs["email"]:
+            code = ErrorCode.NOTIFICATION_EMAIL_LOCKED
+            raise serializers.ValidationError(
+                {"email": serializers.ErrorDetail(code.label, code=code.value)}
+            )
+        return attrs
 
     class Meta:
         list_serializer_class = NotificationPreferenceListSerializer

@@ -43,6 +43,7 @@ from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
 from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
+from apps.faults.models import Fault, FaultChannel
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType, Complex
@@ -341,6 +342,14 @@ def _build_firm(letter: str, seed: int) -> Firm:
             visit_date=TODAY,
             status=VisitStatus.COMPLETED,
         )
+        fault = Fault.objects.create(
+            company=company,
+            elevator=elevator,
+            reference=f"FLT{seed:03d}",
+            channel=FaultChannel.STAFF,
+            reported_by=owner,
+            description=f"Fault of {letter}",
+        )
         planned = PlannedVisit.objects.create(
             company=company,
             elevator=elevator,
@@ -364,6 +373,7 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "user": colleague,
             "maintenance-visit": visit,
             "planned-visit": planned,
+            "fault": fault,
         },
     )
 
@@ -935,6 +945,9 @@ class TestEveryModelIsScoped:
             "customers.Customer",
             "customers.CustomerContact",
             "elevators.Elevator",
+            # Over HTTP in the sweep above; the public report in
+            # tests/test_public_fault_report.py.
+            "faults.Fault",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
             # Over HTTP in the sweep above, and in tests/test_planned_visits.py.

@@ -13,6 +13,10 @@ Every other combination of object_type/category/visit still falls through
 to the matrix and is denied. Widening the matrix entry itself was rejected:
 it would also open signed contracts and CE certificates to a technician,
 which is not the intent.
+
+M4 extends it to faults: a technician may attach a photo to a fault assigned
+to them (docs/superpowers/specs/2026-10-20-m4-fault-management-design.md) —
+assigned, not merely visible, because the photo is evidence of their own work.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from rest_framework.views import APIView
 
 from apps.attachments.models import AttachmentCategory, ObjectType
 from apps.attachments.services import peek_object_type_and_category
+from apps.faults.models import Fault
 from apps.maintenance.models import MaintenanceVisit
 from apps.users.models import Role
 from core.permissions import RolePermission
@@ -61,6 +66,33 @@ def _technician_is_assigned_to_visit(user: Any, company_id: uuid.UUID, object_id
     ).exists()
 
 
+def _technician_is_assigned_to_fault(user: Any, company_id: uuid.UUID, object_id: Any) -> bool:
+    """Is this fault assigned to this technician? Same fail-closed reading as above."""
+    try:
+        fault_id = uuid.UUID(str(object_id))
+    except (TypeError, ValueError):
+        return False
+    return Fault.unscoped.filter(
+        pk=fault_id, company_id=company_id, is_deleted=False, technician_id=user.pk
+    ).exists()
+
+
+#: The object types a technician may photograph, and the check for each.
+_PHOTO_CARVE_OUT = {
+    ObjectType.MAINTENANCE_VISIT: _technician_is_assigned_to_visit,
+    ObjectType.FAULT: _technician_is_assigned_to_fault,
+}
+
+
+def _technician_may_photograph(
+    user: Any, company_id: uuid.UUID, object_type: Any, object_id: Any, category: Any
+) -> bool:
+    check = _PHOTO_CARVE_OUT.get(object_type)
+    if check is None or category != AttachmentCategory.PHOTO:
+        return False
+    return check(user, company_id, object_id)
+
+
 class AttachmentPermission(RolePermission):
     def has_permission(self, request: Request, view: APIView) -> bool:
         if super().has_permission(request, view):
@@ -79,20 +111,17 @@ class AttachmentPermission(RolePermission):
 
         action = getattr(view, "action", None)
         if action == "upload_url":
-            if not (
-                data.get("object_type") == ObjectType.MAINTENANCE_VISIT
-                and data.get("category") == AttachmentCategory.PHOTO
-            ):
-                return False
-            return _technician_is_assigned_to_visit(user, company_id, data.get("object_id"))
+            return _technician_may_photograph(
+                user,
+                company_id,
+                data.get("object_type"),
+                data.get("object_id"),
+                data.get("category"),
+            )
         if action == "create":
             storage_key = data.get("storage_key", "")
             object_type, object_id, category = peek_object_type_and_category(
                 company_id, storage_key
             )
-            if not (
-                object_type == ObjectType.MAINTENANCE_VISIT and category == AttachmentCategory.PHOTO
-            ):
-                return False
-            return _technician_is_assigned_to_visit(user, company_id, object_id)
+            return _technician_may_photograph(user, company_id, object_type, object_id, category)
         return False

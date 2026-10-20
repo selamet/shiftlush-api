@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "apps.contracts",
     "apps.attachments",
     "apps.maintenance",
+    "apps.faults",
     "apps.notifications",
     # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
     "django_tasks_db",
@@ -440,6 +441,11 @@ REST_FRAMEWORK = {
         # The login lockout does not reach here — it counts failures against a
         # sign-in, and this caller is already signed in.
         "password_change": env("PASSWORD_CHANGE_RATE_LIMIT", default="10/hour"),
+        # The public fault report from the QR sticker (M4), the only write that
+        # takes no token: per sticker and per address, both at once. See
+        # apps.faults.throttling.
+        "public_fault_token": env("PUBLIC_FAULT_TOKEN_RATE_LIMIT", default="5/hour"),
+        "public_fault_address": env("PUBLIC_FAULT_ADDRESS_RATE_LIMIT", default="20/hour"),
     },
     "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
@@ -482,6 +488,9 @@ SPECTACULAR_SETTINGS = {
         "MaintenanceChecklistItem": "apps.maintenance.models.ChecklistItem.choices",
         "MaintenanceChecklistResult": "apps.maintenance.models.ChecklistResult.choices",
         "PlannedVisitStatus": "apps.maintenance.models.PlannedVisitStatus.choices",
+        "FaultChannel": "apps.faults.models.FaultChannel.choices",
+        "FaultPriority": "apps.faults.models.FaultPriority.choices",
+        "FaultStatus": "apps.faults.models.FaultStatus.choices",
         "NotificationKind": "apps.notifications.models.NotificationKind.choices",
     },
 }

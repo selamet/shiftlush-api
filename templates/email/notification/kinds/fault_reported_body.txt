@@ -1,0 +1,1 @@
+{{ building_name }} binasındaki {{ elevator_name }} asansörü için {% if channel == "public_qr" %}QR etiketinden {% endif %}arıza bildirildi{% if priority == "high" %}; asansör çalışmıyor{% endif %}. Bildirim numarası {{ reference }}.{% if description %} Açıklama: “{{ description }}”{% endif %}

@@ -1,0 +1,1 @@
+Arıza size atandı: {{ elevator_name }} ({{ building_name }})

@@ -136,6 +136,57 @@ carried as compatibility shims nobody will ever remove.
     technician, month and assignment action (the daily job, a PATCH, a bulk
     assignment), never one per row. E-mailed by default.
   - New enum `PlannedVisitStatus`: `planned`, `done`, `cancelled`.
+- **Faults** (M4) — from the first report to the closed job.
+  - `GET/POST /faults/`, `GET/PATCH /faults/{id}/`. Filters: `status`,
+    `priority`, `channel`, `technician`, `elevator`, `customer`,
+    `reported_at_after`/`reported_at_before`. `?ordering=priority_rank,reported_at`
+    is the board: emergencies first, then the oldest. Each row carries the
+    elevator, building and customer names, `reference` (six characters, for the
+    phone), every timestamp, and the derived `response_time_seconds` and
+    `resolution_time_seconds`.
+  - `POST /faults/` — owner, admin, operations and technician. Starts `open`,
+    or `assigned` with a `technician`. `someone_trapped: true` makes it
+    `emergency` whatever `priority` says. `stopped_elevator: true` puts an
+    `active` lift `out_of_service`. A technician reports only on their
+    customers' lifts and may name only themselves. Replay-protected like every
+    create.
+  - Transitions, each its own endpoint so no timestamp is the client's:
+    `assign` (office; also reassigns), `arrive` and `resolve` (the assigned
+    technician, or the office), `close` and `cancel` (office; `cancel` needs a
+    `reason`). From the wrong state each answers `409
+    FAULT_TRANSITION_NOT_ALLOWED`, a new code. `resolve` takes
+    `resolution_notes`, `parts_used` and `restore_service`, which puts an
+    `out_of_service` lift back to `active`.
+  - `billable` is derived at resolve from the contract that covered the lift on
+    the day of the report: maintenance only → yes, maintenance and repair →
+    only with `parts_used`, full coverage → no, none → yes. `PATCH` with
+    `billable` overrides it and sets `billable_overridden`; resolve then keeps
+    the office's answer.
+  - `PATCH` is the office's: `priority`, `description`, `billable`. No
+    `DELETE`; a mistaken fault is cancelled.
+  - Accountants have no access. Technicians see the faults of their customers.
+  - New enums `FaultStatus`, `FaultPriority`, `FaultChannel`.
+- **`POST /public/elevators/{qr_token}/faults/`** — a resident's report from
+  the QR sticker, with no account. The only unauthenticated write.
+  - Body: `description`, `someone_trapped`, `elevator_stopped`, and optional
+    `reporter_name` and `reporter_phone`. Answers `202 {"reference"}` and
+    nothing else; an unknown sticker is `404`.
+  - Priority comes only from what the resident says: trapped → `emergency`,
+    stopped → `high`, otherwise `normal`.
+  - A report on a lift that has an open or assigned public report from the
+    last 30 minutes is added to it, and answers with its reference.
+  - Throttled per sticker (5/hour) and per address (20/hour); `429 THROTTLED`
+    with the usual `RateLimit-*` headers.
+  - No `Idempotency-Key`: there is no user to key it by, and the merge absorbs
+    a retry.
+- **Attachments** accept `object_type: "fault"`. A technician may attach photos
+  to a fault assigned to them.
+- **Notifications:** new kinds `fault_reported`, `fault_emergency`,
+  `fault_assigned`, `fault_resolved`, linking to the fault
+  (`subject_type: "fault"`). `fault_emergency` is always e-mailed: the
+  preference list marks it `locked: true` (a new read-only field on every
+  entry), and turning it off is `400` with the new code
+  `NOTIFICATION_EMAIL_LOCKED`.
 
 ### Changed
 
