@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from rest_framework import serializers
 
+from apps.maintenance import services
 from apps.maintenance.models import (
     ChecklistItem,
     ChecklistResult,
@@ -69,11 +70,35 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
         return f"{user.first_name} {user.last_name}".strip()
 
 
+def _each_item_once(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen = {entry["item"] for entry in items}
+    if len(seen) != len(items):
+        raise serializers.ValidationError("Each checklist item may appear at most once.")
+    return items
+
+
+class SetChecklistItemSerializer(serializers.Serializer[Any]):
+    item = serializers.ChoiceField(choices=ChecklistItem.choices)
+    result = serializers.ChoiceField(choices=ChecklistResult.choices)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class SetChecklistSerializer(serializers.Serializer[Any]):
+    items = SetChecklistItemSerializer(many=True)
+
+    def validate_items(self, items: list[dict[str, str]]) -> list[dict[str, str]]:
+        return _each_item_once(items)
+
+
 class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[MaintenanceVisit]):
     status = serializers.ChoiceField(choices=VisitStatus.choices)
     # Scoped in get_fields below. Not required here because a technician may
     # leave it out; validate() requires it from everybody else.
     technician = serializers.PrimaryKeyRelatedField(queryset=User.objects.none(), required=False)
+    # The checklist, in the same request as the visit, so a phone sending from
+    # its outbox records the whole form or none of it. Sending it replaces the
+    # visit's checklist; leaving it out leaves the checklist alone.
+    items = SetChecklistItemSerializer(many=True, required=False)
 
     class Meta:
         model = MaintenanceVisit
@@ -86,6 +111,7 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
             "status_note",
             "work_notes",
             "parts_replaced",
+            "items",
         ]
 
     def get_fields(self) -> dict[str, Any]:
@@ -105,6 +131,25 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
             technician = cast(serializers.PrimaryKeyRelatedField[User], fields["technician"])
             technician.queryset = User.objects.filter(company_id=company_id, is_active=True)
         return fields
+
+    def validate_items(self, items: list[dict[str, str]]) -> list[dict[str, str]]:
+        return _each_item_once(items)
+
+    def create(self, validated_data: dict[str, Any]) -> MaintenanceVisit:
+        items = validated_data.pop("items", None)
+        visit = super().create(validated_data)
+        if items is not None:
+            services.set_checklist(visit=visit, items=items)
+        return visit
+
+    def update(
+        self, instance: MaintenanceVisit, validated_data: dict[str, Any]
+    ) -> MaintenanceVisit:
+        items = validated_data.pop("items", None)
+        visit = super().update(instance, validated_data)
+        if items is not None:
+            services.set_checklist(visit=visit, items=items)
+        return visit
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
@@ -127,19 +172,3 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
                 {"technician": serializers.ErrorDetail("This field is required.", code="required")}
             )
         return attrs
-
-
-class SetChecklistItemSerializer(serializers.Serializer[Any]):
-    item = serializers.ChoiceField(choices=ChecklistItem.choices)
-    result = serializers.ChoiceField(choices=ChecklistResult.choices)
-    note = serializers.CharField(required=False, allow_blank=True, default="")
-
-
-class SetChecklistSerializer(serializers.Serializer[Any]):
-    items = SetChecklistItemSerializer(many=True)
-
-    def validate_items(self, items: list[dict[str, str]]) -> list[dict[str, str]]:
-        seen = {entry["item"] for entry in items}
-        if len(seen) != len(items):
-            raise serializers.ValidationError("Each checklist item may appear at most once.")
-        return items

@@ -5,6 +5,7 @@ docs/superpowers/specs/2026-09-12-maintenance-visit-design.md.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from uuid import uuid4
 
 import pytest
 from django.urls import reverse
@@ -366,8 +367,13 @@ class TestMaintenanceVisitSerializers:
 
 
 def api_for(user: User) -> APIClient:
+    # A fresh key per client: visit creates require one (M1), and each test
+    # builds a new client per request.
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}")
+    client.credentials(
+        HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
     return client
 
 

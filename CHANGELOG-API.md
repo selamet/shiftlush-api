@@ -79,6 +79,23 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Breaking: `POST /maintenance-visits/` requires an `Idempotency-Key`
+  header.**
+  - Without it the request is `400 IDEMPOTENCY_KEY_REQUIRED`, and nothing is
+    recorded.
+  - This is the endpoint a phone retries from its outbox on a bad connection
+    (spec 8.10), so a missing key would record a retried visit twice.
+  - Generate the key once per visit form and reuse it on every retry.
+  - Made in place, because the only client (`shiftlush-web`) creates no visits
+    yet. The screen that will is the first to send it.
+- **`POST` and `PATCH /maintenance-visits/` accept `items`.**
+  - Same shape as `set-checklist`.
+  - Applied in the same transaction as the visit, so one request records the
+    whole form.
+  - Sending `items` replaces the checklist; leaving it out keeps it.
+  - The same item twice, or an unknown item, refuses the whole request.
+  - Creating and editing a visit is now atomic: the visit, its checklist and
+    the elevator's maintenance dates commit together or not at all.
 - **`POST /maintenance-visits/` — `technician` must be an active user of your
   own firm.**
   - Before, any user id was accepted, including one from another firm, and the

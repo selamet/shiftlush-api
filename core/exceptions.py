@@ -49,6 +49,15 @@ class BusinessRuleError(exceptions.APIException):
         super().__init__(detail or code.label, code=code.value)
 
 
+class BadRequest(exceptions.APIException):
+    """A request missing something it has to carry, before any field is read."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
+
+    def __init__(self, code: ErrorCode) -> None:
+        super().__init__(code.label, code=code.value)
+
+
 class Conflict(exceptions.APIException):
     """The request cannot be applied to the world as it currently stands."""
 

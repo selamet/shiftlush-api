@@ -2398,6 +2398,14 @@ paths:
         PUT is not routed: partial update is the only update verb. A full replace
         means the client has to send every field it does not want cleared, and the
         moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Generated once per visit form and reused on every retry, so a
+          visit sent again from a device outbox is recorded once.
+        required: true
       tags:
       - maintenance-visits
       requestBody:
@@ -5610,6 +5618,10 @@ components:
           type: string
         parts_replaced:
           type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetChecklistItem'
       required:
       - contract
       - elevator
@@ -5644,6 +5656,10 @@ components:
           type: string
         parts_replaced:
           type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetChecklistItemRequest'
       required:
       - contract
       - elevator
@@ -6540,6 +6556,10 @@ components:
           type: string
         parts_replaced:
           type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetChecklistItemRequest'
     PatchedUserUpdateRequest:
       type: object
       properties:
@@ -6734,6 +6754,32 @@ components:
       - last_used_at
       - signed_in_at
       - user_agent
+    SetChecklistItem:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/MaintenanceChecklistItem'
+        result:
+          $ref: '#/components/schemas/MaintenanceChecklistResult'
+        note:
+          type: string
+          default: ''
+      required:
+      - item
+      - result
+    SetChecklistItemRequest:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/MaintenanceChecklistItem'
+        result:
+          $ref: '#/components/schemas/MaintenanceChecklistResult'
+        note:
+          type: string
+          default: ''
+      required:
+      - item
+      - result
     TerminateRequest:
       type: object
       properties:
@@ -6984,6 +7030,7 @@ components:
       - EMAIL_ALREADY_REGISTERED
       - INVITATION_ALREADY_PENDING
       - IDEMPOTENCY_KEY_REUSED
+      - IDEMPOTENCY_KEY_REQUIRED
       - ELEVATOR_ALREADY_CONTRACTED
       - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
@@ -7029,6 +7076,7 @@ components:
         * `EMAIL_ALREADY_REGISTERED` - E-mail address is already registered
         * `INVITATION_ALREADY_PENDING` - This address already holds an invitation that has not been accepted
         * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
+        * `IDEMPOTENCY_KEY_REQUIRED` - This request must carry an Idempotency-Key header
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
         * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner

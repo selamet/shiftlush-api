@@ -67,6 +67,10 @@ class ErrorCode(models.TextChoices):
         "IDEMPOTENCY_KEY_REUSED",
         "Idempotency key was reused with a different request body",
     )
+    IDEMPOTENCY_KEY_REQUIRED = (
+        "IDEMPOTENCY_KEY_REQUIRED",
+        "This request must carry an Idempotency-Key header",
+    )
 
     # Business rules --------------------------------------------------------
     ELEVATOR_ALREADY_CONTRACTED = (

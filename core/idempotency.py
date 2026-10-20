@@ -23,7 +23,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from core.error_codes import ErrorCode
-from core.exceptions import RecordInUse
+from core.exceptions import BadRequest, RecordInUse
 from core.models import IdempotencyKey
 from core.requests import authenticated_user
 
@@ -74,6 +74,11 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
     def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
         key = request.headers.get(HEADER, "").strip()
         if not key:
+            # A viewset whose creates are retried from a device outbox says so,
+            # and a client that forgot the header is told rather than served:
+            # without it, the retry the header exists for records twice.
+            if getattr(self, "idempotency_key_required", False):
+                raise BadRequest(ErrorCode.IDEMPOTENCY_KEY_REQUIRED)
             return handler(self, request, *args, **kwargs)
 
         endpoint = f"{request.method} {request.path}"
