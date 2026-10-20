@@ -85,6 +85,10 @@ class ErrorCode(models.TextChoices):
         "ONLY_TECHNICIANS_ARE_ASSIGNED",
         "Customer assignments apply to technicians only",
     )
+    TECHNICIAN_RECORDS_OWN_VISITS = (
+        "TECHNICIAN_RECORDS_OWN_VISITS",
+        "A technician records maintenance visits in their own name only",
+    )
     CANNOT_DEACTIVATE_SELF = (
         "CANNOT_DEACTIVATE_SELF",
         "A user cannot deactivate their own account",

@@ -5614,7 +5614,6 @@ components:
       - contract
       - elevator
       - status
-      - technician
       - visit_date
     MaintenanceVisitWriteRequest:
       type: object
@@ -5649,7 +5648,6 @@ components:
       - contract
       - elevator
       - status
-      - technician
       - visit_date
     MimeTypeEnum:
       enum:
@@ -6990,6 +6988,7 @@ components:
       - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
       - ONLY_TECHNICIANS_ARE_ASSIGNED
+      - TECHNICIAN_RECORDS_OWN_VISITS
       - CANNOT_DEACTIVATE_SELF
       - BUILDING_CUSTOMER_MISMATCH
       - TERMINATION_REASON_REQUIRED
@@ -7034,6 +7033,7 @@ components:
         * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
         * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Customer assignments apply to technicians only
+        * `TECHNICIAN_RECORDS_OWN_VISITS` - A technician records maintenance visits in their own name only
         * `CANNOT_DEACTIVATE_SELF` - A user cannot deactivate their own account
         * `BUILDING_CUSTOMER_MISMATCH` - A building in a complex must share the complex's customer
         * `TERMINATION_REASON_REQUIRED` - A termination reason is required
