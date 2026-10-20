@@ -40,6 +40,13 @@ class NotificationKind(models.TextChoices):
     - ``fault_assigned`` — reference, elevator_name, building_name, priority.
     - ``fault_resolved`` — reference, elevator_name, building_name,
       technician_name.
+    - ``inspection_due`` — elevator_name, building_name, next_inspection_date,
+      inspection_body. Raised with subject_type "elevator".
+    - ``correction_deadline_near``, ``correction_deadline_passed`` —
+      elevator_name, building_name, label, inspected_on, correction_deadline,
+      days_left (negative once passed), open_nonconformities. Subject "elevator".
+    - ``inspection_red_label`` — elevator_name, building_name, label,
+      inspected_on, correction_deadline. Subject "elevator".
 
     Adding a kind is a backwards-compatible change to the contract; it also
     needs an entry in EMAIL_DEFAULTS below and two template partials.
@@ -58,6 +65,10 @@ class NotificationKind(models.TextChoices):
     FAULT_EMERGENCY = "fault_emergency", "Emergency fault reported"
     FAULT_ASSIGNED = "fault_assigned", "Fault assigned"
     FAULT_RESOLVED = "fault_resolved", "Fault resolved"
+    INSPECTION_DUE = "inspection_due", "Periodic inspection due"
+    CORRECTION_DEADLINE_NEAR = "correction_deadline_near", "Correction deadline near"
+    CORRECTION_DEADLINE_PASSED = "correction_deadline_passed", "Correction deadline passed"
+    INSPECTION_RED_LABEL = "inspection_red_label", "Red inspection label"
 
 
 #: Whether a kind is e-mailed to somebody who has never said otherwise. A
@@ -70,7 +81,8 @@ class NotificationKind(models.TextChoices):
 #: assignment is a technician's work list changing, which is worth hearing about
 #: away from the app — and it comes once per action, not once per lift. A
 #: reported or assigned fault is somebody's next hour; a resolved one is news
-#: the office reads on the board.
+#: the office reads on the board. Inspection deadlines end in a municipal seal
+#: when missed, so every inspection kind is on.
 EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.CONTRACT_RENEWAL_DUE: True,
     NotificationKind.CONTRACT_EXPIRED: True,
@@ -82,14 +94,25 @@ EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.FAULT_EMERGENCY: True,
     NotificationKind.FAULT_ASSIGNED: True,
     NotificationKind.FAULT_RESOLVED: False,
+    NotificationKind.INSPECTION_DUE: True,
+    NotificationKind.CORRECTION_DEADLINE_NEAR: True,
+    NotificationKind.CORRECTION_DEADLINE_PASSED: True,
+    NotificationKind.INSPECTION_RED_LABEL: True,
 }
 
 #: Kinds that are e-mailed whatever the recipient's preference says. A trapped
 #: passenger is not a preference (M4): the person who could get there first
 #: may be the one who turned fault e-mails off last week. Such a kind is listed
 #: in the preferences as `locked`, and turning its e-mail off is refused rather
-#: than stored and ignored.
-EMAIL_ALWAYS: frozenset[str] = frozenset({NotificationKind.FAULT_EMERGENCY})
+#: than stored and ignored. M5 adds the two sealing risks: a passed correction
+#: deadline, and a red label — a lift the regulation says must not run.
+EMAIL_ALWAYS: frozenset[str] = frozenset(
+    {
+        NotificationKind.FAULT_EMERGENCY,
+        NotificationKind.CORRECTION_DEADLINE_PASSED,
+        NotificationKind.INSPECTION_RED_LABEL,
+    }
+)
 
 
 class Notification(CompanyOwnedModel):

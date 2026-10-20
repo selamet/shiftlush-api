@@ -1,0 +1,1 @@
+MÜHÜR RİSKİ: {{ elevator_name }} ({{ building_name }}) düzeltme süresi doldu

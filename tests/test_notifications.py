@@ -106,6 +106,49 @@ SAMPLE_DATA: dict[str, dict[str, object]] = {
     },
 }
 
+SAMPLE_DATA.update(
+    {
+        NotificationKind.INSPECTION_DUE: {
+            "elevator_name": "A Blok",
+            "building_name": "Yıldız Sitesi",
+            "next_inspection_date": date(2026, 11, 19),
+            "inspection_body": "Örnek Muayene A.Ş.",
+        },
+        NotificationKind.CORRECTION_DEADLINE_NEAR: {
+            "elevator_name": "A Blok",
+            "building_name": "Yıldız Sitesi",
+            "label": "yellow",
+            "inspected_on": date(2026, 7, 2),
+            "correction_deadline": date(2026, 10, 30),
+            "days_left": 10,
+            "open_nonconformities": 2,
+        },
+        NotificationKind.CORRECTION_DEADLINE_PASSED: {
+            "elevator_name": "A Blok",
+            "building_name": "Yıldız Sitesi",
+            "label": "red",
+            "inspected_on": date(2026, 8, 1),
+            "correction_deadline": date(2026, 9, 30),
+            "days_left": -20,
+            "open_nonconformities": 1,
+        },
+        NotificationKind.INSPECTION_RED_LABEL: {
+            "elevator_name": "A Blok",
+            "building_name": "Yıldız Sitesi",
+            "label": "red",
+            "inspected_on": date(2026, 10, 20),
+            "correction_deadline": date(2026, 12, 19),
+        },
+    }
+)
+
+INSPECTION_KINDS = {
+    NotificationKind.INSPECTION_DUE,
+    NotificationKind.CORRECTION_DEADLINE_NEAR,
+    NotificationKind.CORRECTION_DEADLINE_PASSED,
+    NotificationKind.INSPECTION_RED_LABEL,
+}
+
 FAULT_KINDS = {
     NotificationKind.FAULT_REPORTED,
     NotificationKind.FAULT_EMERGENCY,
@@ -115,7 +158,7 @@ FAULT_KINDS = {
 
 SUBJECT_OF = {
     kind: ("elevator", ELEVATOR_ID)
-    if kind == NotificationKind.MAINTENANCE_OVERDUE
+    if kind == NotificationKind.MAINTENANCE_OVERDUE or kind in INSPECTION_KINDS
     else ("plan", ELEVATOR_ID)
     if kind == NotificationKind.VISIT_ASSIGNED
     else ("fault", FAULT_ID)
@@ -846,7 +889,9 @@ class TestAKindThatIsAlwaysEmailed:
             "email": True,
             "locked": True,
         }
-        assert all(row["locked"] is False for row in rows if row is not emergency)
+        locked = {row["kind"] for row in rows if row["locked"]}
+        assert locked == set(EMAIL_ALWAYS)
+        assert all(row["email"] is True for row in rows if row["locked"])
 
     def test_turning_it_off_is_refused(self, firm):
         company, owner, _ = firm

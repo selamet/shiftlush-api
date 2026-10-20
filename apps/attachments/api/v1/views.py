@@ -74,6 +74,7 @@ class AttachmentViewSet(
         from apps.contracts.models import Contract
         from apps.elevators.models import Elevator
         from apps.faults.models import Fault
+        from apps.inspections.models import Inspection
         from apps.properties.models import Building
 
         assigned = user.customer_assignments.values_list("customer_id", flat=True)  # type: ignore[attr-defined]
@@ -97,6 +98,13 @@ class AttachmentViewSet(
             | Q(
                 object_type=ObjectType.FAULT,
                 object_id__in=Fault.objects.filter(
+                    elevator__building__customer_id__in=assigned
+                ).values("id"),
+            )
+            # And the inspection reports of their customers' lifts (M5).
+            | Q(
+                object_type=ObjectType.INSPECTION,
+                object_id__in=Inspection.objects.filter(
                     elevator__building__customer_id__in=assigned
                 ).values("id"),
             )

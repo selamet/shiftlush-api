@@ -15,11 +15,9 @@ from apps.elevators.models import (
     DriveType,
     Elevator,
     ElevatorStatus,
-    InspectionLabel,
     MachineRoom,
 )
 from core.error_codes import ErrorCode
-from core.exceptions import field_error
 from core.permissions import READ, may
 
 
@@ -204,9 +202,6 @@ class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer[Elevator]
     machine_room = serializers.ChoiceField(
         choices=MachineRoom.choices, required=False, allow_blank=True
     )
-    inspection_label = serializers.ChoiceField(
-        choices=InspectionLabel.choices, required=False, default=InspectionLabel.NONE
-    )
     # Only the four a user can actually choose. `uncontracted` is assigned by
     # the contract service and offering it here would let a client detach an
     # elevator from its contract by editing a dropdown.
@@ -244,11 +239,10 @@ class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer[Elevator]
             "commissioning_date",
             "ce_certificate_number",
             "warranty_end_date",
-            "last_inspection_date",
-            "inspection_label",
-            "next_inspection_date",
-            "inspection_body",
-            "inspection_report_number",
+            # The five inspection fields are not here: the latest recorded
+            # inspection writes them (apps.inspections.services.sync_elevator),
+            # so the form shows what the inspector said and cannot contradict
+            # it. Record an inspection to change them.
             "status",
             "maintenance_interval_days",
             "notes",
@@ -263,19 +257,6 @@ class ElevatorWriteSerializer(StrictMixin, serializers.ModelSerializer[Elevator]
         if value == ElevatorStatus.UNCONTRACTED:
             raise serializers.ValidationError(code=ErrorCode.STATUS_NOT_USER_SELECTABLE)
         return value
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        attrs = super().validate(attrs)
-
-        last = attrs.get(
-            "last_inspection_date", getattr(self.instance, "last_inspection_date", None)
-        )
-        nxt = attrs.get(
-            "next_inspection_date", getattr(self.instance, "next_inspection_date", None)
-        )
-        if last and nxt and nxt <= last:
-            raise field_error("next_inspection_date", ErrorCode.END_DATE_BEFORE_START_DATE)
-        return attrs
 
 
 class ElevatorByQrSerializer(serializers.ModelSerializer[Elevator]):

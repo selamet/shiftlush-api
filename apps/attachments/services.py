@@ -55,6 +55,7 @@ TARGET_MODELS: dict[str, str] = {
     ObjectType.USER: "users.User",
     ObjectType.MAINTENANCE_VISIT: "maintenance.MaintenanceVisit",
     ObjectType.FAULT: "faults.Fault",
+    ObjectType.INSPECTION: "inspections.Inspection",
 }
 
 

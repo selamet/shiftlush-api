@@ -350,6 +350,8 @@ they wait for the API to be healthy, which is after its migrations.
 | `prune_task_results` | 03:30 | drops task results: successes after 7 days, failures after 30 |
 | `purge_public_reporter_data` | 03:45 | blanks the name and phone of public QR fault reports closed or cancelled more than 90 days ago |
 | `contract_renewal_notice` | 06:00 | notifies owners and admins `renewal_notice_days` before a contract ends |
+| `inspection_due_notice` | 06:15 | notifies the office 30 days before a covered lift's next periodic inspection |
+| `correction_deadline_notice` | 06:30 | warns 30, 14 and 3 days before a yellow or red correction deadline while defects are open, and the day after it passes (always e-mailed: sealing risk) |
 | `maintenance_overdue` | 07:00 | notifies the office and the assigned technicians when a covered elevator is past its maintenance date |
 
 Each job runs once per local day. A scheduler that was down at 03:00 runs it

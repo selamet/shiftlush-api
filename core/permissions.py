@@ -137,6 +137,14 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: set(),
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     },
+    # Periodic inspections (M5). The office records what the inspection body
+    # found and arranges the fixes; technicians read it for the lifts of their
+    # customers (narrowed in the viewsets), because they do the fixing.
+    # Accounting has no access.
+    "inspection": {
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    },
     "planned_visit": {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
