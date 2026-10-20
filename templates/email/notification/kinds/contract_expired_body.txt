@@ -1,0 +1,1 @@
+{% load email_format %}{% if customer_name %}{{ customer_name }} ile yapılan {% endif %}{{ contract_number }} numaralı sözleşmenin süresi {{ end_date|tr_date }} tarihinde doldu. Otomatik yenileme kapalı olduğu için sözleşme sona erdi ve kapsadığı asansörler sözleşmesiz duruma geçti.

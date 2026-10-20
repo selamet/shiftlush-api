@@ -45,9 +45,15 @@ IGNORED_IN_DIFF = frozenset({"updated_at"})
 
 # Infrastructure, not business records. Auditing these would fill the table with
 # rows nobody reads, and the audit table auditing itself is a loop.
+#
+# Notification is here for the first reason: a daily job raises one per
+# recipient and every read marks one, and none of it is a change to the
+# business. NotificationPreference is not here — turning a warning off is a
+# decision somebody may need to find later.
 EXCLUDED_MODELS = frozenset(
     {
         "audit.AuditLog",
+        "notifications.Notification",
         "core.IdempotencyKey",
         "users.RefreshSession",
         "users.OneTimeToken",

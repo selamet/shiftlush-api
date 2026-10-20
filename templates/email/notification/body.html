@@ -1,0 +1,28 @@
+{% extends "email/base.html" %}
+{% comment %}
+The shell every notification e-mail shares. The words come from two partials
+per kind, named in the context by core.mail.send_notification:
+
+  kinds/<kind>_subject.txt  the subject line, reused here as the heading
+  kinds/<kind>_body.txt     the sentence, reused as the preview text
+
+Both are plain text with no markup of their own, so the same file serves the
+HTML part (escaped here) and the text part (body.txt, unescaped).
+{% endcomment %}
+{% block preheader %}{% include kind_body_template %}{% endblock %}
+{% block title %}{% include kind_subject_template %}{% endblock %}
+{% block content %}
+  <p style="margin:0 0 14px 0;">Merhaba {{ first_name }},</p>
+  <p style="margin:0 0 28px 0;color:#5a5f6b;">{% include kind_body_template %}</p>
+  {% if subject_type == "contract" %}
+    {% include "email/_button.html" with label="Sözleşmeyi görüntüle" %}
+  {% elif subject_type == "elevator" %}
+    {% include "email/_button.html" with label="Asansörü görüntüle" %}
+  {% else %}
+    {% include "email/_button.html" with label="Bildirimleri görüntüle" %}
+  {% endif %}
+  {% include "email/_fallback_link.html" %}
+{% endblock %}
+{% block footer %}
+  Bu e-postayı bildirim tercihleriniz nedeniyle aldınız. E-posta bildirimlerini ShiftLush'ta Ayarlar bölümünden türüne göre kapatabilirsiniz.
+{% endblock %}
