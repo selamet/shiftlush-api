@@ -54,7 +54,11 @@ def _locked(fault: Fault) -> Fault:
     the second reads the state the first left behind. SQLite ignores the lock,
     which is fine for a single-process test run.
     """
-    return Fault.objects.select_for_update().select_related("elevator__building").get(pk=fault.pk)
+    return (
+        Fault.objects.select_for_update(of=("self",))
+        .select_related("elevator__building")
+        .get(pk=fault.pk)
+    )
 
 
 # Who hears about it -------------------------------------------------------------
@@ -253,7 +257,7 @@ def report_public(*, elevator: Elevator, report: PublicReport) -> Fault:
         now = timezone.now()
         priority = public_priority(report)
         existing = (
-            Fault.objects.select_for_update()
+            Fault.objects.select_for_update(of=("self",))
             .select_related("elevator__building", "technician")
             .filter(
                 elevator=elevator,
