@@ -408,7 +408,7 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "core.filters.StableOrderingFilter",
     ),
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_SCHEMA_CLASS": "core.spectacular.ReadShapeAutoSchema",
     # Money crosses the wire as a string so JavaScript's float arithmetic never
     # touches it.
     "COERCE_DECIMAL_TO_STRING": True,
