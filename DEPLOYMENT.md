@@ -334,9 +334,12 @@ they wait for the API to be healthy, which is after its migrations.
 
 | Job | At | Does |
 |---|---|---|
+| `contract_expiry` | 00:30 | closes contracts past their end date: expired, or renewed into an active successor when `auto_renew` is set |
 | `purge_idempotency_keys` | 03:00 | deletes keys past their replay window |
 | `purge_attachments` | 03:15 | deletes the stored bytes of attachments soft-deleted over `ATTACHMENT_PURGE_AFTER_DAYS` ago |
 | `prune_task_results` | 03:30 | drops task results: successes after 7 days, failures after 30 |
+| `contract_renewal_notice` | 06:00 | notifies owners and admins `renewal_notice_days` before a contract ends |
+| `maintenance_overdue` | 07:00 | notifies the office and the assigned technicians when a covered elevator is past its maintenance date |
 
 Each job runs once per local day. A scheduler that was down at 03:00 runs it
 when it comes back the same day; a fully missed day is not replayed. Each run

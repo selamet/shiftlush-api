@@ -104,6 +104,22 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Contracts now end on their own.** A daily job (00:30 Istanbul) closes every
+  `ACTIVE` contract whose `end_date` has passed:
+  - **Without `auto_renew`:** it becomes `expired`, and its elevators become
+    `uncontracted`.
+  - **With `auto_renew`:** it becomes `renewed`, and an `active` successor
+    carries the same terms and elevators into the next term.
+  - **With `auto_renew` but no VAT rate:** the successor stays a `draft`.
+  - Clients that never saw `expired`, or saw `renewed` only after a manual
+    renewal, will now see both without anyone acting. Each change raises a
+    notification (`contract_expired`, `contract_auto_renewed` or
+    `contract_auto_renewal_blocked`).
+- **Two daily notices:**
+  - `contract_renewal_due`, `renewal_notice_days` before a contract ends.
+  - `maintenance_overdue`, once an active-contract elevator's
+    `next_maintenance_date` has passed.
+
 - **What the visit screens needed** (all backwards compatible):
   - **Elevator detail** returns `last_maintenance_date` and
     `next_maintenance_date`. Both are read-only and derived from completed

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -31,6 +31,11 @@ from core.models import ScheduledRun
 # The only market the product is sold in. TIME_ZONE stays UTC: this is the
 # wall clock a schedule is written in, not the one timestamps are stored in.
 LOCAL_TZ = ZoneInfo("Europe/Istanbul")
+
+
+def local_today() -> date:
+    """Today's date where the product is used — what "overdue" and "ended" mean."""
+    return timezone.now().astimezone(LOCAL_TZ).date()
 
 
 @dataclass(frozen=True)
@@ -57,12 +62,20 @@ def get_schedules() -> list[DailySchedule]:
     # Imported here, not at module level: core must not import app modules at
     # import time, and attachments' tasks pull in its services and models.
     from apps.attachments.tasks import purge_attachments
+    from apps.contracts.tasks import contract_expiry, contract_renewal_notice
+    from apps.maintenance.tasks import maintenance_overdue
     from core.tasks import prune_task_results, purge_idempotency_keys
 
     return [
+        # Just after midnight, so a contract that ended yesterday is closed —
+        # and its successor active — before anybody records a visit today.
+        DailySchedule("contract_expiry", contract_expiry, time(0, 30)),
         DailySchedule("purge_idempotency_keys", purge_idempotency_keys, time(3, 0)),
         DailySchedule("purge_attachments", purge_attachments, time(3, 15)),
         DailySchedule("prune_task_results", prune_task_results, time(3, 30)),
+        # Before the working day, so the e-mails are waiting when it starts.
+        DailySchedule("contract_renewal_notice", contract_renewal_notice, time(6, 0)),
+        DailySchedule("maintenance_overdue", maintenance_overdue, time(7, 0)),
     ]
 
 
