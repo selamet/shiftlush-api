@@ -63,13 +63,16 @@ def get_schedules() -> list[DailySchedule]:
     # import time, and attachments' tasks pull in its services and models.
     from apps.attachments.tasks import purge_attachments
     from apps.contracts.tasks import contract_expiry, contract_renewal_notice
-    from apps.maintenance.tasks import maintenance_overdue
+    from apps.maintenance.tasks import maintenance_overdue, plan_maintenance
     from core.tasks import prune_task_results, purge_idempotency_keys
 
     return [
         # Just after midnight, so a contract that ended yesterday is closed —
         # and its successor active — before anybody records a visit today.
         DailySchedule("contract_expiry", contract_expiry, time(0, 30)),
+        # After contract_expiry, so a lift whose contract ended last night is
+        # cancelled out of the plan, and one whose renewal was activated stays.
+        DailySchedule("plan_maintenance", plan_maintenance, time(1, 0)),
         DailySchedule("purge_idempotency_keys", purge_idempotency_keys, time(3, 0)),
         DailySchedule("purge_attachments", purge_attachments, time(3, 15)),
         DailySchedule("prune_task_results", prune_task_results, time(3, 30)),

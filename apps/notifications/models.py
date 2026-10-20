@@ -30,6 +30,10 @@ class NotificationKind(models.TextChoices):
       end_date, successor_contract_number.
     - ``maintenance_overdue`` — elevator_name, building_name,
       next_maintenance_date.
+    - ``visit_assigned`` — period ("YYYY-MM"), count: how many planned visits
+      one assignment action gave the recipient in that month. Raised with
+      subject_type "plan" and the recipient's own id as subject_id — the
+      subject is their work list, not one row.
 
     Adding a kind is a backwards-compatible change to the contract; it also
     needs an entry in EMAIL_DEFAULTS below and two template partials.
@@ -43,6 +47,7 @@ class NotificationKind(models.TextChoices):
         "Contract auto-renewal blocked",
     )
     MAINTENANCE_OVERDUE = "maintenance_overdue", "Maintenance overdue"
+    VISIT_ASSIGNED = "visit_assigned", "Planned visits assigned"
 
 
 #: Whether a kind is e-mailed to somebody who has never said otherwise. A
@@ -51,13 +56,16 @@ class NotificationKind(models.TextChoices):
 #: default, and why a user's explicit choice is always stored as a row.
 #:
 #: Contract events are rare and carry money; overdue maintenance is daily
-#: operational noise for most readers, who see it in the app anyway.
+#: operational noise for most readers, who see it in the app anyway. An
+#: assignment is a technician's work list changing, which is worth hearing about
+#: away from the app — and it comes once per action, not once per lift.
 EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.CONTRACT_RENEWAL_DUE: True,
     NotificationKind.CONTRACT_EXPIRED: True,
     NotificationKind.CONTRACT_AUTO_RENEWED: True,
     NotificationKind.CONTRACT_AUTO_RENEWAL_BLOCKED: True,
     NotificationKind.MAINTENANCE_OVERDUE: False,
+    NotificationKind.VISIT_ASSIGNED: True,
 }
 
 

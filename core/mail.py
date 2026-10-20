@@ -116,8 +116,18 @@ NOTIFICATION_SUBJECT_PATHS = {
     "elevator": "elevators",
 }
 
+#: Subjects that are a screen rather than a record, so the link carries no id.
+#: "plan" is a technician's work list, which is the app's landing screen for
+#: them (M3) — the root is where it lives.
+NOTIFICATION_SUBJECT_SCREENS = {
+    "plan": "",
+}
+
 
 def notification_url(*, subject_type: str, subject_id: str) -> str:
+    screen = NOTIFICATION_SUBJECT_SCREENS.get(subject_type)
+    if screen is not None:
+        return f"{settings.FRONTEND_URL}/{screen}"
     path = NOTIFICATION_SUBJECT_PATHS.get(subject_type)
     if path is None:
         return f"{settings.FRONTEND_URL}/notifications"

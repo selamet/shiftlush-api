@@ -118,6 +118,16 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: set(),
         WRITE: {Role.OWNER, Role.ADMIN},
     },
+    # The monthly plan (M3). A technician reads it — it is their work list,
+    # narrowed in PlannedVisitViewSet to their own rows and the unassigned rows
+    # of their customers — but deciding who goes where is the office's. One
+    # resource rather than a read/edit pair like the visit's: every write here
+    # (PATCH, bulk-assign) belongs to the same three roles. Accounting has no
+    # reason to see it, as with visits.
+    "planned_visit": {
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    },
 }
 
 

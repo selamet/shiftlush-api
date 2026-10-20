@@ -2677,12 +2677,14 @@ paths:
           - contract_expired
           - contract_renewal_due
           - maintenance_overdue
+          - visit_assigned
         description: |-
           * `contract_renewal_due` - Contract renewal due
           * `contract_expired` - Contract expired
           * `contract_auto_renewed` - Contract auto-renewed
           * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
           * `maintenance_overdue` - Maintenance overdue
+          * `visit_assigned` - Planned visits assigned
       - name: ordering
         required: false
         in: query
@@ -2839,6 +2841,235 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnreadCount'
+          description: ''
+  /api/v1/planned-visits/:
+    get:
+      operationId: planned_visits_list
+      description: |-
+        The monthly maintenance plan.
+
+        Composed from mixins rather than a TenantViewSet because nothing here is
+        created or deleted by a client — the `plan_maintenance` job writes the rows
+        and a recorded visit closes them — so there is no create for the router to
+        publish, and no delete.
+
+        Technicians read their own rows and the unassigned rows of the customers
+        they are assigned to: the usual customer narrowing, then within it only
+        what is theirs to do or still open for anyone. Another technician's row
+        is a 404.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: district
+        schema:
+          type: integer
+      - in: query
+        name: due_before
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: period
+        schema:
+          type: string
+        description: 'The month, as "YYYY-MM". Required: the plan is always read a
+          month at a time.'
+        required: true
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - cancelled
+          - done
+          - planned
+        description: |-
+          * `planned` - Planned
+          * `done` - Done
+          * `cancelled` - Cancelled
+      - in: query
+        name: technician
+        schema:
+          type: string
+        description: A user id, or "me" for the signed-in user.
+      - in: query
+        name: unassigned
+        schema:
+          type: boolean
+      tags:
+      - planned-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPlannedVisitReadList'
+          description: ''
+  /api/v1/planned-visits/{id}/:
+    get:
+      operationId: planned_visits_retrieve
+      description: |-
+        The monthly maintenance plan.
+
+        Composed from mixins rather than a TenantViewSet because nothing here is
+        created or deleted by a client — the `plan_maintenance` job writes the rows
+        and a recorded visit closes them — so there is no create for the router to
+        publish, and no delete.
+
+        Technicians read their own rows and the unassigned rows of the customers
+        they are assigned to: the usual customer narrowing, then within it only
+        what is theirs to do or still open for anyone. Another technician's row
+        is a 404.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this planned visit.
+        required: true
+      tags:
+      - planned-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlannedVisitRead'
+          description: ''
+    patch:
+      operationId: planned_visits_partial_update
+      description: |-
+        The monthly maintenance plan.
+
+        Composed from mixins rather than a TenantViewSet because nothing here is
+        created or deleted by a client — the `plan_maintenance` job writes the rows
+        and a recorded visit closes them — so there is no create for the router to
+        publish, and no delete.
+
+        Technicians read their own rows and the unassigned rows of the customers
+        they are assigned to: the usual customer narrowing, then within it only
+        what is theirs to do or still open for anyone. Another technician's row
+        is a 404.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this planned visit.
+        required: true
+      tags:
+      - planned-visits
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPlannedVisitWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPlannedVisitWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPlannedVisitWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlannedVisitWrite'
+          description: ''
+  /api/v1/planned-visits/bulk-assign/:
+    post:
+      operationId: planned_visits_bulk_assign_create
+      description: |-
+        Give many rows to one technician, all or nothing.
+
+        One id the caller cannot see — another firm's, or never issued — refuses
+        the whole request with nothing changed. Converges on a retry: rows
+        already given to that technician are not announced again, so it needs
+        no Idempotency-Key.
+      tags:
+      - planned-visits
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAssignRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkAssignRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkAssignRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkAssignResult'
+          description: ''
+  /api/v1/planned-visits/summary/:
+    get:
+      operationId: planned_visits_summary_retrieve
+      description: |-
+        Counts for the plan screen's header: per technician, unassigned, overdue.
+
+        Over the same rows the list would return for the same filters, so a
+        technician's summary covers exactly the rows they can see.
+      parameters:
+      - in: query
+        name: period
+        schema:
+          type: string
+        description: The month, as "YYYY-MM". The list filters apply here too.
+        required: true
+      tags:
+      - planned-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanSummary'
           description: ''
   /api/v1/provinces/:
     get:
@@ -3598,6 +3829,30 @@ components:
       - customer
       - name
       - type
+    BulkAssignRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        technician:
+          type: string
+          format: uuid
+      required:
+      - ids
+      - technician
+    BulkAssignResult:
+      type: object
+      description: How many rows the bulk assignment covered, including any already
+        theirs.
+      properties:
+        count:
+          type: integer
+          readOnly: true
+      required:
+      - count
     Company:
       type: object
       properties:
@@ -6032,6 +6287,7 @@ components:
       - contract_auto_renewed
       - contract_auto_renewal_blocked
       - maintenance_overdue
+      - visit_assigned
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -6039,6 +6295,7 @@ components:
         * `contract_auto_renewed` - Contract auto-renewed
         * `contract_auto_renewal_blocked` - Contract auto-renewal blocked
         * `maintenance_overdue` - Maintenance overdue
+        * `visit_assigned` - Planned visits assigned
     NotificationPreference:
       type: object
       properties:
@@ -6059,6 +6316,9 @@ components:
       required:
       - email
       - kind
+    NullEnum:
+      enum:
+      - null
     PaginatedAttachmentList:
       type: object
       required:
@@ -6369,6 +6629,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Notification'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPlannedVisitReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlannedVisitRead'
         pagination:
           type: object
           required:
@@ -6928,6 +7218,23 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SetChecklistItemRequest'
+    PatchedPlannedVisitWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported - every app that needs this defines its own
+        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
+        there is no shared core.serializers module to pull it from.
+      properties:
+        technician:
+          type: string
+          format: uuid
+          nullable: true
+        planned_date:
+          type: string
+          format: date
+          nullable: true
     PatchedUserUpdateRequest:
       type: object
       properties:
@@ -6948,6 +7255,196 @@ components:
           type: string
           maxLength: 50
         certificate_valid_until:
+          type: string
+          format: date
+          nullable: true
+    PlanStatusCounts:
+      type: object
+      properties:
+        planned:
+          type: integer
+        done:
+          type: integer
+        cancelled:
+          type: integer
+      required:
+      - cancelled
+      - done
+      - planned
+    PlanSummary:
+      type: object
+      properties:
+        period:
+          type: string
+        total:
+          type: integer
+        by_status:
+          $ref: '#/components/schemas/PlanStatusCounts'
+        unassigned:
+          type: integer
+        overdue:
+          type: integer
+        technicians:
+          type: array
+          items:
+            $ref: '#/components/schemas/TechnicianPlanSummary'
+      required:
+      - by_status
+      - overdue
+      - period
+      - technicians
+      - total
+      - unassigned
+    PlannedVisitRead:
+      type: object
+      description: |-
+        One row of the plan, with every name the screen prints.
+
+        The names are joined in by the viewset's select_related, so a page of rows
+        is one query — the plan screen and the technician's list both show the
+        whole month at once.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+          nullable: true
+        district:
+          type: integer
+          readOnly: true
+          nullable: true
+        district_name:
+          type: string
+          readOnly: true
+          nullable: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+        planned_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        technician:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        technician_name:
+          type: string
+          nullable: true
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PlannedVisitStatus'
+          readOnly: true
+        visit:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        latest_visit_status:
+          readOnly: true
+          nullable: true
+          description: |-
+            Status of the visit linked to this row: the one that closed it when `done`, the latest attempt while `planned`. Null when nobody has been yet. `planned` with a status here means tried, not done.
+
+            * `completed` - Completed
+            * `incomplete` - Incomplete
+            * `access_denied` - Access denied
+          oneOf:
+          - $ref: '#/components/schemas/MaintenanceVisitStatus'
+          - $ref: '#/components/schemas/NullEnum'
+        is_overdue:
+          type: boolean
+          description: Still planned and past its due date, by the Istanbul calendar.
+          readOnly: true
+        manually_edited:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - building
+      - building_name
+      - created_at
+      - customer
+      - customer_name
+      - district
+      - district_name
+      - due_date
+      - elevator
+      - elevator_name
+      - id
+      - is_overdue
+      - latest_visit_status
+      - manually_edited
+      - neighborhood_name
+      - period
+      - planned_date
+      - status
+      - technician
+      - technician_name
+      - updated_at
+      - visit
+    PlannedVisitStatus:
+      enum:
+      - planned
+      - done
+      - cancelled
+      type: string
+      description: |-
+        * `planned` - Planned
+        * `done` - Done
+        * `cancelled` - Cancelled
+    PlannedVisitWrite:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported - every app that needs this defines its own
+        (see apps/contracts, apps/customers, apps/elevators, apps/properties);
+        there is no shared core.serializers module to pull it from.
+      properties:
+        technician:
+          type: string
+          format: uuid
+          nullable: true
+        planned_date:
           type: string
           format: date
           nullable: true
@@ -7161,6 +7658,29 @@ components:
       required:
       - id
       - name
+    TechnicianPlanSummary:
+      type: object
+      properties:
+        planned:
+          type: integer
+        done:
+          type: integer
+        cancelled:
+          type: integer
+        technician:
+          type: string
+          format: uuid
+        technician_name:
+          type: string
+        overdue:
+          type: integer
+      required:
+      - cancelled
+      - done
+      - overdue
+      - planned
+      - technician
+      - technician_name
     TerminateRequest:
       type: object
       properties:

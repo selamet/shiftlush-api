@@ -7,7 +7,9 @@ filter only formats `date` objects — it prints nothing for a string.
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
+from pathlib import Path
 
 from django import template
 from django.utils import timezone
@@ -49,3 +51,30 @@ def _local_date(value: datetime) -> date:
     if timezone.is_aware(value):
         return value.astimezone(LOCAL_TZ).date()
     return value.date()
+
+
+# Written out rather than taken from Django's `date:"F Y"`: that answers in
+# whatever language is active, and a worker or a management command has no
+# reason to have Turkish active. The e-mail is Turkish either way.
+# The names live in core/data/, with the other Turkish data: a module holds no
+# user-facing Turkish (CI refuses it), so a correction is a data change.
+_TR_MONTHS: tuple[str, ...] = tuple(
+    json.loads(
+        (Path(__file__).resolve().parent.parent / "data" / "tr_months.json").read_text("utf-8")
+    )
+)
+
+
+@register.filter
+def tr_month(value: object) -> str:
+    """ "Ekim 2026" from a "YYYY-MM" period, or a date in that month.
+
+    Anything else is printed as it came, for the same reason as `tr_date`.
+    """
+    if isinstance(value, date):
+        return f"{_TR_MONTHS[value.month - 1]} {value.year}"
+    if isinstance(value, str):
+        year, _, month = value.partition("-")
+        if year.isdigit() and month.isdigit() and 1 <= int(month) <= 12:
+            return f"{_TR_MONTHS[int(month) - 1]} {year}"
+    return "" if value is None else str(value)

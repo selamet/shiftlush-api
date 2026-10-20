@@ -1,0 +1,1 @@
+{% load email_format %}{{ count }} bakım size atandı — {{ period|tr_month }}

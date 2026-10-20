@@ -1,0 +1,1 @@
+{% load email_format %}{{ period|tr_month }} dönemi için {{ count }} bakım ziyareti size atandı. Listenizi ShiftLush'ta rota sırasıyla görebilirsiniz.

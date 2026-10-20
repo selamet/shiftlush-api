@@ -73,11 +73,14 @@ SAMPLE_DATA: dict[str, dict[str, object]] = {
         "building_name": "Yıldız Sitesi",
         "next_maintenance_date": date(2026, 10, 15),
     },
+    NotificationKind.VISIT_ASSIGNED: {"period": "2026-10", "count": 12},
 }
 
 SUBJECT_OF = {
     kind: ("elevator", ELEVATOR_ID)
     if kind == NotificationKind.MAINTENANCE_OVERDUE
+    else ("plan", ELEVATOR_ID)
+    if kind == NotificationKind.VISIT_ASSIGNED
     else ("contract", CONTRACT_ID)
     for kind in NotificationKind.values
 }
@@ -504,7 +507,9 @@ class TestEveryKindHasAnEmail:
     def test_no_date_is_left_in_iso_form(self, kind):
         body = render_kind(kind, "body.txt")
         assert re.search(r"\d{4}-\d{2}-\d{2}", body.replace(str(CONTRACT_ID), "")) is None
-        assert re.search(r"\d{2}\.\d{2}\.\d{4}", body)
+        # Only the kinds that carry a day; a period reads as a month name.
+        if any(isinstance(value, date) for value in SAMPLE_DATA[kind].values()):
+            assert re.search(r"\d{2}\.\d{2}\.\d{4}", body)
 
 
 class TestTurkishDates:

@@ -101,6 +101,41 @@ carried as compatibility shims nobody will ever remove.
     POSTs converge on a retry by themselves.
   - Only the server raises notifications (the M2 contract jobs). An e-mail copy
     goes out after the job commits, when the recipient's preference allows it.
+- **Maintenance plan** (M3) — one `planned-visit` per lift under an active
+  contract per month, created by a daily job for this month and next, and
+  closed by the visit that does the work. Owners, admins and operations
+  arrange it; technicians read it; accountants have no access.
+  - `GET /planned-visits/?period=YYYY-MM` — `period` is required. Filters:
+    `technician` (an id, or `me`), `unassigned`, `status`, `due_before`
+    (inclusive), `district`, `customer`, `elevator`. Route order by default
+    (district, neighbourhood, building, lift); `?ordering=due_date` too. Each
+    row carries the elevator, building, neighbourhood, district and customer
+    names, `technician_name`, `is_overdue`, and `latest_visit_status` — the
+    status of the linked visit. `planned` with a `latest_visit_status` means
+    tried, not done.
+  - A technician sees their own rows and the unassigned rows of the customers
+    they are assigned to. Another technician's row is `404`.
+  - `GET /planned-visits/{id}/` — one row, found by id alone.
+  - `PATCH /planned-visits/{id}/` — `technician` (an active user of your firm,
+    or `null`) and `planned_date`. Sets `manually_edited`, after which the daily
+    job never changes or cancels the row.
+  - `POST /planned-visits/bulk-assign/` — `{ids, technician}`, all or nothing:
+    one id that is not yours refuses the request with `400` on `ids`, and
+    nothing changes. Answers `{count}`. No `Idempotency-Key`; a retry converges.
+  - `GET /planned-visits/summary/?period=` — `total`, `by_status`,
+    `unassigned`, `overdue`, and per technician `planned`, `done`,
+    `cancelled`, `overdue`. The list filters apply.
+  - There is no create and no delete: the rows are the server's.
+  - **Recording a visit closes the row** for that lift and month: `completed`
+    makes it `done`; `incomplete` and `access_denied` leave it `planned` with
+    the attempt linked. Deleting the visit reopens the row, and moving its date
+    to another month moves the link. Nothing changes in the visit endpoints'
+    requests or responses.
+  - New notification kind **`visit_assigned`**, `{period, count}`, with
+    `subject_type: "plan"` and the recipient's id as `subject_id`. One per
+    technician, month and assignment action (the daily job, a PATCH, a bulk
+    assignment), never one per row. E-mailed by default.
+  - New enum `PlannedVisitStatus`: `planned`, `done`, `cancelled`.
 
 ### Changed
 

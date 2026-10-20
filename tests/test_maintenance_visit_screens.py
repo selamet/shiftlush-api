@@ -16,6 +16,7 @@ from django.urls import reverse
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.test import APIClient
 
+from apps.contracts.models import ContractElevator
 from apps.customers.models import Customer
 from apps.elevators.models import Elevator
 from apps.maintenance.models import MaintenanceVisit, VisitStatus
@@ -165,3 +166,27 @@ class TestTheListNarrowsToADateRange:
         dates = sorted(row["visit_date"] for row in response.data["results"])
         assert dates == [str(today - timedelta(days=5)), str(today - timedelta(days=1))]
         assert MaintenanceVisit.unscoped.count() == 3
+
+
+class TestAVisitMovedToAnotherLift:
+    def test_the_lift_it_left_loses_the_date_the_visit_gave_it(self, visit_fixture):
+        company, owner, elevator, contract = visit_fixture
+        with company_context(company.id):
+            other = Elevator.objects.create(
+                company=company, building=elevator.building, qr_token="z" * 24
+            )
+            ContractElevator.objects.create(
+                company=company, contract=contract, elevator=other, added_at=date.today()
+            )
+        visit = record_visit(owner, elevator, contract, date.today() - timedelta(days=2))
+        assert Elevator.unscoped.get(id=elevator.id).next_maintenance_date is not None
+
+        response = api_for(owner).patch(
+            reverse("maintenance-visit-detail", args=[visit.data["id"]]),
+            {"elevator": str(other.id)},
+            format="json",
+        )
+
+        assert response.status_code == 200, response.data
+        assert Elevator.unscoped.get(id=elevator.id).next_maintenance_date is None
+        assert Elevator.unscoped.get(id=other.id).next_maintenance_date is not None
