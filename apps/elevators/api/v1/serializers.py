@@ -17,6 +17,7 @@ from apps.elevators.models import (
     ElevatorStatus,
     MachineRoom,
 )
+from apps.inspections.api.v1.serializers import OpenCorrectionMixin
 from core.error_codes import ErrorCode
 from core.permissions import READ, may
 
@@ -33,7 +34,7 @@ class StrictMixin:
         return validated
 
 
-class ElevatorListSerializer(serializers.ModelSerializer[Elevator]):
+class ElevatorListSerializer(OpenCorrectionMixin, serializers.ModelSerializer[Elevator]):
     """What the list screen needs — seven columns' worth, not all 31 fields.
 
     The rest are record fields rather than search criteria and live on the
@@ -59,6 +60,9 @@ class ElevatorListSerializer(serializers.ModelSerializer[Elevator]):
             "status",
             "inspection_label",
             "next_inspection_date",
+            "correction_deadline",
+            "correction_days_left",
+            "open_nonconformities",
             "brand",
             "model",
         ]
@@ -80,7 +84,7 @@ class CurrentContractSerializer(serializers.Serializer[Any]):
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
 
-class ElevatorDetailSerializer(serializers.ModelSerializer[Elevator]):
+class ElevatorDetailSerializer(OpenCorrectionMixin, serializers.ModelSerializer[Elevator]):
     building_name = serializers.CharField(source="building.name", read_only=True)
     customer_id = serializers.UUIDField(source="building.customer_id", read_only=True)
     customer_name = serializers.CharField(source="building.customer.legal_name", read_only=True)
@@ -175,6 +179,9 @@ class ElevatorDetailSerializer(serializers.ModelSerializer[Elevator]):
             "last_inspection_date",
             "inspection_label",
             "next_inspection_date",
+            "correction_deadline",
+            "correction_days_left",
+            "open_nonconformities",
             "inspection_body",
             "inspection_report_number",
             "status",

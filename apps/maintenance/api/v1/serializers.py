@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from apps.maintenance import services
@@ -243,6 +244,11 @@ class PlannedVisitReadSerializer(serializers.ModelSerializer[PlannedVisit]):
         ),
     )
     is_overdue = serializers.SerializerMethodField()
+    days_overdue = serializers.SerializerMethodField(
+        help_text="Days since `due_date` while the row is still planned and past it; null "
+        "otherwise. The due date can fall before the row's own month: that is how long "
+        "the lift has been overdue."
+    )
 
     class Meta:
         model = PlannedVisit
@@ -266,6 +272,7 @@ class PlannedVisitReadSerializer(serializers.ModelSerializer[PlannedVisit]):
             "visit",
             "latest_visit_status",
             "is_overdue",
+            "days_overdue",
             "manually_edited",
             "created_at",
             "updated_at",
@@ -277,6 +284,12 @@ class PlannedVisitReadSerializer(serializers.ModelSerializer[PlannedVisit]):
         if user is None:
             return None
         return f"{user.first_name} {user.last_name}".strip()
+
+    def get_days_overdue(self, row: PlannedVisit) -> int | None:
+        if row.status != PlannedVisitStatus.PLANNED:
+            return None
+        late = (local_today() - row.due_date).days
+        return late if late > 0 else None
 
     def get_is_overdue(self, row: PlannedVisit) -> bool:
         """Still planned and past its due date, by the Istanbul calendar."""
@@ -336,15 +349,31 @@ class PlanStatusCountsSerializer(serializers.Serializer[Any]):
     cancelled = serializers.IntegerField()
 
 
-class TechnicianPlanSummarySerializer(PlanStatusCountsSerializer):
+@extend_schema_serializer(deprecate_fields=["planned"])
+class TechnicianPlanSummarySerializer(serializers.Serializer[Any]):
+    """One technician's month. `total` is `done + remaining`; cancelled rows are
+    counted apart and in neither."""
+
     technician = serializers.UUIDField()
     technician_name = serializers.CharField()
-    overdue = serializers.IntegerField()
+    total = serializers.IntegerField(help_text="Rows given to this technician, done or not.")
+    done = serializers.IntegerField()
+    remaining = serializers.IntegerField(help_text="Rows still planned.")
+    overdue = serializers.IntegerField(help_text="Remaining rows past their due date.")
+    cancelled = serializers.IntegerField()
+    planned = serializers.IntegerField(
+        help_text="Deprecated: the same number as `remaining`, under a name that read as "
+        "the total. Use `remaining`."
+    )
 
 
 class PlanSummarySerializer(serializers.Serializer[Any]):
     period = serializers.CharField()
+    #: Every row of the month, cancelled ones included (unchanged since M3).
     total = serializers.IntegerField()
+    done = serializers.IntegerField()
+    #: Planned rows, assigned or not.
+    remaining = serializers.IntegerField()
     by_status = PlanStatusCountsSerializer()
     #: Planned rows nobody is assigned to.
     unassigned = serializers.IntegerField()

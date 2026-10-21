@@ -16,7 +16,12 @@ from rest_framework import serializers
 
 from apps.attachments.models import Attachment
 from apps.elevators.models import Elevator
+from apps.faults.api.v1.serializers import (
+    report_description_field,
+    require_description_unless_trapped,
+)
 from apps.faults.models import Fault
+from apps.inspections.api.v1.serializers import OpenCorrectionMixin
 from apps.inspections.models import Inspection, NonConformity
 from apps.maintenance.models import MaintenanceVisit, MaintenanceVisitItem
 from apps.portal.models import PortalAccount, PortalAccountStatus
@@ -32,7 +37,7 @@ class PortalFileSerializer(serializers.ModelSerializer[Attachment]):
         read_only_fields = fields
 
 
-class PortalElevatorSerializer(serializers.ModelSerializer[Elevator]):
+class PortalElevatorSerializer(OpenCorrectionMixin, serializers.ModelSerializer[Elevator]):
     building_name = serializers.CharField(source="building.name", read_only=True)
 
     class Meta:
@@ -47,6 +52,11 @@ class PortalElevatorSerializer(serializers.ModelSerializer[Elevator]):
             "next_maintenance_date",
             "inspection_label",
             "next_inspection_date",
+            # The open correction deadline: safety-relevant for the building
+            # manager, and the next periodic inspection alone hides it.
+            "correction_deadline",
+            "correction_days_left",
+            "open_nonconformities",
         ]
         read_only_fields = fields
 
@@ -158,7 +168,7 @@ class PortalFaultReportSerializer(StrictSerializer):
     """The public report's fields, from an identified contact."""
 
     elevator = serializers.PrimaryKeyRelatedField(queryset=Elevator.objects.none())
-    description = serializers.CharField(max_length=1000)
+    description = report_description_field()
     someone_trapped = serializers.BooleanField(required=False, default=False)
     elevator_stopped = serializers.BooleanField(required=False, default=False)
 
@@ -172,6 +182,9 @@ class PortalFaultReportSerializer(StrictSerializer):
         if isinstance(account, PortalAccount):
             elevator.queryset = Elevator.objects.filter(building__customer_id=account.customer_id)
         return fields
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        return require_description_unless_trapped(super().validate(attrs))
 
 
 class PortalMeSerializer(serializers.ModelSerializer[PortalAccount]):

@@ -39,6 +39,7 @@ from apps.notifications.services import notify
 from apps.users.models import Role, User, UserCustomer
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
+from core.scheduling import local_today
 
 
 class ChecklistEntry(TypedDict):
@@ -72,6 +73,34 @@ def recalculate_next_maintenance(elevator: Elevator) -> None:
             days=elevator.maintenance_interval_days
         )
     elevator.save(update_fields=["last_maintenance_date", "next_maintenance_date", "updated_at"])
+    refresh_planned_due_dates(elevator)
+
+
+def refresh_planned_due_dates(elevator: Elevator, *, today: date | None = None) -> int:
+    """Move the due date of the lift's open plan rows to follow its record.
+
+    Called whenever `next_maintenance_date` is recalculated, so the plan and
+    the lift never disagree: before this, rows were re-derived only when a visit
+    in their own month changed, and a visit recorded against another month left
+    the row on its old date. Only rows nobody has edited, still planned, in this
+    month or later: an edited row is a person's decision, and a missed row of a
+    past month is history. Returns how many rows moved.
+    """
+    current = period_of(today or local_today())
+    moved = 0
+    rows = PlannedVisit.objects.filter(
+        elevator_id=elevator.pk,
+        status=PlannedVisitStatus.PLANNED,
+        manually_edited=False,
+        period__gte=current,
+    )
+    for row in rows:
+        due = due_date_in(row.period, elevator.next_maintenance_date)
+        if row.due_date != due:
+            row.due_date = due
+            row.save(update_fields=["due_date", "updated_at"])
+            moved += 1
+    return moved
 
 
 @transaction.atomic
@@ -120,18 +149,23 @@ def next_period(period: str) -> str:
 
 
 def due_date_in(period: str, next_maintenance_date: date | None) -> date:
-    """When a lift falls due within `period`.
+    """When a lift falls due, for its row in `period`.
 
-    Its `next_maintenance_date`, clamped into the month: already overdue means
-    the first day, and a date past the month — a visit early in the month moved
-    it on — means the last day, because the obligation for this month is met
-    by a visit at any point in it. A lift never visited has no date to clamp,
-    and the middle of the month leaves room on both sides.
+    Its `next_maintenance_date`, as it is — including a date before the month:
+    a lift that fell due on 8 September and has not been seen is overdue since
+    8 September, and its October row says so. Clamping that to the 1st (which
+    this used to do) printed "01.10" on every carried-over row and contradicted
+    the lift's own record (SL-162, audit P1-01).
+
+    A date past the month — a visit early in the month moved it on — is held to
+    the month's last day, because this month's obligation is met by a visit at
+    any point in it. A lift never visited has no date, and the middle of the
+    month leaves room on both sides.
     """
     first, last = month_bounds(period)
     if next_maintenance_date is None:
         return first.replace(day=15)
-    return min(max(next_maintenance_date, first), last)
+    return min(next_maintenance_date, last)
 
 
 def sync_planned_visit(*, elevator_id: uuid.UUID, day: date) -> None:
@@ -413,7 +447,9 @@ def _follow_the_facts(row: PlannedVisit, *, due: date, default: uuid.UUID | None
     if row.status == PlannedVisitStatus.CANCELLED:
         row.status = PlannedVisitStatus.PLANNED
         changed.append("status")
-    if row.status == PlannedVisitStatus.PLANNED and row.visit_id is None and row.due_date != due:
+    # An attempt linked to the row does not freeze its date: the lift is still
+    # due when its record says it is.
+    if row.status == PlannedVisitStatus.PLANNED and row.due_date != due:
         row.due_date = due
         changed.append("due_date")
     if row.status == PlannedVisitStatus.PLANNED and row.technician_id is None and default:

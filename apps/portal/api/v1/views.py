@@ -35,6 +35,7 @@ from apps.elevators.models import Elevator
 from apps.faults import services as fault_services
 from apps.faults.models import Fault
 from apps.inspections.models import Inspection, NonConformity
+from apps.inspections.services import with_open_correction
 from apps.maintenance.models import MaintenanceVisit
 from apps.portal import services
 from apps.portal.api.v1.serializers import (
@@ -203,7 +204,7 @@ class PortalElevatorViewSet(
     ordering = ["name", "id"]
 
     def get_base_queryset(self) -> QuerySet[Elevator]:
-        return Elevator.objects.select_related("building")
+        return with_open_correction(Elevator.objects.select_related("building"))
 
 
 class PortalVisitFilter(TenantFilterSet):

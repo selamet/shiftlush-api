@@ -16,7 +16,8 @@ from datetime import date
 from typing import Any, TypedDict
 
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, QuerySet, Subquery, Value
+from django.db.models.functions import Coalesce
 
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from apps.attachments.services import link_attachment
@@ -339,3 +340,65 @@ def has_open_nonconformities() -> Q:
             )
         )
     )
+
+
+# The open correction deadline, on the elevator ------------------------------------
+
+
+def with_open_correction(queryset: QuerySet[Elevator]) -> QuerySet[Elevator]:
+    """Annotate each lift with its current inspection's open correction.
+
+    `current_correction_deadline` and `current_open_nonconformities`, read in the
+    list's own query rather than one query per row: the current inspection is
+    the lift's latest, and its open defects include those of the periodic
+    inspection it follows, as everywhere else (`open_nonconformities`).
+    """
+    latest = Inspection.objects.filter(elevator_id=OuterRef("pk")).order_by(
+        "-inspected_on", "-created_at", "-id"
+    )
+    annotated = queryset.annotate(
+        current_inspection_id=Subquery(latest.values("id")[:1]),
+        current_inspection_follows_id=Subquery(latest.values("follows_id")[:1]),
+        current_correction_deadline=Subquery(latest.values("correction_deadline")[:1]),
+    )
+    still_open = (
+        NonConformity.objects.filter(status=NonConformityStatus.OPEN)
+        .filter(
+            Q(inspection_id=OuterRef("current_inspection_id"))
+            | Q(inspection_id=OuterRef("current_inspection_follows_id"))
+        )
+        .order_by()
+        .values("status")
+        .annotate(count=Count("id"))
+        .values("count")[:1]
+    )
+    return annotated.annotate(
+        current_open_nonconformities=Coalesce(
+            Subquery(still_open, output_field=IntegerField()), Value(0)
+        )
+    )
+
+
+def open_correction(elevator: Elevator) -> tuple[date | None, int]:
+    """(deadline, open defects) of the lift's current inspection.
+
+    The deadline only while a defect is open: a red label whose defects are all
+    fixed has nothing left to correct, whatever date the label carried.
+    """
+    annotated = getattr(elevator, "current_open_nonconformities", None)
+    if annotated is not None:
+        deadline = getattr(elevator, "current_correction_deadline", None)
+        count = int(annotated)
+    else:
+        latest = (
+            Inspection.objects.filter(elevator=elevator)
+            .select_related("follows")
+            .order_by("-inspected_on", "-created_at", "-id")
+            .first()
+        )
+        if latest is None:
+            return None, 0
+        deadline, count = latest.correction_deadline, open_nonconformities(latest).count()
+    if count == 0 or deadline is None:
+        return None, count
+    return deadline, count

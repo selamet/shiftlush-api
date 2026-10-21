@@ -1,1 +1,1 @@
-{{ building_name }} binasındaki {{ elevator_name }} asansörünün {{ reference }} numaralı arızası{% if technician_name %} {{ technician_name }} tarafından{% endif %} çözüldü olarak işaretlendi. Kapatmadan önce yapılan işi kontrol edebilirsiniz.
+{{ building_name }} · {{ elevator_name }}: {{ reference }} numaralı arıza{% if technician_name %} {{ technician_name }} tarafından{% endif %} çözüldü olarak işaretlendi. Kapatmadan önce yapılan işi kontrol edebilirsiniz.

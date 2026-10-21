@@ -522,11 +522,8 @@ class TestWhatTheEmailSays:
         message, html = sent_for(
             firm, NotificationKind.MAINTENANCE_OVERDUE, django_capture_on_commit_callbacks
         )
-        assert message.subject == "A Blok asansörünün bakımı gecikti"
-        assert (
-            "A Blok (Yıldız Sitesi) asansörünün bakımı 15.10.2026 tarihinde yapılmalıydı."
-            in message.body
-        )
+        assert message.subject == "Bakım gecikti: A Blok (Yıldız Sitesi)"
+        assert "Yıldız Sitesi · A Blok: bakım 15.10.2026 tarihinde yapılmalıydı." in message.body
         url = f"{settings.FRONTEND_URL}/elevators/{ELEVATOR_ID}"
         assert url in message.body
         assert f'href="{url}"' in html
@@ -920,3 +917,27 @@ class TestAKindThatIsAlwaysEmailed:
         ]
         with company_context(company.id):
             assert not NotificationPreference.objects.exists()
+
+
+@pytest.mark.parametrize("kind", NotificationKind.values)
+def test_no_lift_is_called_a_lift_twice(kind):
+    """SL-162 (audit P2-17): lift names already say "asansör" ("Yük asansörü"),
+    so no template appends the noun after the name."""
+    data = {**SAMPLE_DATA[kind]}
+    if "elevator_name" in data:
+        data["elevator_name"] = "Yük asansörü"
+    subject_type, subject_id = SUBJECT_OF[kind]
+    for part in ("subject.txt", "body.txt", "body.html"):
+        rendered = render_to_string(
+            f"email/notification/{part}",
+            {
+                **{k: v.isoformat() if isinstance(v, date) else v for k, v in data.items()},
+                "first_name": "Nur",
+                "kind": kind,
+                "subject_type": subject_type,
+                "url": notification_url(subject_type=subject_type, subject_id=str(subject_id)),
+                "kind_subject_template": f"email/notification/kinds/{kind}_subject.txt",
+                "kind_body_template": f"email/notification/kinds/{kind}_body.txt",
+            },
+        ).lower()
+        assert "asansörü asansör" not in rendered, (kind, part)

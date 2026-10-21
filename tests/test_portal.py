@@ -837,3 +837,25 @@ class TestThePortalHasItsOwnBudget:
 
         # Another customer's contact has an allowance of their own.
         assert portal_for(world["neighbour"].account).get(url).status_code == 200
+
+
+class TestPortalTrappedReport:
+    """SL-162 (audit P2-20), for the portal's report too."""
+
+    def test_trapped_without_a_description_is_accepted(self, world):
+        response = portal_for(world["ours"].account).post(
+            reverse("portal-fault-list"),
+            {"elevator": str(world["ours"].elevator.pk), "someone_trapped": True},
+            format="json",
+        )
+        assert response.status_code == 201, response.data
+        assert response.data["priority"] == FaultPriority.EMERGENCY
+
+    def test_otherwise_a_description_is_required(self, world):
+        response = portal_for(world["ours"].account).post(
+            reverse("portal-fault-list"),
+            {"elevator": str(world["ours"].elevator.pk)},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [{"field": "description", "code": "required"}]

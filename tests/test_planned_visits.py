@@ -52,6 +52,7 @@ def today() -> Iterator[date]:
         mock.patch("apps.maintenance.tasks.local_today", return_value=TODAY),
         mock.patch("apps.maintenance.api.v1.views.local_today", return_value=TODAY),
         mock.patch("apps.maintenance.api.v1.serializers.local_today", return_value=TODAY),
+        mock.patch("apps.maintenance.services.local_today", return_value=TODAY),
     ):
         yield TODAY
 
@@ -227,13 +228,14 @@ class TestDueDate:
             (None, date(2026, 10, 15)),
             # Inside the month: as it is.
             (date(2026, 10, 25), date(2026, 10, 25)),
-            # Already overdue from last month: the first day.
-            (date(2026, 9, 28), date(2026, 10, 1)),
+            # Already overdue from last month: kept, not clamped to the 1st —
+            # that the lift has been due since 28 September is the fact.
+            (date(2026, 9, 28), date(2026, 9, 28)),
             # Past the month (a visit early in it moved the date): the last day.
             (date(2026, 11, 10), date(2026, 10, 31)),
         ],
     )
-    def test_clamped_into_the_month(self, next_date, due):
+    def test_the_lifts_date_held_to_the_months_end(self, next_date, due):
         assert due_date_in(OCT, next_date) == due
 
     def test_february_ends_on_its_own_last_day(self):
@@ -260,7 +262,8 @@ class TestGeneration:
         plan_maintenance.call()
 
         assert plan.row(plan.a1, OCT).due_date == date(2026, 10, 25)
-        assert plan.row(plan.a1, NOV).due_date == date(2026, 11, 1)
+        # Due 25 October: November's row says so rather than "1 November".
+        assert plan.row(plan.a1, NOV).due_date == date(2026, 10, 25)
         assert plan.row(plan.a2, OCT).due_date == date(2026, 10, 31)
         assert plan.row(plan.a2, NOV).due_date == date(2026, 11, 10)
         # Never visited.
@@ -715,6 +718,8 @@ class TestSummary:
         assert response.data == {
             "period": OCT,
             "total": 3,
+            "done": 1,
+            "remaining": 2,
             "by_status": {"planned": 2, "done": 1, "cancelled": 0},
             "unassigned": 1,
             # B1 (due on the 15th) and A2 (due on the 3rd).
@@ -723,10 +728,12 @@ class TestSummary:
                 {
                     "technician": str(planned.tech_a.id),
                     "technician_name": "Ali X",
-                    "planned": 1,
+                    "total": 2,
                     "done": 1,
-                    "cancelled": 0,
+                    "remaining": 1,
                     "overdue": 1,
+                    "cancelled": 0,
+                    "planned": 1,
                 }
             ],
         }
@@ -751,3 +758,45 @@ class TestAcrossFirms:
 
     def test_period_of(self):
         assert period_of(date(2026, 1, 31)) == "2026-01"
+
+
+class TestTheRowFollowsTheLift:
+    """SL-162 (audit P1-01): a carried-over row keeps the lift's real due date,
+    and moves when the lift's next date does."""
+
+    def test_an_overdue_lift_keeps_its_real_due_date_and_says_how_late(self, plan):
+        plan.set_next_date(plan.a1, date(2026, 9, 8))
+        plan_maintenance.call()
+        assert plan.row(plan.a1, OCT).due_date == date(2026, 9, 8)
+        rows = listed(api_for(plan.owner))
+        (a1,) = [row for row in rows if row["elevator_name"] == "A1"]
+        assert a1["due_date"] == "2026-09-08"
+        assert a1["is_overdue"] is True
+        assert a1["days_overdue"] == 42
+        (a2,) = [row for row in rows if row["elevator_name"] == "A2"]
+        assert a2["days_overdue"] == 5  # never visited: due on the 15th
+
+    def test_a_visit_in_another_month_moves_the_rows_of_this_one(self, plan):
+        plan.set_next_date(plan.a1, date(2026, 9, 8))
+        plan_maintenance.call()
+        # A visit dated in September: it closes no October row, but the lift is
+        # now next due on 30 October, and the October row has to say so.
+        record_visit(plan, plan.a1, date(2026, 9, 30))
+        october = plan.row(plan.a1, OCT)
+        assert october.status == PlannedVisitStatus.PLANNED
+        assert october.due_date == date(2026, 10, 30)
+        assert plan.row(plan.a1, NOV).due_date == date(2026, 10, 30)
+
+    def test_an_edited_row_keeps_its_date(self, plan):
+        plan.set_next_date(plan.a1, date(2026, 9, 8))
+        plan_maintenance.call()
+        row = plan.row(plan.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(manually_edited=True)
+        record_visit(plan, plan.a1, date(2026, 9, 30))
+        assert plan.row(plan.a1).due_date == date(2026, 9, 8)
+
+    def test_the_daily_job_follows_the_lift_too(self, plan):
+        plan_maintenance.call()
+        Elevator.unscoped.filter(pk=plan.a2.pk).update(next_maintenance_date=date(2026, 10, 2))
+        plan_maintenance.call()
+        assert plan.row(plan.a2).due_date == date(2026, 10, 2)
