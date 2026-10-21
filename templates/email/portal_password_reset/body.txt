@@ -1,0 +1,12 @@
+{% autoescape off %}Merhaba {{ full_name }},
+
+Müşteri portalı hesabınız için şifre sıfırlama talebi aldık. Yeni şifrenizi belirlemek için:
+{{ url }}
+
+Bu bağlantı {{ valid_for_hours }} saat geçerlidir ve yalnızca bir kez kullanılabilir.
+
+Bu talebi siz yapmadıysanız bir şey yapmanıza gerek yok; şifreniz değişmez.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi
+{% endautoescape %}

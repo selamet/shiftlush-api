@@ -60,6 +60,7 @@ EXCLUDED_MODELS = frozenset(
         "notifications.Notification",
         "core.IdempotencyKey",
         "users.RefreshSession",
+        "portal.PortalRefreshSession",
         "users.OneTimeToken",
         "address.Province",
         "address.District",

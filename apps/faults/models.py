@@ -20,6 +20,7 @@ from core.models import CompanyOwnedModel
 class FaultChannel(models.TextChoices):
     STAFF = "staff", "Staff"
     PUBLIC_QR = "public_qr", "Public QR report"
+    CUSTOMER_PORTAL = "customer_portal", "Customer portal"
 
 
 class FaultPriority(models.TextChoices):
@@ -61,6 +62,15 @@ class Fault(CompanyOwnedModel):
     channel = models.CharField(max_length=20, choices=FaultChannel.choices)
     reported_by = models.ForeignKey(
         "users.User",
+        on_delete=models.PROTECT,
+        related_name="reported_faults",
+        null=True,
+        blank=True,
+    )
+    #: The customer contact who reported it through the portal (M6). Identified,
+    #: so neither the honeypot nor the merge of public reports applies.
+    reported_by_portal_account = models.ForeignKey(
+        "portal.PortalAccount",
         on_delete=models.PROTECT,
         related_name="reported_faults",
         null=True,

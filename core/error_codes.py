@@ -81,6 +81,22 @@ class ErrorCode(models.TextChoices):
         "NO_ACTIVE_CONTRACT_FOR_ELEVATOR",
         "The named contract is not active or does not cover this elevator",
     )
+    CONTACT_NOT_OF_CUSTOMER = (
+        "CONTACT_NOT_OF_CUSTOMER",
+        "The contact does not belong to this customer",
+    )
+    CONTACT_HAS_NO_EMAIL = (
+        "CONTACT_HAS_NO_EMAIL",
+        "The contact has no e-mail address to send a portal invitation to",
+    )
+    PORTAL_ACCOUNT_ALREADY_ACTIVE = (
+        "PORTAL_ACCOUNT_ALREADY_ACTIVE",
+        "This contact already has an active portal account",
+    )
+    PORTAL_EMAIL_IN_USE = (
+        "PORTAL_EMAIL_IN_USE",
+        "Another active portal account already uses this e-mail address",
+    )
     FAULT_TRANSITION_NOT_ALLOWED = (
         "FAULT_TRANSITION_NOT_ALLOWED",
         "The fault is not in a state this action can be taken from",

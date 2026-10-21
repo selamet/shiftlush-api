@@ -145,6 +145,13 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     },
+    # Running the customer portal (M6): inviting a customer's contacts, seeing
+    # their accounts, closing one. The office's job; a technician and the
+    # accountant have no say in who outside the firm can sign in.
+    "portal_access": {
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    },
     "planned_visit": {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},

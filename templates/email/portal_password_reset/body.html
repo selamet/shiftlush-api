@@ -1,0 +1,13 @@
+{% extends "email/base.html" %}
+{% block preheader %}Portal şifrenizi yenilemek için gönderdiğimiz bağlantı {{ valid_for_hours }} saat geçerli.{% endblock %}
+{% block title %}Portal şifrenizi sıfırlayın{% endblock %}
+{% block content %}
+  <p style="margin:0 0 14px 0;">Merhaba {{ full_name }},</p>
+  <p style="margin:0 0 28px 0;color:#5a5f6b;">Müşteri portalı hesabınız için şifre sıfırlama talebi aldık. Yeni şifrenizi belirlemek için aşağıdaki düğmeyi kullanın.</p>
+  {% include "email/_button.html" with label="Yeni şifre belirle" %}
+  {% include "email/_notice.html" with hours=valid_for_hours single_use=True %}
+  {% include "email/_fallback_link.html" %}
+{% endblock %}
+{% block footer %}
+  Bu talebi siz yapmadıysanız bir şey yapmanıza gerek yok; şifreniz değişmez.
+{% endblock %}

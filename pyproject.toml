@@ -84,6 +84,7 @@ ignore = [
 "**/*serializers.py" = ["RUF012"]
 "**/*views.py" = ["RUF012"]
 "core/viewsets.py" = ["RUF012"]
+"apps/portal/viewsets.py" = ["RUF012"]
 # Test fixtures hold literal credentials by definition; flagging them is noise
 # that trains people to ignore the rule where it matters.
 "tests/**" = ["S105", "S106", "S107", "RUF059"]

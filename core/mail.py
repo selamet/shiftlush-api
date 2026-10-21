@@ -109,6 +109,43 @@ def send_email_verification(*, to: str, first_name: str, token: str) -> None:
     )
 
 
+def send_portal_invitation(
+    *,
+    to: str,
+    full_name: str,
+    company_name: str,
+    customer_name: str,
+    token: str,
+    valid_for_hours: int,
+) -> None:
+    """Invite a customer contact to the portal (M6). Its own route tree."""
+    send_after_commit(
+        template="portal_invitation",
+        subject_key="portal_invitation",
+        to=to,
+        context={
+            "full_name": full_name,
+            "company_name": company_name,
+            "customer_name": customer_name,
+            "url": f"{settings.FRONTEND_URL}/portal/accept/{token}",
+            "valid_for_hours": valid_for_hours,
+        },
+    )
+
+
+def send_portal_password_reset(*, to: str, full_name: str, token: str) -> None:
+    send_after_commit(
+        template="portal_password_reset",
+        subject_key="portal_password_reset",
+        to=to,
+        context={
+            "full_name": full_name,
+            "url": f"{settings.FRONTEND_URL}/portal/password-reset/{token}",
+            "valid_for_hours": 1,
+        },
+    )
+
+
 #: Where a notification's button leads, by its subject type. A type missing here
 #: still gets a working link — to the notification list — rather than a guess.
 NOTIFICATION_SUBJECT_PATHS = {

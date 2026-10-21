@@ -19,13 +19,22 @@ from typing import Any
 import pytest
 from django.template.loader import render_to_string
 
-TEMPLATES = ["invitation", "password_reset", "email_verification"]
+TEMPLATES = [
+    "invitation",
+    "password_reset",
+    "email_verification",
+    # The customer portal's two (M6).
+    "portal_invitation",
+    "portal_password_reset",
+]
 
 CONTEXT: dict[str, Any] = {
     "first_name": "Nur",
     "company_name": "Yükseliş Asansör",
     "url": "https://shiftlush.selamet.dev/invitation/abc123",
     "valid_for_hours": 72,
+    "full_name": "Nur Yılmaz",
+    "customer_name": "Yıldız Sitesi Yönetimi",
 }
 
 #: Anything that looks like unrendered template syntax reaching the reader.

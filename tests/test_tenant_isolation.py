@@ -47,6 +47,7 @@ from apps.faults.models import Fault, FaultChannel
 from apps.inspections.models import Inspection, Label, NonConformity
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
+from apps.portal.authentication import PortalJWTAuthentication
 from apps.properties.models import Building, BuildingType, Complex
 from apps.users import services
 from apps.users.models import Invitation, Role, User, UserCustomer
@@ -232,6 +233,11 @@ def _detail_routes() -> dict[str, frozenset[str]]:
     routes: dict[str, frozenset[str]] = {}
     for name, callback in _named_views().items():
         if not name.endswith("-detail") or not hasattr(callback, "actions"):
+            continue
+        # The customer portal's routes take portal tokens only, so a staff
+        # owner reaching for them proves a 401, not a boundary. They have a
+        # sweep of their own, firm and customer both, in tests/test_portal.py.
+        if PortalJWTAuthentication in callback.cls.authentication_classes:
             continue
         allowed = set(callback.cls.http_method_names)
         routes[name.removesuffix("-detail")] = frozenset(set(callback.actions) & allowed)
@@ -973,6 +979,8 @@ class TestEveryModelIsScoped:
             # tests/test_notifications.py.
             "notifications.Notification",
             "notifications.NotificationPreference",
+            # Isolated by customer as well as by firm: tests/test_portal.py.
+            "portal.PortalAccount",
             "properties.Building",
             "properties.Complex",
             "users.Invitation",

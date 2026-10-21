@@ -46,6 +46,9 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     # M5: the office records inspections; technicians read them.
     ("inspection", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
     ("inspection", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    # M6: who outside the firm may sign in to the portal is the office's call.
+    ("portal_access", READ): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    ("portal_access", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     ("fault_office", READ): set(),
     ("fault_office", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
 }
