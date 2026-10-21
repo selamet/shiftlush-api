@@ -140,6 +140,11 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         read = self.read_serializer_class(write.instance, context=self.get_serializer_context())
         return Response(read.data, status=status.HTTP_201_CREATED)
 
+    # PATCH routes to partial_update; the schema has to be declared there too.
+    @extend_schema(responses={200: MaintenanceVisitReadSerializer})
+    def partial_update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return self.update(request, *args, **kwargs)
+
     @extend_schema(responses={200: MaintenanceVisitReadSerializer})
     @transaction.atomic
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
@@ -322,6 +327,11 @@ class PlannedVisitViewSet(
         if self.action in ("update", "partial_update"):
             return self.write_serializer_class
         return self.serializer_class
+
+    # PATCH routes to partial_update; the schema has to be declared there too.
+    @extend_schema(request=PlannedVisitWriteSerializer, responses={200: PlannedVisitReadSerializer})
+    def partial_update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return self.update(request, *args, **kwargs)
 
     @extend_schema(request=PlannedVisitWriteSerializer, responses={200: PlannedVisitReadSerializer})
     @transaction.atomic

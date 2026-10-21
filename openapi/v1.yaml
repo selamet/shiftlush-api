@@ -2684,13 +2684,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+              $ref: '#/components/schemas/PatchedInspectionEditRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+              $ref: '#/components/schemas/PatchedInspectionEditRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedInspectionCreateRequest'
+              $ref: '#/components/schemas/PatchedInspectionEditRequest'
       security:
       - jwtAuth: []
       responses:
@@ -3316,6 +3316,17 @@ paths:
         required: true
       tags:
       - nonconformities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNonConformityEditRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNonConformityEditRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNonConformityEditRequest'
       security:
       - jwtAuth: []
       responses:
@@ -8140,21 +8151,14 @@ components:
           maxLength: 1000
         billable:
           type: boolean
-    PatchedInspectionCreateRequest:
+    PatchedInspectionEditRequest:
       type: object
-      description: What the inspector's report says. The deadline is the server's.
+      description: |-
+        Corrections to a recorded inspection, and its report PDF.
+
+        The lift and the kind are what the record is; changing them would be a
+        different inspection, so they are not here.
       properties:
-        elevator:
-          type: string
-          format: uuid
-        kind:
-          allOf:
-          - $ref: '#/components/schemas/InspectionKind'
-          default: periodic
-        follows:
-          type: string
-          format: uuid
-          nullable: true
         inspected_on:
           type: string
           format: date
@@ -8169,13 +8173,11 @@ components:
         next_inspection_due:
           type: string
           format: date
+        report:
+          type: string
+          format: uuid
           nullable: true
-          description: Defaults to a year after `inspected_on`; for a follow-up, to
-            the date the inspection it follows set.
-        nonconformities:
-          type: array
-          items:
-            $ref: '#/components/schemas/NonConformityEntryRequest'
+          description: One of this inspection's own attachments, of category `inspection_report`.
     PatchedMaintenanceVisitWriteRequest:
       type: object
       description: |-
@@ -8209,6 +8211,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SetChecklistItemRequest'
+    PatchedNonConformityEditRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        status:
+          $ref: '#/components/schemas/NonConformityStatus'
+        fixed_on:
+          type: string
+          format: date
+          nullable: true
+        description:
+          type: string
+          minLength: 1
     PatchedPlannedVisitWriteRequest:
       type: object
       description: |-

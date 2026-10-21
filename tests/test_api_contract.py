@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 from core.error_codes import ErrorCode
+from tests.test_pagination_ordering import _routed_views
 
 SPEC_PATH = Path(__file__).resolve().parent.parent / "openapi" / "v1.yaml"
 
@@ -226,3 +227,23 @@ class TestEditBodiesAreWhatTheEditValidates:
         operation = spec["paths"]["/api/v1/faults/{id}/"]["patch"]
         body = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
         assert body.endswith("/PatchedFaultEditRequest")
+
+
+class TestAnEditSchemaReachesPatch:
+    """PATCH routes to `partial_update`. A viewset that declares its edit body on
+    `update` alone leaves PATCH described by the default serializer — three
+    endpoints shipped like that (faults #111, inspections, non-conformities)."""
+
+    def test_no_viewset_annotates_update_without_partial_update(self):
+        offenders = []
+        for view in _routed_views():
+            # extend_schema keeps a method's override in `kwargs["schema"]`.
+            update = view.__dict__.get("update")
+            if update is None or "schema" not in (getattr(update, "kwargs", None) or {}):
+                continue
+            partial = view.__dict__.get("partial_update")
+            if partial is None or "schema" not in (getattr(partial, "kwargs", None) or {}):
+                offenders.append(f"{view.__module__}.{view.__qualname__}")
+        # Views whose write serializer already is the edit serializer are fine
+        # either way; listing them here would be noise, so they declare both.
+        assert offenders == []
