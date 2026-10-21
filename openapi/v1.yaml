@@ -2314,13 +2314,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+              $ref: '#/components/schemas/PatchedFaultEditRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+              $ref: '#/components/schemas/PatchedFaultEditRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedFaultCreateRequest'
+              $ref: '#/components/schemas/PatchedFaultEditRequest'
       security:
       - jwtAuth: []
       responses:
@@ -8128,36 +8128,18 @@ components:
           format: int64
         notes:
           type: string
-    PatchedFaultCreateRequest:
+    PatchedFaultEditRequest:
       type: object
-      description: |-
-        A fault entered by somebody at the firm.
-
-        The state, the channel and every timestamp are the server's. A trapped
-        passenger makes it an emergency whatever `priority` says, so a phone form
-        in a hurry cannot under-state one.
+      description: The office's corrections. Stating `billable` marks it overridden.
       properties:
-        elevator:
-          type: string
-          format: uuid
+        priority:
+          $ref: '#/components/schemas/FaultPriority'
         description:
           type: string
           minLength: 1
           maxLength: 1000
-        priority:
-          allOf:
-          - $ref: '#/components/schemas/FaultPriority'
-          default: normal
-        technician:
-          type: string
-          format: uuid
-          nullable: true
-        stopped_elevator:
+        billable:
           type: boolean
-        someone_trapped:
-          type: boolean
-          writeOnly: true
-          default: false
     PatchedInspectionCreateRequest:
       type: object
       description: What the inspector's report says. The deadline is the server's.
