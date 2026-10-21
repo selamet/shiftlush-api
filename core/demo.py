@@ -460,9 +460,13 @@ def _elevators(
     created = []
     counter = 0
     for building in buildings:
-        for _ in range(rng.randint(1, 4)):
+        # Each lift of a building has a name of its own: two lifts both called "left" in one
+        # block is a list nobody can tell apart.
+        names = rng.sample(DEMO["elevator_names"], k=rng.randint(1, 4))
+        for name in names:
             counter += 1
             brand, model = rng.choice(BRANDS)
+            capacity = rng.choice([320, 450, 630, 1000, 1600])
             # A registration number opens with the plate code of the province
             # that issued it, so a hard-coded 34 said Istanbul on every lift no
             # matter where the building was.
@@ -478,7 +482,7 @@ def _elevators(
                 company=company,
                 building=building,
                 registration_number=f"{plate}-{installed.year}-{counter:06d}",
-                name=rng.choice(DEMO["elevator_names"]),
+                name=name,
                 category=rng.choice(
                     [Category.PASSENGER, Category.FREIGHT, Category.PASSENGER_FREIGHT]
                 ),
@@ -489,8 +493,10 @@ def _elevators(
                 # non-conformity and the list screen has to show it.
                 has_car_door=rng.random() > 0.15,
                 machine_room=rng.choice([MachineRoom.PRESENT, MachineRoom.ABSENT]),
-                capacity_kg=rng.choice([320, 450, 630, 1000, 1600]),
-                capacity_persons=rng.choice([4, 6, 8, 13, 21]),
+                capacity_kg=capacity,
+                # EN 81-20: the rated load over 75 kg a person, rounded down.
+                # Drawn apart, they produced "320 kg, 13 persons".
+                capacity_persons=capacity // 75,
                 stop_count=stops,
                 entrance_count=stops,
                 speed_mps=rng.choice(["0.63", "1.00", "1.60"]),

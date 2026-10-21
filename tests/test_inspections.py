@@ -680,3 +680,85 @@ def test_nonconformity_model_keeps_its_fault(shop):
         row = NonConformity.objects.select_related("fault").get(pk=nc_id)
     assert row.fault is not None
     assert row.fault.priority == FaultPriority.HIGH
+
+
+class TestTheOpenCorrectionOnTheElevator:
+    """SL-162 (audit P1-06): the legal deadline, not only the next inspection."""
+
+    def test_list_detail_and_portal_carry_it(self, shop):
+        body = recorded(
+            shop, label=Label.RED, inspected_on="2026-10-10", nonconformities=[nc(Label.RED)]
+        )
+        detail = api_for(shop.owner).get(reverse("elevator-detail", args=[shop.elevator.id])).data
+        assert detail["correction_deadline"] == "2026-12-09"
+        assert detail["correction_days_left"] == 50
+        assert detail["open_nonconformities"] == 1
+        rows = api_for(shop.owner).get(reverse("elevator-list")).data["results"]
+        (row,) = [r for r in rows if r["id"] == str(shop.elevator.id)]
+        assert (row["correction_deadline"], row["open_nonconformities"]) == ("2026-12-09", 1)
+
+        from apps.customers.models import CustomerContact
+        from apps.portal import services as portal_services
+
+        with company_context(shop.company.id):
+            contact = CustomerContact.objects.create(
+                company=shop.company, customer=shop.customer, full_name="Y", email="y@example.com"
+            )
+            _, token = portal_services.invite(customer=shop.customer, contact=contact)
+        account = portal_services.accept(token=token, password="correct-horse-battery")
+        from tests.test_portal import portal_for
+
+        portal = portal_for(account).get(reverse("portal-elevator-detail", args=[shop.elevator.id]))
+        assert portal.data["correction_deadline"] == "2026-12-09"
+        assert portal.data["open_nonconformities"] == 1
+        assert body["id"]
+
+    def test_nothing_once_every_defect_is_fixed(self, shop):
+        body = recorded(shop, label=Label.YELLOW, nonconformities=[nc()])
+        api_for(shop.ops).patch(
+            reverse("nonconformity-detail", args=[first_nc(body)]),
+            {"status": NonConformityStatus.FIXED},
+            format="json",
+        )
+        detail = api_for(shop.owner).get(reverse("elevator-detail", args=[shop.elevator.id])).data
+        assert detail["correction_deadline"] is None
+        assert detail["correction_days_left"] is None
+        assert detail["open_nonconformities"] == 0
+
+    def test_a_follow_up_counts_the_originals_defects(self, shop):
+        original = recorded(
+            shop, label=Label.RED, inspected_on="2026-07-01", nonconformities=[nc(Label.RED)]
+        )
+        recorded(
+            shop,
+            kind=InspectionKind.FOLLOW_UP,
+            follows=original["id"],
+            label=Label.YELLOW,
+            inspected_on="2026-09-01",
+        )
+        detail = api_for(shop.owner).get(reverse("elevator-detail", args=[shop.elevator.id])).data
+        assert detail["correction_deadline"] == "2026-10-29"
+        assert detail["open_nonconformities"] == 1
+
+    def test_the_list_does_not_query_per_lift(self, shop):
+        client = api_for(shop.owner)
+        recorded(shop, label=Label.RED, nonconformities=[nc(Label.RED)])
+        with CaptureQueriesContext(connection) as one:
+            client.get(reverse("elevator-list"))
+        with company_context(shop.company.id):
+            for n in range(4):
+                lift = Elevator.objects.create(
+                    company=shop.company, building=shop.building, qr_token=f"{n}" * 24, name=f"L{n}"
+                )
+                from apps.inspections import services as inspection_services
+
+                inspection_services.record(
+                    elevator=lift,
+                    inspected_on=TODAY,
+                    label=Label.YELLOW,
+                    by=shop.owner,
+                    nonconformities=[{"description": "x", "severity": Label.YELLOW}],
+                )
+        with CaptureQueriesContext(connection) as five:
+            client.get(reverse("elevator-list"))
+        assert len(five) == len(one)

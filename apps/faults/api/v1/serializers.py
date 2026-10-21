@@ -206,10 +206,35 @@ class CancelSerializer(serializers.Serializer[Any]):
     reason = serializers.CharField(max_length=1000)
 
 
+def require_description_unless_trapped(attrs: dict[str, Any]) -> dict[str, Any]:
+    """A description is required — except when somebody is trapped.
+
+    A resident who has ticked "somebody is trapped" must never be held at the
+    form by a text box (audit P2-20): the tick is the whole report. Every other
+    report needs a description, which is what the technician reads first.
+    """
+    if not attrs.get("someone_trapped") and not attrs.get("description", "").strip():
+        raise serializers.ValidationError(
+            {"description": serializers.ErrorDetail("This field is required.", code="required")}
+        )
+    return attrs
+
+
+#: Optional at the field, required by `require_description_unless_trapped`.
+def report_description_field() -> serializers.CharField:
+    return serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="What happened. Required unless `someone_trapped` is true.",
+    )
+
+
 class PublicFaultReportSerializer(serializers.Serializer[Any]):
     """What a resident standing at the lift can tell us, and nothing else."""
 
-    description = serializers.CharField(max_length=1000)
+    description = report_description_field()
     someone_trapped = serializers.BooleanField(required=False, default=False)
     elevator_stopped = serializers.BooleanField(required=False, default=False)
     reporter_name = serializers.CharField(
@@ -227,6 +252,9 @@ class PublicFaultReportSerializer(serializers.Serializer[Any]):
         default="",
         help_text="Leave empty. A form that fills this in is treated as automated.",
     )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        return require_description_unless_trapped(super().validate(attrs))
 
 
 class PublicFaultReceiptSerializer(serializers.Serializer[Any]):

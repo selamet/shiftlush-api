@@ -23,6 +23,7 @@ from apps.elevators.api.v1.serializers import (
 from apps.elevators.labels import PdfRenderingUnavailable, render_labels
 from apps.elevators.models import Elevator
 from apps.elevators.services import regenerate_qr_token, save_with_qr_token
+from apps.inspections.services import with_open_correction
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse, ServiceUnavailable
 from core.filters import TenantFilterSet
@@ -74,7 +75,7 @@ class ElevatorViewSet(TenantViewSet[Elevator]):
         return super().get_serializer_class()
 
     def get_base_queryset(self) -> QuerySet[Elevator]:
-        queryset = Elevator.objects.select_related(*JOINS)
+        queryset = with_open_correction(Elevator.objects.select_related(*JOINS))
         if self.action == "retrieve":
             # Only the detail response carries the covering contract. Prefetching
             # it for the list would add a query and a join to the heaviest screen

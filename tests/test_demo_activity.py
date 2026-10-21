@@ -35,6 +35,7 @@ from apps.maintenance.models import (
     PlannedVisitStatus,
     VisitStatus,
 )
+from apps.maintenance.services import due_date_in as period_due
 from apps.maintenance.services import period_of
 from apps.notifications.models import Notification, NotificationKind
 from apps.portal import services as portal_services
@@ -434,3 +435,38 @@ class TestOneStrayRowBlocksNothing:
             assert Inspection.objects.values("elevator").distinct().count() == lifts
             assert Inspection.objects.filter(label=Label.RED).exists()
             assert PortalAccount.objects.count() == 2
+
+
+class TestSeedConsistency:
+    """SL-162 (audit P3-16): a demo is believed only if it adds up."""
+
+    def test_capacity_names_notes_and_people(self, seeded):
+        from apps.customers.models import CustomerContact
+
+        with company_context(seeded.id):
+            lifts = list(Elevator.objects.all())
+            assert all(
+                lift.capacity_kg is not None and lift.capacity_persons == lift.capacity_kg // 75
+                for lift in lifts
+            )
+            by_building: dict[Any, list[str]] = {}
+            for lift in lifts:
+                by_building.setdefault(lift.building_id, []).append(lift.name)
+            assert all(len(names) == len(set(names)) for names in by_building.values())
+            notes = demo_activity.ACTIVITY["attention_notes"]
+            findings = MaintenanceVisitItem.objects.filter(result=ChecklistResult.ATTENTION_NEEDED)
+            assert findings.exists()
+            assert all(item.note == notes[item.item] for item in findings)
+            staff = {u.full_name for u in User.objects.filter(company=seeded)}
+            contacts = set(CustomerContact.objects.values_list("full_name", flat=True))
+            assert staff.isdisjoint(contacts)
+
+    def test_plan_and_lift_agree(self, seeded):
+        today = local_today()
+        with company_context(seeded.id):
+            for row in PlannedVisit.objects.filter(
+                status=PlannedVisitStatus.PLANNED, manually_edited=False
+            ).select_related("elevator"):
+                expected = period_due(row.period, row.elevator.next_maintenance_date)
+                assert row.due_date == expected, (row.elevator, row.period)
+        assert today

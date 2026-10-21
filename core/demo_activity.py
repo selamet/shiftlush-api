@@ -264,16 +264,20 @@ def _contract_lifecycle(firm: _Firm, rng: random.Random, today: date, activity: 
 
 
 def _checklist(rng: random.Random) -> list[maintenance.ChecklistEntry]:
+    """A full checklist, mostly OK; now and then a finding, noted on its own item.
+
+    A note is only ever written under the item it is about — an intercom remark
+    under "floor leveling accuracy" is the kind of slip that makes a demo stop
+    being believed (audit P3-16) — so only items with a note in demo.json can
+    come out "attention needed".
+    """
+    notes: dict[str, str] = ACTIVITY["attention_notes"]
     entries: list[maintenance.ChecklistEntry] = []
     for item in ChecklistItem.values:
         roll = rng.random()
-        if roll < 0.06:
+        if roll < 0.08 and item in notes:
             entries.append(
-                {
-                    "item": item,
-                    "result": ChecklistResult.ATTENTION_NEEDED,
-                    "note": rng.choice(ACTIVITY["attention_notes"]),
-                }
+                {"item": item, "result": ChecklistResult.ATTENTION_NEEDED, "note": notes[item]}
             )
         elif roll < 0.09 and item == ChecklistItem.AUTOMATIC_RESCUE_DEVICE:
             entries.append({"item": item, "result": ChecklistResult.NOT_APPLICABLE, "note": ""})
@@ -361,19 +365,20 @@ def _plan(
     offsets: dict[Any, int | None],
     activity: Activity,
 ) -> int:
-    """This month's and next month's plan, then the newest round of visits.
+    """The newest round of visits, then this month's and next month's plan.
 
-    The rows are the real generator's. The newest visits then close them through
-    the same path a recorded visit takes. The neglected lifts get no visit and
-    stay open and overdue; one lift's visit this month was only an attempt
-    ("tried, not done"); two rows are handed back to the office unassigned.
+    Visits first and the plan after (audit P3-16): the generator then reads
+    each lift's final next-maintenance date, so plan and lift agree from the
+    start, and the month's visits close their rows through the same path a
+    recorded visit takes. The neglected lifts get no visit and stay open and
+    overdue; one lift's visit this month was only an attempt ("tried, not
+    done"); two rows are handed back to the office unassigned.
     """
     before = PlannedVisit.objects.count()
-    maintenance.generate_plan(today=today)
     if not offsets:
-        # Every lift already had its visits: nothing of this step is missing.
-        # (The rows may be the daily job's, on a tenant that has been running
-        # since M3 — the newest visits below still close them.)
+        # Every lift already had its visits: nothing of this step is missing
+        # beyond what the generator itself adds.
+        maintenance.generate_plan(today=today)
         return PlannedVisit.objects.count() - before
 
     month_start = today.replace(day=1)
@@ -385,9 +390,10 @@ def _plan(
         status = VisitStatus.INCOMPLETE if tried else VisitStatus.COMPLETED
         if _visit(firm, rng, elevator, today - timedelta(days=offset), status):
             activity.visits += 1
-    # A visit from before this month started was recorded before its row
-    # existed; nothing to close there, but this re-checks the month's rows the
-    # way the closing path would have.
+    maintenance.generate_plan(today=today)
+    # This month's visits were recorded before their rows existed (on a new
+    # tenant), or against the daily job's rows (on the live one); either way
+    # the closing path runs over them now that the rows are there.
     for visit in MaintenanceVisit.objects.filter(visit_date__gte=month_start):
         maintenance.sync_plan_for_visit(visit)
 

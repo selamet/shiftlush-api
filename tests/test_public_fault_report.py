@@ -287,3 +287,23 @@ class TestTwoFirstReportsAtOnce:
 
         assert answers == [202, 202]
         assert Fault.unscoped.count() == 1
+
+
+class TestATrappedPassengerNeedsNoWords:
+    """SL-162 (audit P2-20): the tick is the whole report."""
+
+    def test_trapped_without_a_description_is_accepted(self, shop):
+        response = APIClient().post(
+            url(shop.elevator.qr_token), {"someone_trapped": True}, format="json"
+        )
+        assert response.status_code == 202, response.data
+        (fault,) = faults()
+        assert fault.priority == FaultPriority.EMERGENCY
+        assert fault.description == ""
+
+    @pytest.mark.parametrize("body", [{}, {"description": "  "}, {"elevator_stopped": True}])
+    def test_otherwise_a_description_is_required(self, shop, body):
+        response = APIClient().post(url(shop.elevator.qr_token), body, format="json")
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [{"field": "description", "code": "required"}]
+        assert faults() == []

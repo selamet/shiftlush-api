@@ -4794,7 +4794,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/PublicFaultReportRequest'
-        required: true
       responses:
         '202':
           content:
@@ -6639,6 +6638,13 @@ components:
         * `vehicle` - Vehicle
     ElevatorDetail:
       type: object
+      description: |-
+        The lift's open correction deadline, for every elevator read.
+
+        A red or yellow label carries a legal deadline that ends in a seal, and the
+        next periodic inspection a year away is false reassurance beside it (audit
+        P1-06). Read from the annotations of `inspections.services.with_open_correction`
+        on a list; worked out for the one lift otherwise.
       properties:
         id:
           type: string
@@ -6788,6 +6794,24 @@ components:
           format: date
           readOnly: true
           nullable: true
+        correction_deadline:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: The current inspection's correction deadline while a defect
+            is still open; null when nothing is open.
+        correction_days_left:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Days until `correction_deadline` by the Istanbul calendar;
+            negative once passed; null when nothing is open.
+        open_nonconformities:
+          type: integer
+          readOnly: true
+          description: Open defects of the current inspection (and of the periodic
+            one a follow-up follows).
         inspection_body:
           type: string
           readOnly: true
@@ -6834,6 +6858,8 @@ components:
       - commissioning_date
       - complex_name
       - control_type
+      - correction_days_left
+      - correction_deadline
       - created_at
       - current_contract
       - customer_id
@@ -6860,6 +6886,7 @@ components:
       - next_inspection_date
       - next_maintenance_date
       - notes
+      - open_nonconformities
       - pit_depth_mm
       - qr_token
       - qr_token_generated_at
@@ -6924,6 +6951,24 @@ components:
           format: date
           readOnly: true
           nullable: true
+        correction_deadline:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: The current inspection's correction deadline while a defect
+            is still open; null when nothing is open.
+        correction_days_left:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Days until `correction_deadline` by the Istanbul calendar;
+            negative once passed; null when nothing is open.
+        open_nonconformities:
+          type: integer
+          readOnly: true
+          description: Open defects of the current inspection (and of the periodic
+            one a follow-up follows).
         brand:
           type: string
           readOnly: true
@@ -6935,6 +6980,8 @@ components:
       - building_id
       - building_name
       - category
+      - correction_days_left
+      - correction_deadline
       - customer_name
       - has_car_door
       - id
@@ -6942,6 +6989,7 @@ components:
       - model
       - name
       - next_inspection_date
+      - open_nonconformities
       - registration_number
       - status
       - stop_count
@@ -9700,6 +9748,10 @@ components:
           type: string
         total:
           type: integer
+        done:
+          type: integer
+        remaining:
+          type: integer
         by_status:
           $ref: '#/components/schemas/PlanStatusCounts'
         unassigned:
@@ -9712,8 +9764,10 @@ components:
             $ref: '#/components/schemas/TechnicianPlanSummary'
       required:
       - by_status
+      - done
       - overdue
       - period
+      - remaining
       - technicians
       - total
       - unassigned
@@ -9809,6 +9863,13 @@ components:
           type: boolean
           description: Still planned and past its due date, by the Istanbul calendar.
           readOnly: true
+        days_overdue:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: 'Days since `due_date` while the row is still planned and past
+            it; null otherwise. The due date can fall before the row''s own month:
+            that is how long the lift has been overdue.'
         manually_edited:
           type: boolean
           readOnly: true
@@ -9826,6 +9887,7 @@ components:
       - created_at
       - customer
       - customer_name
+      - days_overdue
       - district
       - district_name
       - due_date
@@ -9940,6 +10002,13 @@ components:
         * `inactive` - Inactive
     PortalElevator:
       type: object
+      description: |-
+        The lift's open correction deadline, for every elevator read.
+
+        A red or yellow label carries a legal deadline that ends in a seal, and the
+        next periodic inspection a year away is false reassurance beside it (audit
+        P1-06). Read from the annotations of `inspections.services.with_open_correction`
+        on a list; worked out for the one lift otherwise.
       properties:
         id:
           type: string
@@ -9978,15 +10047,36 @@ components:
           format: date
           readOnly: true
           nullable: true
+        correction_deadline:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: The current inspection's correction deadline while a defect
+            is still open; null when nothing is open.
+        correction_days_left:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Days until `correction_deadline` by the Istanbul calendar;
+            negative once passed; null when nothing is open.
+        open_nonconformities:
+          type: integer
+          readOnly: true
+          description: Open defects of the current inspection (and of the periodic
+            one a follow-up follows).
       required:
       - building
       - building_name
+      - correction_days_left
+      - correction_deadline
       - id
       - inspection_label
       - last_maintenance_date
       - name
       - next_inspection_date
       - next_maintenance_date
+      - open_nonconformities
       - status
     PortalFault:
       type: object
@@ -10090,7 +10180,8 @@ components:
           format: uuid
         description:
           type: string
-          minLength: 1
+          default: ''
+          description: What happened. Required unless `someone_trapped` is true.
           maxLength: 1000
         someone_trapped:
           type: boolean
@@ -10099,7 +10190,6 @@ components:
           type: boolean
           default: false
       required:
-      - description
       - elevator
     PortalInspection:
       type: object
@@ -10396,7 +10486,8 @@ components:
       properties:
         description:
           type: string
-          minLength: 1
+          default: ''
+          description: What happened. Required unless `someone_trapped` is true.
           maxLength: 1000
         someone_trapped:
           type: boolean
@@ -10416,8 +10507,6 @@ components:
           type: string
           default: ''
           description: Leave empty. A form that fills this in is treated as automated.
-      required:
-      - description
     RegisterRequest:
       type: object
       description: |-
@@ -10607,27 +10696,42 @@ components:
       - name
     TechnicianPlanSummary:
       type: object
+      description: |-
+        One technician's month. `total` is `done + remaining`; cancelled rows are
+        counted apart and in neither.
       properties:
-        planned:
-          type: integer
-        done:
-          type: integer
-        cancelled:
-          type: integer
         technician:
           type: string
           format: uuid
         technician_name:
           type: string
+        total:
+          type: integer
+          description: Rows given to this technician, done or not.
+        done:
+          type: integer
+        remaining:
+          type: integer
+          description: Rows still planned.
         overdue:
           type: integer
+          description: Remaining rows past their due date.
+        cancelled:
+          type: integer
+        planned:
+          type: integer
+          description: 'Deprecated: the same number as `remaining`, under a name that
+            read as the total. Use `remaining`.'
+          deprecated: true
       required:
       - cancelled
       - done
       - overdue
       - planned
+      - remaining
       - technician
       - technician_name
+      - total
     TerminateRequest:
       type: object
       properties:

@@ -35,25 +35,25 @@
     [
       "Dadaş Konakları Site Yönetimi",
       "complex_management",
-      "Ayşe Demir",
+      "Gülay Erdem",
       "7000000007"
     ],
     [
       "{province} Ticaret Merkezi A.Ş.",
       "corporate",
-      "Hakan Çelik",
+      "Serkan Tunç",
       "7000000015"
     ],
     [
       "{province} Belediyesi",
       "public",
-      "Zeynep Kaya",
+      "Nilgün Akın",
       "7000000023"
     ],
     [
       "Kardelen Sitesi Yönetimi",
       "complex_management",
-      "Emre Şahin",
+      "Oğuz Kılıç",
       "7000000031"
     ],
     [
@@ -163,12 +163,16 @@
       "Makine dairesi temizlendi, acil aydınlatma bataryası test edildi.",
       "Kabin butonları ve kat göstergeleri kontrol edildi."
     ],
-    "attention_notes": [
-      "Fren balatasında aşınma var, bir sonraki bakımda değiştirilmeli.",
-      "Kat kapısı kilidinde gecikme, takip edilecek.",
-      "Kuyu dibinde su birikintisi; yönetime bildirildi.",
-      "Acil durum interkomu cızırtılı çalışıyor."
-    ],
+    "attention_notes": {
+      "brake_system": "Fren balatasında aşınma var, bir sonraki bakımda değiştirilmeli.",
+      "landing_doors": "Kat kapısı kilidinde gecikme, takip edilecek.",
+      "pit_condition": "Kuyu dibinde su birikintisi; yönetime bildirildi.",
+      "emergency_alarm_intercom": "Acil durum interkomu cızırtılı çalışıyor.",
+      "hoisting_ropes": "Halatlarda yer yer tel kopması var, izlenecek.",
+      "car_lighting": "Kabin aydınlatmasında bir armatür yanmıyor.",
+      "leveling_accuracy": "Kat seviyelemesinde 1-2 cm sapma var, ayar gerekiyor.",
+      "machine_room_condition": "Makine dairesi havalandırması yetersiz, yönetime bildirildi."
+    },
     "parts": [
       "Kapı kilit kontağı",
       "Fren balatası seti",

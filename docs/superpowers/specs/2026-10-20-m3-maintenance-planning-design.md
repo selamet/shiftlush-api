@@ -41,10 +41,16 @@ The job runs daily on the M0 scheduler and is idempotent through the unique
 constraint. It makes sure **this month and next month** have a row for every
 lift covered by an `ACTIVE` contract:
 
-- **Due date.** The lift's `next_maintenance_date` (M1), clamped into the
-  month. If the lift has never been visited, the 15th. If its next date is
-  already past the month (a visit early in the month moved it), the month's
-  last day.
+- **Due date.** The lift's `next_maintenance_date` (M1), as it is. A date
+  before the month is kept: an October row can be due on 8 September, and that
+  is the overdue fact (amended by SL-162; it used to be clamped to the 1st,
+  which printed "01.10" on every carried-over row). If the lift has never been
+  visited, the 15th. If its next date is already past the month (a visit early
+  in the month moved it), the month's last day.
+- **The row follows the lift.** Whenever the lift's `next_maintenance_date` is
+  recalculated, its unedited planned rows for this month and later take the new
+  due date (SL-162), and the daily job does the same. The read side carries
+  `days_overdue`.
 - **Default technician.** If exactly one active technician is assigned to the
   lift's customer, that person. Otherwise unassigned: the office decides, and
   the plan screen shows the unassigned rows first.
@@ -119,8 +125,8 @@ with `due_date < today`) on its own.
 ## Decisions made without the user
 
 - One row per lift per month, generated for this month and next.
-- Due date: `next_maintenance_date` clamped into the month, otherwise the
-  15th.
+- Due date: `next_maintenance_date` as it is (held to the month's end if
+  later), otherwise the 15th.
 - The default technician is the only one assigned to the customer, otherwise
   nobody.
 - A manually edited row is never overwritten or auto-cancelled.

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, cast
 
 from django.db import models
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.attachments.models import Attachment
@@ -265,3 +267,50 @@ class DueItemSerializer(serializers.Serializer[Any]):
     inspection = serializers.UUIDField(allow_null=True)
     open_nonconformities = serializers.IntegerField()
     sealed_if_missed = serializers.BooleanField()
+
+
+class OpenCorrectionMixin(serializers.Serializer[Any]):
+    """The lift's open correction deadline, for every elevator read.
+
+    A red or yellow label carries a legal deadline that ends in a seal, and the
+    next periodic inspection a year away is false reassurance beside it (audit
+    P1-06). Read from the annotations of `inspections.services.with_open_correction`
+    on a list; worked out for the one lift otherwise.
+    """
+
+    correction_deadline = serializers.SerializerMethodField(
+        help_text="The current inspection's correction deadline while a defect is still "
+        "open; null when nothing is open."
+    )
+    correction_days_left = serializers.SerializerMethodField(
+        help_text="Days until `correction_deadline` by the Istanbul calendar; negative "
+        "once passed; null when nothing is open."
+    )
+    open_nonconformities = serializers.SerializerMethodField(
+        help_text="Open defects of the current inspection (and of the periodic one a "
+        "follow-up follows)."
+    )
+
+    def _open(self, elevator: Elevator) -> tuple[date | None, int]:
+        from apps.inspections.services import open_correction
+
+        # Kept on the instance: three fields ask, and a lift read without the
+        # annotations (a create or edit response) should be worked out once.
+        known: tuple[date | None, int] | None = getattr(elevator, "_open_correction", None)
+        if known is None:
+            known = open_correction(elevator)
+            elevator._open_correction = known  # type: ignore[attr-defined]
+        return known
+
+    @extend_schema_field(serializers.DateField(allow_null=True))
+    def get_correction_deadline(self, elevator: Elevator) -> str | None:
+        # ISO, like every other date this API returns.
+        deadline = self._open(elevator)[0]
+        return deadline.isoformat() if deadline else None
+
+    def get_correction_days_left(self, elevator: Elevator) -> int | None:
+        deadline = self._open(elevator)[0]
+        return None if deadline is None else (deadline - local_today()).days
+
+    def get_open_nonconformities(self, elevator: Elevator) -> int:
+        return self._open(elevator)[1]

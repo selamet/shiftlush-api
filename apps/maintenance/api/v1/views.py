@@ -413,6 +413,8 @@ class PlannedVisitViewSet(
             "period": request.query_params["period"],
             "total": totals["total"],
             "by_status": {name: totals[name] for name in per_status},
+            "done": totals["done"],
+            "remaining": totals["planned"],
             "unassigned": totals["unassigned"],
             "overdue": totals["overdue"],
             "technicians": [
@@ -421,8 +423,12 @@ class PlannedVisitViewSet(
                     "technician_name": (
                         f"{entry['technician__first_name']} {entry['technician__last_name']}"
                     ).strip(),
+                    "total": entry["planned"] + entry["done"],
+                    "done": entry["done"],
+                    "remaining": entry["planned"],
                     "overdue": entry["overdue"],
-                    **{name: entry[name] for name in per_status},
+                    "cancelled": entry["cancelled"],
+                    "planned": entry["planned"],
                 }
                 for entry in technicians
             ],

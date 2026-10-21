@@ -1,1 +1,1 @@
-ACİL: {{ elevator_name }} ({{ building_name }}) asansöründe mahsur kalan var
+ACİL: {{ building_name }} · {{ elevator_name }} — kabinde mahsur kalan var
