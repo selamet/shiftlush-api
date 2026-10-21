@@ -215,6 +215,32 @@ run against databases holding real records, and it writes into the demo tenant
 only — the tenant boundary is what guarantees that, not the names it picks. On a
 tenant that already holds colleagues or customers it writes nothing and says so.
 
+The generated data covers every module: a few months of maintenance visits, this
+month's and next month's plan, faults in every state (an open emergency on the
+board), inspections with a red label and approaching correction deadlines, a
+customer portal account, invoice drafts (some issued, one paid) and the in-app
+notifications all of that raises. It is produced by the real services, inside the
+demo tenant only, and **sends no e-mail** — not even to the demo owner's address.
+
+The portal side of the demonstration signs in at `/portal` as
+`yonetim@demo.shiftlush.local` / `demo-portal-2026` (a customer contact of the
+demo firm). The commands print both logins when they finish.
+
+**Bringing an existing demo tenant up to date.** A demo tenant filled before
+Phase 2 holds only customers, buildings, lifts and contracts, and
+`create_demo_account --with-data` will not touch a tenant that already holds
+records. This adds the rest:
+
+```bash
+docker exec shiftlush-api python manage.py refresh_demo_data
+```
+
+It finds the tenant from `demo@selamet.dev` (`--email` to name another owner) and
+refuses unless that company is `ShiftLush Demo`; it never reads or writes another
+firm. Each module is filled only if it is empty in that tenant, so a second run
+adds nothing and reports zeros. No e-mail is sent. Run it once after deploying
+SL-157; the daily jobs keep the demo current from then on.
+
 The password is checked against `AUTH_PASSWORD_VALIDATORS` before the account is
 created, so `--password` cannot quietly install one below the policy the product
 enforces on its customers.

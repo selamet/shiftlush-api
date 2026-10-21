@@ -53,7 +53,7 @@ from django.db import transaction
 
 from apps.companies.models import Company
 from apps.users.models import Role, User
-from core import demo
+from core import demo, demo_activity
 from core.context import company_context, system_context
 
 DEFAULT_EMAIL = "demo@selamet.dev"
@@ -179,5 +179,10 @@ class Command(BaseCommand):
         self.stdout.write(
             f"filled {company.display_name}: users {filled.users}  "
             f"customers {filled.customers}  buildings {filled.buildings}  "
-            f"elevators {filled.elevators}  contracts {filled.contracts}"
+            f"elevators {filled.elevators}  contracts {filled.contracts}  "
+            f"visits {filled.activity.visits}  faults {filled.activity.faults}  "
+            f"inspections {filled.activity.inspections}  drafts {filled.activity.drafts}"
         )
+        portal = demo_activity.portal_login(company)
+        if portal:
+            self.stdout.write(f"portal sign in: {portal} / {demo_activity.PORTAL_PASSWORD}")

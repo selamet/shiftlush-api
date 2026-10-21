@@ -6,6 +6,8 @@ M3: docs/superpowers/specs/2026-10-20-m3-maintenance-planning-design.md (plan).
 
 from __future__ import annotations
 
+from datetime import date
+
 from django.tasks import task
 
 from apps.contracts.models import ContractStatus
@@ -27,49 +29,55 @@ def maintenance_overdue() -> int:
     so recording a visit moves it and a later miss is a new notice, while the
     same miss is not repeated every morning until somebody gets there.
     """
-    today = local_today()
-    raised = 0
     with system_context():
-        overdue = (
-            Elevator.objects.filter(
-                next_maintenance_date__lt=today,
-                contract_lines__removed_at__isnull=True,
-                contract_lines__contract__status=ContractStatus.ACTIVE,
-            )
-            .select_related("building")
-            .distinct()
-            .order_by("next_maintenance_date", "id")
+        return maintenance_overdue_in_scope(today=local_today())
+
+
+def maintenance_overdue_in_scope(*, today: date) -> int:
+    """`maintenance_overdue`'s work, in whatever tenant scope the caller has open.
+
+    The task runs it across every firm under the system context; the demo
+    seeding (core.demo_activity) runs it for the demo company alone.
+    """
+    raised = 0
+    overdue = (
+        Elevator.objects.filter(
+            next_maintenance_date__lt=today,
+            contract_lines__removed_at__isnull=True,
+            contract_lines__contract__status=ContractStatus.ACTIVE,
         )
-        for elevator in overdue:
-            assert elevator.next_maintenance_date is not None
-            office = User.objects.filter(
-                company_id=elevator.company_id,
-                role__in=[Role.OWNER, Role.ADMIN, Role.OPERATIONS],
-                is_active=True,
+        .select_related("building")
+        .distinct()
+        .order_by("next_maintenance_date", "id")
+    )
+    for elevator in overdue:
+        assert elevator.next_maintenance_date is not None
+        office = User.objects.filter(
+            company_id=elevator.company_id,
+            role__in=[Role.OWNER, Role.ADMIN, Role.OPERATIONS],
+            is_active=True,
+        )
+        technicians = User.objects.filter(
+            company_id=elevator.company_id,
+            role=Role.TECHNICIAN,
+            is_active=True,
+            customer_assignments__customer_id=elevator.building.customer_id,
+            customer_assignments__is_deleted=False,
+        )
+        raised += len(
+            notify(
+                kind=NotificationKind.MAINTENANCE_OVERDUE,
+                recipients=[*office, *technicians],
+                subject_type="elevator",
+                subject_id=elevator.id,
+                data={
+                    "elevator_name": elevator.name,
+                    "building_name": elevator.building.name,
+                    "next_maintenance_date": elevator.next_maintenance_date.isoformat(),
+                },
+                dedupe_key=(f"overdue:{elevator.id}:{elevator.next_maintenance_date.isoformat()}"),
             )
-            technicians = User.objects.filter(
-                company_id=elevator.company_id,
-                role=Role.TECHNICIAN,
-                is_active=True,
-                customer_assignments__customer_id=elevator.building.customer_id,
-                customer_assignments__is_deleted=False,
-            )
-            raised += len(
-                notify(
-                    kind=NotificationKind.MAINTENANCE_OVERDUE,
-                    recipients=[*office, *technicians],
-                    subject_type="elevator",
-                    subject_id=elevator.id,
-                    data={
-                        "elevator_name": elevator.name,
-                        "building_name": elevator.building.name,
-                        "next_maintenance_date": elevator.next_maintenance_date.isoformat(),
-                    },
-                    dedupe_key=(
-                        f"overdue:{elevator.id}:{elevator.next_maintenance_date.isoformat()}"
-                    ),
-                )
-            )
+        )
     return raised
 
 

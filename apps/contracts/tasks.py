@@ -9,7 +9,7 @@ notification carries a dedupe key.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from django.tasks import task
@@ -56,31 +56,39 @@ def contract_renewal_notice() -> int:
     onto a new end date is warned about again, and one that is not is warned
     about exactly once however many mornings the window spans.
     """
-    today = local_today()
-    raised = 0
     with system_context():
-        candidates = (
-            Contract.objects.filter(
-                status=ContractStatus.ACTIVE,
-                end_date__gt=today,
-                end_date__lte=today + _LONGEST_NOTICE,
-            )
-            .select_related("customer")
-            .order_by("end_date", "id")
+        return contract_renewal_notice_in_scope(today=local_today())
+
+
+def contract_renewal_notice_in_scope(*, today: date) -> int:
+    """`contract_renewal_notice`'s work, in whatever tenant scope the caller has open.
+
+    The task runs it across every firm under the system context; the demo
+    seeding (core.demo_activity) runs it for the demo company alone.
+    """
+    raised = 0
+    candidates = (
+        Contract.objects.filter(
+            status=ContractStatus.ACTIVE,
+            end_date__gt=today,
+            end_date__lte=today + _LONGEST_NOTICE,
         )
-        for contract in candidates:
-            if contract.end_date - timedelta(days=contract.renewal_notice_days) > today:
-                continue
-            raised += len(
-                notify(
-                    kind=NotificationKind.CONTRACT_RENEWAL_DUE,
-                    recipients=_contract_people(contract.company_id),
-                    subject_type="contract",
-                    subject_id=contract.id,
-                    data=_facts(contract),
-                    dedupe_key=f"renewal_due:{contract.id}:{contract.end_date.isoformat()}",
-                )
+        .select_related("customer")
+        .order_by("end_date", "id")
+    )
+    for contract in candidates:
+        if contract.end_date - timedelta(days=contract.renewal_notice_days) > today:
+            continue
+        raised += len(
+            notify(
+                kind=NotificationKind.CONTRACT_RENEWAL_DUE,
+                recipients=_contract_people(contract.company_id),
+                subject_type="contract",
+                subject_id=contract.id,
+                data=_facts(contract),
+                dedupe_key=f"renewal_due:{contract.id}:{contract.end_date.isoformat()}",
             )
+        )
     return raised
 
 
@@ -99,35 +107,43 @@ def contract_expiry() -> int:
     contract that cannot be closed — a renewal refused by a constraint nobody
     foresaw — is logged at ERROR, which reaches Sentry, and the rest still close.
     """
-    today = local_today()
-    closed = 0
     with system_context():
-        overdue = (
-            Contract.objects.filter(status=ContractStatus.ACTIVE, end_date__lt=today)
-            .select_related("customer")
-            .order_by("end_date", "id")
+        return contract_expiry_in_scope(today=local_today())
+
+
+def contract_expiry_in_scope(*, today: date) -> int:
+    """`contract_expiry`'s work, in whatever tenant scope the caller has open.
+
+    The task runs it across every firm under the system context; the demo
+    seeding (core.demo_activity) runs it for the demo company alone.
+    """
+    closed = 0
+    overdue = (
+        Contract.objects.filter(status=ContractStatus.ACTIVE, end_date__lt=today)
+        .select_related("customer")
+        .order_by("end_date", "id")
+    )
+    for contract in overdue:
+        try:
+            outcome = expire(contract, today=today)
+        except Exception:
+            logger.exception("Could not close contract %s", contract.id)
+            continue
+        if outcome is None:
+            continue
+        closed += 1
+        # The link goes where the reader has something to do: the new
+        # contract after a renewal, the old one after an expiry.
+        subject = outcome.successor or contract
+        data = _facts(contract)
+        if outcome.successor is not None:
+            data["successor_contract_number"] = outcome.successor.contract_number
+        notify(
+            kind=_OUTCOME_KIND[outcome.kind],
+            recipients=_contract_people(contract.company_id),
+            subject_type="contract",
+            subject_id=subject.id,
+            data=data,
+            dedupe_key=f"{outcome.kind}:{contract.id}",
         )
-        for contract in overdue:
-            try:
-                outcome = expire(contract, today=today)
-            except Exception:
-                logger.exception("Could not close contract %s", contract.id)
-                continue
-            if outcome is None:
-                continue
-            closed += 1
-            # The link goes where the reader has something to do: the new
-            # contract after a renewal, the old one after an expiry.
-            subject = outcome.successor or contract
-            data = _facts(contract)
-            if outcome.successor is not None:
-                data["successor_contract_number"] = outcome.successor.contract_number
-            notify(
-                kind=_OUTCOME_KIND[outcome.kind],
-                recipients=_contract_people(contract.company_id),
-                subject_type="contract",
-                subject_id=subject.id,
-                data=data,
-                dedupe_key=f"{outcome.kind}:{contract.id}",
-            )
     return closed
