@@ -449,6 +449,11 @@ REST_FRAMEWORK = {
         # apps.faults.throttling.
         "public_fault_token": env("PUBLIC_FAULT_TOKEN_RATE_LIMIT", default="5/hour"),
         "public_fault_address": env("PUBLIC_FAULT_ADDRESS_RATE_LIMIT", default="20/hour"),
+        # The customer portal (M6), per portal account. Lower than the staff
+        # limit: a building manager reads a handful of screens, and an account
+        # whose password leaked should not be able to page through the whole
+        # customer's history at staff speed.
+        "portal": env("PORTAL_RATE_LIMIT", default="120/min"),
     },
     "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,

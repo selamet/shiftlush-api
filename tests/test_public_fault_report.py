@@ -9,10 +9,12 @@ sticker reaches exactly one firm.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.db import connection, connections
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -251,3 +253,37 @@ class TestOneStickerOneFirm:
         send(other.elevator.qr_token)
         assert len(faults()) == 2
         assert {f.company_id for f in faults()} == {shop.company.id, other.company.id}
+
+
+@pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="SQLite serialises every write; the race only exists on PostgreSQL",
+)
+@pytest.mark.django_db(transaction=True)
+class TestTwoFirstReportsAtOnce:
+    """Two residents tap the sticker in the same instant (#M4 known gap).
+
+    Both used to find no open fault and open one each. The lift's row is now
+    locked first, so the second waits for the first and merges into it.
+    """
+
+    def test_they_make_one_fault(self):
+        shop = Shop()
+        start = threading.Barrier(2)
+        answers: list[int] = []
+
+        def resident(n: int) -> None:
+            try:
+                start.wait()
+                answers.append(send(shop.elevator.qr_token, address=f"198.51.100.{n}").status_code)
+            finally:
+                connections.close_all()
+
+        threads = [threading.Thread(target=resident, args=(n,)) for n in (1, 2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert answers == [202, 202]
+        assert Fault.unscoped.count() == 1

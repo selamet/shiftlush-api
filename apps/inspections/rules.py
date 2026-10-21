@@ -64,7 +64,7 @@ RULES: dict[Label, LabelRule] = {
         deadline=Deadline.NONE,
         days=None,
         sealed_if_missed=False,
-        citation=f"{_SOURCE}: green label (kusursuz), no defects, no correction.",
+        citation=f"{_SOURCE} m.11/2: green label (kusursuz), no defects, no correction.",
     ),
     Label.BLUE: LabelRule(
         label=Label.BLUE,
@@ -73,8 +73,9 @@ RULES: dict[Label, LabelRule] = {
         days=None,
         sealed_if_missed=False,
         citation=(
-            f"{_SOURCE}: blue label (hafif kusurlu), corrected by the next periodic "
-            "inspection; the first follow-up is free if applied for within 60 days."
+            f"{_SOURCE} m.11/3, m.11/10: blue label (hafif kusurlu), corrected by the "
+            "next periodic inspection; the first follow-up is free if applied for "
+            "within 60 days."
         ),
     ),
     Label.YELLOW: LabelRule(
@@ -84,9 +85,10 @@ RULES: dict[Label, LabelRule] = {
         days=120,
         sealed_if_missed=True,
         citation=(
-            f"{_SOURCE}: yellow label (kusurlu), corrected within 120 days, then a "
-            "follow-up within 3 working days; sealed if missed. A red lift turned "
-            "yellow by a follow-up counts the 120 days from the original inspection."
+            f"{_SOURCE} m.11/4, m.11/8, m.11/11: yellow label (kusurlu), corrected "
+            "within 120 days, then a follow-up within 3 working days; sealed if "
+            "missed. A red lift turned yellow by a follow-up counts the 120 days "
+            "from the original inspection."
         ),
     ),
     Label.RED: LabelRule(
@@ -96,8 +98,9 @@ RULES: dict[Label, LabelRule] = {
         days=60,
         sealed_if_missed=True,
         citation=(
-            f"{_SOURCE}: red label (guvensiz), the lift must not be used; corrected "
-            "within 60 days, then a follow-up within 3 working days; sealed if missed."
+            f"{_SOURCE} m.11/5, m.11/6: red label (guvensiz), the lift must not be "
+            "used; corrected within 60 days, then a follow-up within 3 working "
+            "days; sealed if missed."
         ),
     ),
 }

@@ -303,6 +303,13 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **The customer portal has its own rate limit:** `PORTAL_RATE_LIMIT`,
+  default `120/min` per portal account, instead of the staff user limit. Over
+  it, the portal answers `429 THROTTLED` with the usual `RateLimit-*`
+  headers.
+- **Two first public reports on the same lift in the same instant make one
+  fault**, not two. The second waits for the first and merges into it.
+
 - **`PATCH /inspections/{id}/` and `PATCH /nonconformities/{id}/` are
   described with the fields they take.** The inspection edit was described
   with the create body, and the non-conformity edit with no body at all.
