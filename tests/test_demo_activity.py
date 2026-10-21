@@ -348,3 +348,89 @@ class TestRefresh:
         with system_context():
             company = Company.objects.get(legal_name=LEGAL_NAME)
         assert in_tenant(company, lambda: Customer.objects.count()) == 0
+
+
+class TestOneStrayRowBlocksNothing:
+    """SL-161: the live demo tenant held one hand-entered visit, and the refresh
+    skipped the visit history of every other lift."""
+
+    def test_a_pre_existing_visit_leaves_every_other_lift_its_history(self, phase_one_demo):
+        today = local_today()
+        with company_context(phase_one_demo.id):
+            covered = list(
+                Elevator.objects.filter(
+                    contract_lines__removed_at__isnull=True,
+                    contract_lines__contract__status=ContractStatus.ACTIVE,
+                )
+                .distinct()
+                .order_by("registration_number", "id")
+            )
+            stray_lift = covered[5]
+            line = stray_lift.contract_lines.get(removed_at__isnull=True)
+            office = User.objects.get(company=phase_one_demo, role=Role.OPERATIONS)
+            stray = MaintenanceVisit.objects.create(
+                company=phase_one_demo,
+                elevator=stray_lift,
+                contract=line.contract,
+                technician=office,
+                visit_date=today - timedelta(days=4),
+                status=VisitStatus.COMPLETED,
+            )
+
+        call_command("refresh_demo_data", stdout=StringIO())
+
+        with company_context(phase_one_demo.id):
+            # The hand-entered visit is the only one on its lift.
+            assert list(MaintenanceVisit.objects.filter(elevator=stray_lift)) == [stray]
+            others = [lift for lift in covered if lift.pk != stray_lift.pk]
+            for lift in others:
+                assert MaintenanceVisit.objects.filter(elevator=lift).exists(), lift
+            refreshed = Elevator.objects.filter(pk__in=[lift.pk for lift in others])
+            assert all(lift.last_maintenance_date for lift in refreshed)
+            overdue = refreshed.filter(next_maintenance_date__lt=today).count()
+            assert overdue >= demo_activity.NEGLECTED_LIFTS
+            assert PlannedVisit.objects.filter(
+                period=period_of(today), status=PlannedVisitStatus.DONE
+            ).exists()
+        first = counts(phase_one_demo)
+        call_command("refresh_demo_data", stdout=StringIO())
+        assert counts(phase_one_demo) == first
+
+    def test_stray_faults_inspections_and_portal_accounts_fill_only_their_slot(
+        self, phase_one_demo
+    ):
+        from apps.faults import services as fault_services
+
+        with company_context(phase_one_demo.id):
+            lift = Elevator.objects.order_by("registration_number", "id")[0]
+            office = User.objects.get(company=phase_one_demo, role=Role.OPERATIONS)
+            # A cancelled fault, an inspection on one lift, and a contact
+            # already invited to the portal, all entered by hand.
+            stray = fault_services.report_by_staff(
+                elevator=lift, description="x", priority=FaultPriority.NORMAL, reported_by=office
+            )
+            fault_services.cancel(stray, reason="test", by=office)
+            from apps.inspections import services as inspection_services
+
+            inspection_services.record(
+                elevator=lift, inspected_on=local_today(), label=Label.GREEN, by=office
+            )
+
+        call_command("refresh_demo_data", stdout=StringIO())
+
+        with company_context(phase_one_demo.id):
+            states = set(Fault.objects.values_list("status", flat=True))
+            assert states >= {
+                FaultStatus.OPEN,
+                FaultStatus.ASSIGNED,
+                FaultStatus.ON_SITE,
+                FaultStatus.RESOLVED,
+                FaultStatus.CLOSED,
+            }
+            # The cancelled slot was already filled: no second cancellation.
+            assert Fault.objects.filter(status=FaultStatus.CANCELLED).count() == 1
+            assert Inspection.objects.filter(elevator=lift).count() == 1
+            lifts = Elevator.objects.count()
+            assert Inspection.objects.values("elevator").distinct().count() == lifts
+            assert Inspection.objects.filter(label=Label.RED).exists()
+            assert PortalAccount.objects.count() == 2

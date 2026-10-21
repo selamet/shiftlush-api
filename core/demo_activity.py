@@ -22,9 +22,13 @@ Three rules shape it:
   notifications are raised, nothing is sent, and the demo owner's address is a
   real mailbox.
 
-**Idempotent.** Each step checks whether its module already holds data in this
-tenant and adds only what is missing, and the generators it drives are
-idempotent themselves. That is what lets `refresh_demo_data` bring the live
+**Idempotent, per subject.** Each step adds only what is missing, judged per
+lift or per scenario rather than per module — visit history for each lift with
+no visits, an inspection for each lift with none, a fault for each state the
+board lacks — so a stray hand-entered row fills its own slot and blocks nothing
+else (SL-161: one hand-entered visit in the live demo once made the refresh skip
+the history of every other lift). The generators it drives are idempotent
+themselves. That is what lets `refresh_demo_data` bring the live
 demo tenant up to date, and run again, without doubling anything.
 
 Everything is relative to `today`, so the demo always looks current, and drawn
@@ -51,7 +55,7 @@ from apps.contracts.models import Contract, ContractElevator, ContractStatus, Pr
 from apps.customers.models import Customer, CustomerContact
 from apps.elevators.models import Elevator, ElevatorStatus
 from apps.faults import services as faults
-from apps.faults.models import Fault, FaultPriority
+from apps.faults.models import Fault, FaultPriority, FaultStatus
 from apps.inspections import services as inspections
 from apps.inspections.models import Inspection, InspectionKind, Label, NonConformityStatus
 from apps.maintenance import services as maintenance
@@ -310,7 +314,9 @@ def _visit(
     return visit
 
 
-def _visit_history(firm: _Firm, rng: random.Random, today: date) -> tuple[int, dict[Any, int]]:
+def _visit_history(
+    firm: _Firm, rng: random.Random, today: date
+) -> tuple[int, dict[Any, int | None]]:
     """Two months of monthly visits, each lift on its own day of the cycle.
 
     Every lift has an offset into a thirty-day cycle, and was visited that many
@@ -320,16 +326,22 @@ def _visit_history(firm: _Firm, rng: random.Random, today: date) -> tuple[int, d
     lifts were last seen six weeks or more ago and are overdue. A handful of
     visits failed (incomplete, no access) and were finished three days later.
 
-    Returns how many it wrote, and each lift's offset for the newest round.
+    Per lift, not per tenant: a lift with any visit of its own is left alone,
+    and every other covered lift gets its history. A whole-module check was a
+    trap — one visit typed by hand into the live demo tenant made the refresh
+    skip the history of all sixty other lifts.
+
+    Returns how many it wrote, and for each lift it seeded the offset of its
+    newest round, or None for a neglected lift, which gets no newest round.
     """
-    if MaintenanceVisit.objects.exists():
-        return 0, {}
+    visited = set(MaintenanceVisit.objects.values_list("elevator_id", flat=True))
+    fresh = [lift for lift in firm.covered if lift.pk not in visited]
     created = 0
-    offsets: dict[Any, int] = {}
-    for index, elevator in enumerate(firm.covered):
+    offsets: dict[Any, int | None] = {}
+    for index, elevator in enumerate(fresh):
         offset = rng.randint(0, 29)
-        offsets[elevator.pk] = offset
         neglected = index < NEGLECTED_LIFTS
+        offsets[elevator.pk] = None if neglected else offset
         for months_back in (2, 1):
             day = today - timedelta(days=offset + 30 * months_back + (12 if neglected else 0))
             if rng.random() < 0.08:
@@ -343,7 +355,11 @@ def _visit_history(firm: _Firm, rng: random.Random, today: date) -> tuple[int, d
 
 
 def _plan(
-    firm: _Firm, rng: random.Random, today: date, offsets: dict[Any, int], activity: Activity
+    firm: _Firm,
+    rng: random.Random,
+    today: date,
+    offsets: dict[Any, int | None],
+    activity: Activity,
 ) -> int:
     """This month's and next month's plan, then the newest round of visits.
 
@@ -355,18 +371,17 @@ def _plan(
     before = PlannedVisit.objects.count()
     maintenance.generate_plan(today=today)
     if not offsets:
-        # The visits were already there: nothing of this step is missing. (The
-        # rows may be the daily job's, on a tenant that has been running since
-        # M3 — the newest visits below still close them.)
+        # Every lift already had its visits: nothing of this step is missing.
+        # (The rows may be the daily job's, on a tenant that has been running
+        # since M3 — the newest visits below still close them.)
         return PlannedVisit.objects.count() - before
 
     month_start = today.replace(day=1)
-    recent = [lift for index, lift in enumerate(firm.covered) if index >= NEGLECTED_LIFTS]
-    for position, elevator in enumerate(recent):
-        if elevator.pk not in offsets:
-            continue
+    by_pk = {lift.pk: lift for lift in firm.covered}
+    recent = [(by_pk[pk], offset) for pk, offset in offsets.items() if offset is not None]
+    for position, (elevator, newest) in enumerate(recent):
         tried = position == 0
-        offset = min(offsets[elevator.pk], today.day - 1) if tried else offsets[elevator.pk]
+        offset = min(newest, today.day - 1) if tried else newest
         status = VisitStatus.INCOMPLETE if tried else VisitStatus.COMPLETED
         if _visit(firm, rng, elevator, today - timedelta(days=offset), status):
             activity.visits += 1
@@ -417,9 +432,34 @@ def _ended_period_day(contract: Contract, today: date) -> tuple[date, date] | No
 
 
 def _faults(firm: _Firm, rng: random.Random, today: date) -> int:
-    """About ten faults, one in every state, through their real transitions."""
-    if Fault.objects.exists() or len(firm.covered) < 8:
+    """About ten faults, one in every state, through their real transitions.
+
+    Per state, not per tenant: each scenario is seeded only if the tenant has
+    no fault in that state yet, so a fault somebody entered by hand fills its
+    own slot and blocks nothing else. Returns how many faults this added.
+    """
+    if len(firm.covered) < 8:
         return 0
+    before = Fault.objects.count()
+    open_states = [FaultStatus.OPEN, FaultStatus.ASSIGNED, FaultStatus.ON_SITE]
+    missing = {
+        "emergency": not Fault.objects.filter(
+            priority=FaultPriority.EMERGENCY, status__in=open_states
+        ).exists(),
+        "open": not Fault.objects.filter(status=FaultStatus.OPEN)
+        .exclude(priority=FaultPriority.EMERGENCY)
+        .exists(),
+        "assigned": not Fault.objects.filter(status=FaultStatus.ASSIGNED).exists(),
+        "on_site": not Fault.objects.filter(status=FaultStatus.ON_SITE).exists(),
+        "resolved": not Fault.objects.filter(status=FaultStatus.RESOLVED).exists(),
+        "closed_billable": not Fault.objects.filter(
+            status=FaultStatus.CLOSED, billable=True
+        ).exists(),
+        "closed_waived": not Fault.objects.filter(
+            status=FaultStatus.CLOSED, billable=False
+        ).exists(),
+        "cancelled": not Fault.objects.filter(status=FaultStatus.CANCELLED).exists(),
+    }
     text = ACTIVITY["faults"]
     lifts = firm.covered[NEGLECTED_LIFTS:] + firm.covered[:NEGLECTED_LIFTS]
     now = timezone.now()
@@ -434,105 +474,116 @@ def _faults(firm: _Firm, rng: random.Random, today: date) -> int:
             **extra,
         )
 
-    # A trapped passenger, reported from the sticker an hour ago: the board's
-    # emergency row, still open.
-    emergency = faults.report_public(
-        elevator=lifts[0],
-        report=faults.PublicReport(
-            description=text["emergency"],
-            someone_trapped=True,
-            elevator_stopped=True,
-            reporter_name=text["emergency_reporter_name"],
-            reporter_phone=text["emergency_reporter_phone"],
-        ),
-    )
-    _shift(emergency, reported_at=now - timedelta(minutes=50))
-
-    opened = staff(lifts[1], text["open"])
-    _shift(opened, reported_at=now - timedelta(hours=5))
-
-    assigned = staff(lifts[2], text["assigned"], priority=FaultPriority.HIGH)
-    faults.assign(assigned, technician=_technician_for(firm, lifts[2]), by=office)
-    _shift(assigned, reported_at=now - timedelta(hours=3), assigned_at=now - timedelta(hours=2))
-
-    on_site = staff(lifts[3], text["on_site"])
-    technician = _technician_for(firm, lifts[3])
-    faults.assign(on_site, technician=technician, by=office)
-    faults.arrive(on_site, by=technician)
-    _shift(
-        on_site,
-        reported_at=now - timedelta(hours=4),
-        assigned_at=now - timedelta(hours=3, minutes=30),
-        on_site_at=now - timedelta(hours=2, minutes=40),
-    )
-
-    resolved = staff(lifts[4], text["resolved"])
-    technician = _technician_for(firm, lifts[4])
-    faults.assign(resolved, technician=technician, by=office)
-    faults.arrive(resolved, by=technician)
-    faults.resolve(resolved, by=technician, resolution_notes=text["resolved_notes"])
-    _shift(
-        resolved,
-        reported_at=now - timedelta(days=1, hours=6),
-        assigned_at=now - timedelta(days=1, hours=5),
-        on_site_at=now - timedelta(days=1, hours=3),
-        resolved_at=now - timedelta(days=1, hours=1),
-    )
-
-    # Closed and billable, inside a billing period that has ended, so the
-    # invoice draft for that period carries it as a line waiting for a price.
-    billable_lift, days = None, None
-    for candidate in lifts[5:]:
-        contract = _contract_on(candidate, today)
-        days = _ended_period_day(contract, today) if contract else None
-        if days:
-            billable_lift = candidate
-            break
-    if billable_lift is not None and days is not None:
-        reported_on, closed_on = days
-        repaired = staff(billable_lift, text["closed_billable"])
-        _shift(repaired, reported_at=_at(reported_on, 9, 15))
-        technician = _technician_for(firm, billable_lift)
-        faults.assign(repaired, technician=technician, by=office)
-        faults.arrive(repaired, by=technician)
-        faults.resolve(
-            repaired,
-            by=technician,
-            resolution_notes=text["closed_billable_notes"],
-            parts_used=ACTIVITY["parts"][0],
-            restore_service=True,
+    if missing["emergency"]:
+        # A trapped passenger, reported from the sticker an hour ago: the board's
+        # emergency row, still open.
+        emergency = faults.report_public(
+            elevator=lifts[0],
+            report=faults.PublicReport(
+                description=text["emergency"],
+                someone_trapped=True,
+                elevator_stopped=True,
+                reporter_name=text["emergency_reporter_name"],
+                reporter_phone=text["emergency_reporter_phone"],
+            ),
         )
-        faults.close(repaired, by=office)
+        _shift(emergency, reported_at=now - timedelta(minutes=50))
+
+    if missing["open"]:
+        opened = staff(lifts[1], text["open"])
+        _shift(opened, reported_at=now - timedelta(hours=5))
+
+    if missing["assigned"]:
+        assigned = staff(lifts[2], text["assigned"], priority=FaultPriority.HIGH)
+        faults.assign(assigned, technician=_technician_for(firm, lifts[2]), by=office)
+        _shift(assigned, reported_at=now - timedelta(hours=3), assigned_at=now - timedelta(hours=2))
+
+    if missing["on_site"]:
+        on_site = staff(lifts[3], text["on_site"])
+        technician = _technician_for(firm, lifts[3])
+        faults.assign(on_site, technician=technician, by=office)
+        faults.arrive(on_site, by=technician)
         _shift(
-            repaired,
-            assigned_at=_at(reported_on, 9, 40),
-            on_site_at=_at(reported_on, 11, 5),
-            resolved_at=_at(reported_on, 13, 30),
-            closed_at=_at(closed_on, 10, 0),
+            on_site,
+            reported_at=now - timedelta(hours=4),
+            assigned_at=now - timedelta(hours=3, minutes=30),
+            on_site_at=now - timedelta(hours=2, minutes=40),
         )
 
-    # Closed and waived: the office overrode the derived "billable".
-    free_lift = lifts[6]
-    waived = staff(free_lift, text["closed_free"])
-    technician = _technician_for(firm, free_lift)
-    faults.assign(waived, technician=technician, by=office)
-    faults.arrive(waived, by=technician)
-    faults.resolve(waived, by=technician, resolution_notes=text["closed_free_notes"], parts_used="")
-    faults.edit(waived, changes={"billable": False}, by=office)
-    faults.close(waived, by=office)
-    _shift(
-        waived,
-        reported_at=now - timedelta(days=3, hours=4),
-        assigned_at=now - timedelta(days=3, hours=3),
-        on_site_at=now - timedelta(days=3, hours=1),
-        resolved_at=now - timedelta(days=3),
-        closed_at=now - timedelta(days=2),
-    )
+    if missing["resolved"]:
+        resolved = staff(lifts[4], text["resolved"])
+        technician = _technician_for(firm, lifts[4])
+        faults.assign(resolved, technician=technician, by=office)
+        faults.arrive(resolved, by=technician)
+        faults.resolve(resolved, by=technician, resolution_notes=text["resolved_notes"])
+        _shift(
+            resolved,
+            reported_at=now - timedelta(days=1, hours=6),
+            assigned_at=now - timedelta(days=1, hours=5),
+            on_site_at=now - timedelta(days=1, hours=3),
+            resolved_at=now - timedelta(days=1, hours=1),
+        )
 
-    duplicate = staff(lifts[1], text["duplicate"])
-    faults.cancel(duplicate, reason=text["duplicate_reason"], by=office)
-    _shift(duplicate, reported_at=now - timedelta(hours=4, minutes=50))
-    return Fault.objects.count()
+    if missing["closed_billable"]:
+        # Closed and billable, inside a billing period that has ended, so the
+        # invoice draft for that period carries it as a line waiting for a price.
+        billable_lift, days = None, None
+        for candidate in lifts[5:]:
+            contract = _contract_on(candidate, today)
+            days = _ended_period_day(contract, today) if contract else None
+            if days:
+                billable_lift = candidate
+                break
+        if billable_lift is not None and days is not None:
+            reported_on, closed_on = days
+            repaired = staff(billable_lift, text["closed_billable"])
+            _shift(repaired, reported_at=_at(reported_on, 9, 15))
+            technician = _technician_for(firm, billable_lift)
+            faults.assign(repaired, technician=technician, by=office)
+            faults.arrive(repaired, by=technician)
+            faults.resolve(
+                repaired,
+                by=technician,
+                resolution_notes=text["closed_billable_notes"],
+                parts_used=ACTIVITY["parts"][0],
+                restore_service=True,
+            )
+            faults.close(repaired, by=office)
+            _shift(
+                repaired,
+                assigned_at=_at(reported_on, 9, 40),
+                on_site_at=_at(reported_on, 11, 5),
+                resolved_at=_at(reported_on, 13, 30),
+                closed_at=_at(closed_on, 10, 0),
+            )
+
+    if missing["closed_waived"]:
+        # Closed and waived: the office overrode the derived "billable".
+        free_lift = lifts[6]
+        waived = staff(free_lift, text["closed_free"])
+        technician = _technician_for(firm, free_lift)
+        faults.assign(waived, technician=technician, by=office)
+        faults.arrive(waived, by=technician)
+        faults.resolve(
+            waived, by=technician, resolution_notes=text["closed_free_notes"], parts_used=""
+        )
+        faults.edit(waived, changes={"billable": False}, by=office)
+        faults.close(waived, by=office)
+        _shift(
+            waived,
+            reported_at=now - timedelta(days=3, hours=4),
+            assigned_at=now - timedelta(days=3, hours=3),
+            on_site_at=now - timedelta(days=3, hours=1),
+            resolved_at=now - timedelta(days=3),
+            closed_at=now - timedelta(days=2),
+        )
+
+    if missing["cancelled"]:
+        duplicate = staff(lifts[1], text["duplicate"])
+        faults.cancel(duplicate, reason=text["duplicate_reason"], by=office)
+        _shift(duplicate, reported_at=now - timedelta(hours=4, minutes=50))
+
+    return Fault.objects.count() - before
 
 
 # Inspections ----------------------------------------------------------------------------
@@ -545,20 +596,50 @@ def _inspections(firm: _Firm, rng: random.Random, today: date) -> int:
     weeks away; one red, which stops its lift, with a defect a fault has been
     opened for; one lift whose last year went yellow and was cleared by a
     follow-up; and two whose next inspection falls within the month.
+
+    Per lift and per scenario, not per tenant: only lifts with no inspection of
+    their own are inspected here, and each of the scenarios above is seeded only
+    if the tenant does not already show one. Returns how many this added.
     """
-    if Inspection.objects.exists():
-        return 0
+    before = Inspection.objects.count()
     text = ACTIVITY["nonconformities"]
     bodies = ACTIVITY["inspection_bodies"]
-    lifts = list(Elevator.objects.select_related("building").order_by("registration_number", "id"))
+    already = set(Inspection.objects.values_list("elevator_id", flat=True))
+    lifts = [
+        lift
+        for lift in Elevator.objects.select_related("building").order_by(
+            "registration_number", "id"
+        )
+        if lift.pk not in already
+    ]
+    if not lifts:
+        return 0
     covered = [lift for lift in firm.covered if lift in lifts]
-    special = {
-        "yellow": covered[-2:] if len(covered) >= 6 else [],
-        "red": covered[-3:-2] if len(covered) >= 6 else [],
-        "follow_up": covered[-4:-3] if len(covered) >= 6 else [],
-        "due": covered[-6:-4] if len(covered) >= 6 else [],
+    open_yellow = (
+        Inspection.objects.filter(
+            label=Label.YELLOW,
+            correction_deadline__gt=today,
+            nonconformities__status=NonConformityStatus.OPEN,
+        )
+        .values("elevator")
+        .distinct()
+        .count()
+    )
+    wanted = {
+        "yellow": max(0, 2 - open_yellow),
+        "red": 0 if Inspection.objects.filter(label=Label.RED).exists() else 1,
+        "follow_up": 0 if Inspection.objects.filter(kind=InspectionKind.FOLLOW_UP).exists() else 1,
+        "due": 0
+        if Inspection.objects.filter(
+            next_inspection_due__gte=today, next_inspection_due__lte=today + timedelta(days=30)
+        ).exists()
+        else 2,
     }
-    number = 0
+    special: dict[str, list[Elevator]] = {}
+    pool = list(reversed(covered)) if len(covered) >= 6 else []
+    for scenario in ("yellow", "red", "follow_up", "due"):
+        special[scenario], pool = pool[: wanted[scenario]], pool[wanted[scenario] :]
+    number = before
 
     def record(elevator: Elevator, inspected_on: date, label: str, **extra: Any) -> Inspection:
         nonlocal number
@@ -625,16 +706,27 @@ def _inspections(firm: _Firm, rng: random.Random, today: date) -> int:
                 label,
                 nonconformities=entries,
             )
-    return Inspection.objects.count()
+    return Inspection.objects.count() - before
 
 
 # Portal ----------------------------------------------------------------------------------
 
 
 def _portal(firm: _Firm, staff_domain: str) -> int:
-    """One contact signed up to the portal, and one still invited."""
-    if PortalAccount.objects.exists():
+    """One contact signed up to the portal, and one still invited.
+
+    Each only if the tenant has none of its kind yet, and never for a contact
+    that already has an account: an account somebody made by hand fills its
+    own slot rather than blocking the other. Returns how many this added.
+    """
+    before = PortalAccount.objects.count()
+    want_active = not PortalAccount.objects.filter(is_active=True).exists()
+    want_invited = not PortalAccount.objects.filter(
+        is_active=False, accepted_at__isnull=True, deactivated_at__isnull=True
+    ).exists()
+    if not (want_active or want_invited):
         return 0
+    taken = set(PortalAccount.objects.values_list("contact_id", flat=True))
     customers = list(
         Customer.objects.filter(contracts__status=ContractStatus.ACTIVE, is_active=True)
         .distinct()
@@ -643,12 +735,17 @@ def _portal(firm: _Firm, staff_domain: str) -> int:
     if len(customers) < 2:
         return 0
     names = ACTIVITY["portal"]
-    for customer, local, accept in (
-        (customers[0], names["active_email_local"], True),
-        (customers[1], names["pending_email_local"], False),
+    for customer, local, accept, wanted in (
+        (customers[0], names["active_email_local"], True, want_active),
+        (customers[1], names["pending_email_local"], False, want_invited),
     ):
+        if not wanted:
+            continue
         contact = (
-            CustomerContact.objects.filter(customer=customer).order_by("-is_primary", "id").first()
+            CustomerContact.objects.filter(customer=customer)
+            .exclude(pk__in=taken)
+            .order_by("-is_primary", "id")
+            .first()
         )
         if contact is None:
             continue
@@ -658,7 +755,7 @@ def _portal(firm: _Firm, staff_domain: str) -> int:
         _account, token = portal.invite(customer=customer, contact=contact)
         if accept:
             portal.accept(token=token, password=PORTAL_PASSWORD)
-    return PortalAccount.objects.count()
+    return PortalAccount.objects.count() - before
 
 
 def portal_login(company: Company) -> str | None:
@@ -706,6 +803,9 @@ def _billing(firm: _Firm, today: date) -> tuple[int, int]:
             line.position = position + offset
             line.save()
         billing.recompute(draft)
+    # Two slots, filled separately: some drafts issued, and one of them paid.
+    # A draft somebody issued by hand fills the first and does not stop the
+    # second.
     issued = 0
     if not InvoiceDraft.objects.filter(
         status__in=[InvoiceStatus.ISSUED, InvoiceStatus.PAID]
@@ -718,20 +818,31 @@ def _billing(firm: _Firm, today: date) -> tuple[int, int]:
         candidates = list(priced.filter(period_end__lt=today - timedelta(days=20))) or list(
             priced[:1]
         )
-        for index, draft in enumerate(candidates, start=1):
-            invoice_date = min(today, draft.period_end + timedelta(days=3))
+        used = set(InvoiceDraft.objects.values_list("invoice_number", flat=True))
+        serial = 0
+        for draft in candidates:
+            serial += 1
+            while f"DMO{today.year}{serial:09d}" in used:
+                serial += 1
             billing.issue(
                 draft,
-                invoice_number=f"DMO{today.year}{index:09d}",
-                invoice_date=invoice_date,
+                invoice_number=f"DMO{today.year}{serial:09d}",
+                invoice_date=min(today, draft.period_end + timedelta(days=3)),
                 by=firm.owner,
             )
             issued += 1
-        if candidates:
-            first = candidates[0]
+    if not InvoiceDraft.objects.filter(status=InvoiceStatus.PAID).exists():
+        oldest = (
+            InvoiceDraft.objects.filter(status=InvoiceStatus.ISSUED)
+            .order_by("period_end", "id")
+            .first()
+        )
+        if oldest is not None and oldest.invoice_date is not None:
             billing.mark_paid(
-                first,
-                paid_on=min(today, first.period_end + timedelta(days=12)),
+                oldest,
+                paid_on=min(
+                    today, max(oldest.invoice_date, oldest.period_end + timedelta(days=12))
+                ),
                 by=firm.owner,
             )
     return len(run.created), issued
