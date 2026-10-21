@@ -1,0 +1,10 @@
+Müşteri
+Sözleşme no
+Dönem başı
+Dönem sonu
+Ara toplam
+KDV
+Genel toplam
+Para birimi
+Durum
+Fatura no

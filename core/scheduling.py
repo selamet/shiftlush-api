@@ -62,6 +62,7 @@ def get_schedules() -> list[DailySchedule]:
     # Imported here, not at module level: core must not import app modules at
     # import time, and attachments' tasks pull in its services and models.
     from apps.attachments.tasks import purge_attachments
+    from apps.billing.tasks import draft_invoices
     from apps.contracts.tasks import contract_expiry, contract_renewal_notice
     from apps.faults.tasks import purge_public_reporter_data
     from apps.inspections.tasks import correction_deadline_notice, inspection_due_notice
@@ -80,6 +81,9 @@ def get_schedules() -> list[DailySchedule]:
         DailySchedule("prune_task_results", prune_task_results, time(3, 30)),
         DailySchedule("purge_public_reporter_data", purge_public_reporter_data, time(3, 45)),
         # Before the working day, so the e-mails are waiting when it starts.
+        # Before the working day, after the night's contract closures and the
+        # retention sweeps, so a period ended yesterday is waiting at nine.
+        DailySchedule("draft_invoices", draft_invoices, time(5, 0)),
         DailySchedule("contract_renewal_notice", contract_renewal_notice, time(6, 0)),
         DailySchedule("inspection_due_notice", inspection_due_notice, time(6, 15)),
         DailySchedule("correction_deadline_notice", correction_deadline_notice, time(6, 30)),

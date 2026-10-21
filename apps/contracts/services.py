@@ -9,7 +9,6 @@ inconsistent and nothing would say so.
 
 from __future__ import annotations
 
-import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
@@ -21,6 +20,7 @@ from django.utils import timezone
 
 from apps.contracts.models import Contract, ContractElevator, ContractStatus
 from apps.elevators.models import Elevator, ElevatorStatus
+from core.dates import add_months
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 
@@ -204,13 +204,6 @@ def renew(
     return successor
 
 
-def _add_months(day: date, months: int) -> date:
-    """`day` moved by whole calendar months, clamped to the end of a short month."""
-    years, month_index = divmod(day.month - 1 + months, 12)
-    year, month = day.year + years, month_index + 1
-    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
-
-
 def next_term(start: date, end: date) -> tuple[date, date]:
     """The term that follows `start` to `end`, starting the day after it ends.
 
@@ -222,8 +215,8 @@ def next_term(start: date, end: date) -> tuple[date, date]:
     """
     new_start = end + timedelta(days=1)
     months = (new_start.year - start.year) * 12 + new_start.month - start.month
-    if months > 0 and new_start.day == start.day and _add_months(start, months) == new_start:
-        return new_start, _add_months(new_start, months) - timedelta(days=1)
+    if months > 0 and new_start.day == start.day and add_months(start, months) == new_start:
+        return new_start, add_months(new_start, months) - timedelta(days=1)
     return new_start, new_start + (end - start)
 
 

@@ -1,0 +1,1 @@
+{% if status == "draft" %}Taslak{% elif status == "issued" %}Düzenlendi{% elif status == "paid" %}Ödendi{% elif status == "cancelled" %}İptal{% else %}{{ status }}{% endif %}

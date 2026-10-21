@@ -152,6 +152,12 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     },
+    # Invoice drafts (M7) — the first module where the accountant is the main
+    # user. Operations and technicians have no part in billing.
+    "invoice": {
+        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    },
     "planned_visit": {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},

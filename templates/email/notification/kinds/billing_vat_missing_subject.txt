@@ -1,0 +1,1 @@
+KDV oranı eksik: {{ contract_number }} numaralı sözleşmenin faturası hazırlanamadı

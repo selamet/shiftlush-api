@@ -1,0 +1,1 @@
+{% load email_format %}{% if customer_name %}{{ customer_name }} ile yapılan {% endif %}{{ contract_number }} numaralı sözleşmenin {{ period_start|tr_date }} – {{ period_end|tr_date }} dönemi için fatura taslağı hazırlanmadı, çünkü sözleşmede KDV oranı tanımlı değil. KDV oranını sözleşmeye girdiğinizde taslak bir sonraki çalışmada hazırlanır.
