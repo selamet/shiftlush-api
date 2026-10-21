@@ -305,6 +305,17 @@ The yearly inspection by an accredited inspection body (spec §4.3 glossary:
 
 ### M6 — Customer portal (M)
 
+**Status (2026-10-21): shipped.** Design:
+`2026-10-21-m6-customer-portal-design.md`.
+- **#114:** `PortalAccount`, a principal separate from staff users with its
+  own token audience, refresh cookie and sessions. Tokens never cross, which
+  a sweep over every route checks. Plus the customer-scoped read API, portal
+  fault reports and scoped file downloads.
+- **selamet/shiftlush-web#113:** a separate portal client and session, where
+  each client refuses the other's paths; the `/portal` screens; and the
+  office's "Portal erişimi" card.
+
+
 Read access for a customer's contacts, who are not staff users.
 
 - **Login:** the invitation-based login for a `CustomerContact` is a
@@ -322,6 +333,20 @@ Read access for a customer's contacts, who are not staff users.
 
 ### M7 — Billing (M)
 
+**Status (2026-10-21): shipped.** Design:
+`2026-10-21-m7-billing-drafts-design.md`.
+- **#115:** invoice drafts per contract and billing period.
+  - Periods are aligned to the contract start and prorated by covered days.
+  - Amounts come from the exact fraction, rounded once.
+  - A terminated contract's final period is drafted.
+  - Billable fault lines need a price, and appear on one draft only.
+  - No draft without a VAT rate.
+  - The issue/paid/cancel lifecycle, and CSV and PDF exports.
+  - The first run in production drafted 16 periods for the demo firm.
+- **selamet/shiftlush-web#114:** `/billing`, the draft detail, the
+  authenticated downloads, and `/billing` as the accountant's landing page.
+
+
 Invoice **drafts**, not invoices.
 
 - **Monthly job:** from each `ACTIVE` contract, by `billing_period`,
@@ -334,6 +359,18 @@ Invoice **drafts**, not invoices.
   e-invoicing system.
 - **Exports:** CSV and PDF.
 - **Access:** the `ACCOUNTANT` role gets the screens it was created for.
+
+## Phase 2: done (2026-10-21)
+
+All seven milestones are in production. The defects found on the way were
+fixed in their own PRs:
+- a visit could name another firm's user (#95)
+- three business rules reached the client as `invalid` (#96)
+- create and edit responses were described as write shapes (#107)
+- foreign-key filters refused every id (#109)
+- edit schemas never reached PATCH (#111, #112)
+
+Real-device checks that only a person can make are tracked in #104.
 
 ## Non-goals for Phase 2
 
