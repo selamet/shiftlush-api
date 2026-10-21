@@ -3017,6 +3017,387 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvitationPreview'
           description: ''
+  /api/v1/invoice-drafts/:
+    get:
+      operationId: invoice_drafts_list
+      parameters:
+      - in: query
+        name: contract
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: needs_price
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: period
+        schema:
+          type: string
+        description: 'A month, "YYYY-MM": drafts whose period overlaps it.'
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - cancelled
+          - draft
+          - issued
+          - paid
+        description: |-
+          * `draft` - Draft
+          * `issued` - Issued
+          * `paid` - Paid
+          * `cancelled` - Cancelled
+      tags:
+      - invoice-drafts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvoiceDraftReadList'
+          description: ''
+  /api/v1/invoice-drafts/{id}/:
+    get:
+      operationId: invoice_drafts_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDraftRead'
+          description: ''
+    patch:
+      operationId: invoice_drafts_partial_update
+      description: The notes. Draft only.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceDraftEditRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceDraftEditRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceDraftEditRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDraftRead'
+          description: ''
+  /api/v1/invoice-drafts/{id}/cancel/:
+    post:
+      operationId: invoice_drafts_cancel_create
+      description: Cancel a draft or an issued draft; its faults are released.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCancelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceCancelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceCancelRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDraftRead'
+          description: ''
+  /api/v1/invoice-drafts/{id}/issue/:
+    post:
+      operationId: invoice_drafts_issue_create
+      description: Record the e-invoice's number and date, and freeze the draft.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceIssueRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceIssueRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceIssueRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDraftRead'
+          description: ''
+  /api/v1/invoice-drafts/{id}/lines/:
+    post:
+      operationId: invoice_drafts_lines_create
+      description: Add a manual line. Draft only; the totals recompute.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceManualLineRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceManualLineRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceManualLineRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceLine'
+          description: ''
+  /api/v1/invoice-drafts/{id}/mark-paid/:
+    post:
+      operationId: invoice_drafts_mark_paid_create
+      description: Record the payment date. From `issued` only.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceMarkPaidRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceMarkPaidRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceMarkPaidRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDraftRead'
+          description: ''
+  /api/v1/invoice-drafts/{id}/pdf/:
+    get:
+      operationId: invoice_drafts_pdf_retrieve
+      description: One page; marked as a draft, not an invoice, until it is issued.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice draft.
+        required: true
+      tags:
+      - invoice-drafts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: ''
+  /api/v1/invoice-drafts/export.csv/:
+    get:
+      operationId: invoice_drafts_export.csv_retrieve
+      description: |-
+        The filtered list as CSV: semicolons, UTF-8 with a BOM, decimal commas.
+
+        Every draft the filters select, not one page of them: an export is the
+        list the accountant is looking at, all of it.
+      tags:
+      - invoice-drafts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+          description: ''
+  /api/v1/invoice-lines/{id}/:
+    get:
+      operationId: invoice_lines_retrieve
+      description: 'One line of a draft: price it, correct it, or take it off. Draft
+        only.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice line.
+        required: true
+      tags:
+      - invoice-lines
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceLine'
+          description: ''
+    patch:
+      operationId: invoice_lines_partial_update
+      description: 'One line of a draft: price it, correct it, or take it off. Draft
+        only.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice line.
+        required: true
+      tags:
+      - invoice-lines
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceLineEditRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceLineEditRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInvoiceLineEditRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceLine'
+          description: ''
+    delete:
+      operationId: invoice_lines_destroy
+      description: 'One line of a draft: price it, correct it, or take it off. Draft
+        only.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this invoice line.
+        required: true
+      tags:
+      - invoice-lines
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/maintenance-visits/:
     get:
       operationId: maintenance_visits_list
@@ -3454,6 +3835,7 @@ paths:
         schema:
           type: string
           enum:
+          - billing_vat_missing
           - contract_auto_renewal_blocked
           - contract_auto_renewed
           - contract_expired
@@ -3466,6 +3848,7 @@ paths:
           - fault_resolved
           - inspection_due
           - inspection_red_label
+          - invoice_drafts_ready
           - maintenance_overdue
           - visit_assigned
         description: |-
@@ -3483,6 +3866,8 @@ paths:
           * `correction_deadline_near` - Correction deadline near
           * `correction_deadline_passed` - Correction deadline passed
           * `inspection_red_label` - Red inspection label
+          * `billing_vat_missing` - Contract not drafted: VAT rate missing
+          * `invoice_drafts_ready` - Invoice drafts ready
       - name: ordering
         required: false
         in: query
@@ -7322,6 +7707,264 @@ components:
       - first_name
       - last_name
       - role
+    InvoiceCancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required:
+      - reason
+    InvoiceDraftRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        contract:
+          type: string
+          format: uuid
+          readOnly: true
+        contract_number:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        period_start:
+          type: string
+          format: date
+          readOnly: true
+        period_end:
+          type: string
+          format: date
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/InvoiceStatus'
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        vat_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+        subtotal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        vat_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        needs_price:
+          type: boolean
+          readOnly: true
+          description: Whether any line still waits for a price; such a draft cannot
+            be issued.
+        invoice_number:
+          type: string
+          readOnly: true
+        invoice_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        paid_on:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancel_reason:
+          type: string
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLine'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - cancel_reason
+      - cancelled_at
+      - contract
+      - contract_number
+      - created_at
+      - currency
+      - customer
+      - customer_name
+      - id
+      - invoice_date
+      - invoice_number
+      - lines
+      - needs_price
+      - notes
+      - paid_on
+      - period_end
+      - period_start
+      - status
+      - subtotal
+      - total
+      - updated_at
+      - vat_amount
+      - vat_rate
+    InvoiceIssueRequest:
+      type: object
+      properties:
+        invoice_number:
+          type: string
+          minLength: 1
+          maxLength: 40
+        invoice_date:
+          type: string
+          format: date
+      required:
+      - invoice_date
+      - invoice_number
+    InvoiceLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        draft:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InvoiceLineKind'
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        fault:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,4})?$
+          readOnly: true
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        needs_price:
+          type: boolean
+          readOnly: true
+        position:
+          type: integer
+          readOnly: true
+      required:
+      - amount
+      - description
+      - draft
+      - elevator
+      - fault
+      - id
+      - kind
+      - needs_price
+      - position
+      - quantity
+      - unit_price
+    InvoiceLineKind:
+      enum:
+      - contract_fee
+      - elevator_fee
+      - fault
+      - manual
+      type: string
+      description: |-
+        * `contract_fee` - Contract fee
+        * `elevator_fee` - Elevator fee
+        * `fault` - Fault
+        * `manual` - Manual
+    InvoiceManualLineRequest:
+      type: object
+      description: A line the generator could not know about.
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,4})?$
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+      required:
+      - description
+      - quantity
+      - unit_price
+    InvoiceMarkPaidRequest:
+      type: object
+      properties:
+        paid_on:
+          type: string
+          format: date
+      required:
+      - paid_on
+    InvoiceStatus:
+      enum:
+      - draft
+      - issued
+      - paid
+      - cancelled
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `issued` - Issued
+        * `paid` - Paid
+        * `cancelled` - Cancelled
     LabelRequestRequest:
       type: object
       description: |-
@@ -7747,6 +8390,8 @@ components:
       - correction_deadline_near
       - correction_deadline_passed
       - inspection_red_label
+      - billing_vat_missing
+      - invoice_drafts_ready
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -7763,6 +8408,8 @@ components:
         * `correction_deadline_near` - Correction deadline near
         * `correction_deadline_passed` - Correction deadline passed
         * `inspection_red_label` - Red inspection label
+        * `billing_vat_missing` - Contract not drafted: VAT rate missing
+        * `invoice_drafts_ready` - Invoice drafts ready
     NotificationPreference:
       type: object
       properties:
@@ -8102,6 +8749,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Invitation'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedInvoiceDraftReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceDraftRead'
         pagination:
           type: object
           required:
@@ -8889,6 +9566,31 @@ components:
           format: uuid
           nullable: true
           description: One of this inspection's own attachments, of category `inspection_report`.
+    PatchedInvoiceDraftEditRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        notes:
+          type: string
+    PatchedInvoiceLineEditRequest:
+      type: object
+      description: Correct a line, or price one that is waiting for a price.
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,4})?$
+        unit_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
     PatchedMaintenanceVisitWriteRequest:
       type: object
       description: |-
@@ -10200,6 +10902,9 @@ components:
       - CONTACT_HAS_NO_EMAIL
       - PORTAL_ACCOUNT_ALREADY_ACTIVE
       - PORTAL_EMAIL_IN_USE
+      - INVOICE_TRANSITION_NOT_ALLOWED
+      - INVOICE_LINES_NEED_PRICE
+      - DUPLICATE_INVOICE_NUMBER
       - FAULT_TRANSITION_NOT_ALLOWED
       - NOTIFICATION_EMAIL_LOCKED
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
@@ -10252,6 +10957,9 @@ components:
         * `CONTACT_HAS_NO_EMAIL` - The contact has no e-mail address to send a portal invitation to
         * `PORTAL_ACCOUNT_ALREADY_ACTIVE` - This contact already has an active portal account
         * `PORTAL_EMAIL_IN_USE` - Another active portal account already uses this e-mail address
+        * `INVOICE_TRANSITION_NOT_ALLOWED` - The invoice draft is not in a state this action can be taken from
+        * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
+        * `DUPLICATE_INVOICE_NUMBER` - Another issued invoice of this company already has this number
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
         * `NOTIFICATION_EMAIL_LOCKED` - This notification is always e-mailed and cannot be turned off
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner

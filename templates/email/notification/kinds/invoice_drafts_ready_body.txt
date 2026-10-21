@@ -1,0 +1,1 @@
+{% load email_format %}{{ period|tr_month }} için {{ count }} fatura taslağı hazır{% if needs_price %}, {{ needs_price }} tanesinde fiyat eksik{% endif %}. Taslakları kontrol edip e-Fatura / e-Arşiv sisteminizden düzenledikten sonra fatura numarasını ShiftLush’a girebilirsiniz.

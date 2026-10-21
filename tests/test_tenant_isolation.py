@@ -38,6 +38,7 @@ from rest_framework.test import APIClient
 
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from apps.audit.models import AuditAction, AuditLog
+from apps.billing.models import InvoiceDraft, InvoiceLine, InvoiceLineKind
 from apps.companies.models import Company
 from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
 from apps.customers.models import Customer, CustomerContact, CustomerType
@@ -368,6 +369,24 @@ def _build_firm(letter: str, seed: int) -> Firm:
         nonconformity = NonConformity.objects.create(
             company=company, inspection=inspection, description="Kapi kilidi", severity=Label.YELLOW
         )
+        draft = InvoiceDraft.objects.create(
+            company=company,
+            contract=contract,
+            customer=customer,
+            period_start=TODAY,
+            period_end=TODAY + timedelta(days=30),
+            currency="TRY",
+            vat_rate="20.00",
+        )
+        line = InvoiceLine.objects.create(
+            company=company,
+            draft=draft,
+            kind=InvoiceLineKind.MANUAL,
+            description="Manual",
+            quantity="1.0000",
+            unit_price="100.00",
+            amount="100.00",
+        )
         planned = PlannedVisit.objects.create(
             company=company,
             elevator=elevator,
@@ -394,6 +413,8 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "fault": fault,
             "inspection": inspection,
             "nonconformity": nonconformity,
+            "invoice-draft": draft,
+            "invoice-line": line,
         },
     )
 
@@ -959,6 +980,9 @@ class TestEveryModelIsScoped:
         expected = {
             "attachments.Attachment",
             "audit.AuditLog",
+            # Over HTTP in the sweep above, and in tests/test_billing.py.
+            "billing.InvoiceDraft",
+            "billing.InvoiceLine",
             "contracts.Contract",
             "contracts.ContractElevator",
             "core.IdempotencyKey",

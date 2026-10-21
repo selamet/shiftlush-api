@@ -47,6 +47,11 @@ class NotificationKind(models.TextChoices):
       days_left (negative once passed), open_nonconformities. Subject "elevator".
     - ``inspection_red_label`` — elevator_name, building_name, label,
       inspected_on, correction_deadline. Subject "elevator".
+    - ``billing_vat_missing`` — contract_number, customer_name, period_start,
+      period_end. Subject "contract".
+    - ``invoice_drafts_ready`` — count, needs_price (how many of them have a
+      line without a price), period ("YYYY-MM" of the latest period). Subject
+      "billing", with the company's id; the link is the billing screen.
 
     Adding a kind is a backwards-compatible change to the contract; it also
     needs an entry in EMAIL_DEFAULTS below and two template partials.
@@ -69,6 +74,8 @@ class NotificationKind(models.TextChoices):
     CORRECTION_DEADLINE_NEAR = "correction_deadline_near", "Correction deadline near"
     CORRECTION_DEADLINE_PASSED = "correction_deadline_passed", "Correction deadline passed"
     INSPECTION_RED_LABEL = "inspection_red_label", "Red inspection label"
+    BILLING_VAT_MISSING = "billing_vat_missing", "Contract not drafted: VAT rate missing"
+    INVOICE_DRAFTS_READY = "invoice_drafts_ready", "Invoice drafts ready"
 
 
 #: Whether a kind is e-mailed to somebody who has never said otherwise. A
@@ -98,6 +105,10 @@ EMAIL_DEFAULTS: dict[str, bool] = {
     NotificationKind.CORRECTION_DEADLINE_NEAR: True,
     NotificationKind.CORRECTION_DEADLINE_PASSED: True,
     NotificationKind.INSPECTION_RED_LABEL: True,
+    # Billing (M7): a period that cannot be billed, and a batch of drafts to
+    # check. Both are the accountant's next task.
+    NotificationKind.BILLING_VAT_MISSING: True,
+    NotificationKind.INVOICE_DRAFTS_READY: True,
 }
 
 #: Kinds that are e-mailed whatever the recipient's preference says. A trapped

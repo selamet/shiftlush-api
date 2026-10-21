@@ -142,6 +142,18 @@ SAMPLE_DATA.update(
     }
 )
 
+SAMPLE_DATA.update(
+    {
+        NotificationKind.BILLING_VAT_MISSING: {
+            "contract_number": "2026-0007",
+            "customer_name": "Yıldız Sitesi Yönetimi",
+            "period_start": date(2026, 9, 15),
+            "period_end": date(2026, 10, 14),
+        },
+        NotificationKind.INVOICE_DRAFTS_READY: {"count": 12, "needs_price": 3, "period": "2026-10"},
+    }
+)
+
 INSPECTION_KINDS = {
     NotificationKind.INSPECTION_DUE,
     NotificationKind.CORRECTION_DEADLINE_NEAR,
@@ -163,6 +175,8 @@ SUBJECT_OF = {
     if kind == NotificationKind.VISIT_ASSIGNED
     else ("fault", FAULT_ID)
     if kind in FAULT_KINDS
+    else ("billing", CONTRACT_ID)
+    if kind == NotificationKind.INVOICE_DRAFTS_READY
     else ("contract", CONTRACT_ID)
     for kind in NotificationKind.values
 }

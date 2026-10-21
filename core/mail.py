@@ -159,6 +159,8 @@ NOTIFICATION_SUBJECT_PATHS = {
 #: them (M3) — the root is where it lives.
 NOTIFICATION_SUBJECT_SCREENS = {
     "plan": "",
+    # The invoice drafts (M7), which is where the accountant works.
+    "billing": "billing",
 }
 
 

@@ -1,0 +1,65 @@
+{% load email_format %}{% comment %}
+One page per draft, A4. Plain on purpose: this is a working copy the accountant
+checks and then retypes into the e-invoicing system, not an invoice. Until it is
+issued it says so across the page, so a printed copy left on a desk can never be
+mistaken for the real thing.
+{% endcomment %}<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      @page { size: A4; margin: 18mm 16mm; }
+      body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 10pt; color: #16171c; }
+      h1 { font-size: 16pt; margin: 0 0 4mm 0; }
+      .muted { color: #5a5f6b; }
+      .parties { width: 100%; margin: 6mm 0; border-collapse: collapse; }
+      .parties td { vertical-align: top; width: 50%; padding: 0; }
+      table.lines { width: 100%; border-collapse: collapse; margin-top: 4mm; }
+      table.lines th { text-align: left; border-bottom: 1.5pt solid #16171c; padding: 2mm 1mm; font-size: 9pt; }
+      table.lines td { border-bottom: 0.75pt solid #e4e6eb; padding: 2mm 1mm; vertical-align: top; }
+      .num { text-align: right; white-space: nowrap; }
+      .totals { margin-top: 6mm; margin-left: auto; border-collapse: collapse; }
+      .totals td { padding: 1.5mm 2mm; }
+      .totals tr.grand td { font-weight: bold; border-top: 1.5pt solid #16171c; }
+      .watermark {
+        position: fixed; top: 110mm; left: -10mm; width: 200mm; text-align: center;
+        transform: rotate(-30deg); font-size: 44pt; font-weight: bold;
+        color: rgba(175, 125, 0, 0.18);
+      }
+      .banner { border: 1pt solid #af7d00; color: #7a4a00; padding: 2mm 3mm; margin-bottom: 4mm; }
+    </style>
+  </head>
+  <body>
+    {% if not issued %}<div class="watermark">TASLAK — fatura değildir</div>{% endif %}
+    {% if cancelled %}<div class="banner">Bu taslak iptal edildi{% if draft.cancel_reason %}: {{ draft.cancel_reason }}{% endif %}</div>{% elif not issued %}<div class="banner">TASLAK — fatura değildir. Fatura, e-Fatura / e-Arşiv sisteminizden düzenlenir.</div>{% endif %}
+    <h1>{% if issued %}Fatura özeti{% else %}Fatura taslağı{% endif %}</h1>
+    <div class="muted">Dönem: {{ draft.period_start|tr_date }} – {{ draft.period_end|tr_date }}{% if issued %} · Fatura no: {{ draft.invoice_number }} · Tarih: {{ draft.invoice_date|tr_date }}{% endif %}{% if draft.paid_on %} · Ödendi: {{ draft.paid_on|tr_date }}{% endif %}</div>
+    <table class="parties">
+      <tr>
+        <td><strong>{{ company.display_name }}</strong><br>{{ company.legal_name }}{% if company.phone %}<br>{{ company.phone }}{% endif %}</td>
+        <td><strong>{{ draft.customer.legal_name }}</strong><br>Sözleşme no: {{ draft.contract.contract_number }}</td>
+      </tr>
+    </table>
+    <table class="lines">
+      <thead>
+        <tr><th>Açıklama</th><th class="num">Miktar</th><th class="num">Birim fiyat</th><th class="num">Tutar</th></tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td class="num">{{ line.quantity|tr_decimal:4 }}</td>
+          <td class="num">{% if line.needs_price %}<strong>fiyat girilmedi</strong>{% else %}{{ line.unit_price|tr_decimal }} {{ draft.currency }}{% endif %}</td>
+          <td class="num">{{ line.amount|tr_decimal }} {{ draft.currency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <table class="totals">
+      <tr><td>Ara toplam</td><td class="num">{{ draft.subtotal|tr_decimal }} {{ draft.currency }}</td></tr>
+      <tr><td>KDV (%{{ draft.vat_rate|tr_decimal }})</td><td class="num">{{ draft.vat_amount|tr_decimal }} {{ draft.currency }}</td></tr>
+      <tr class="grand"><td>Genel toplam</td><td class="num">{{ draft.total|tr_decimal }} {{ draft.currency }}</td></tr>
+    </table>
+    {% if draft.notes %}<p class="muted">Not: {{ draft.notes }}</p>{% endif %}
+  </body>
+</html>

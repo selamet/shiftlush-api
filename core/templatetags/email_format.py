@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from django import template
@@ -78,3 +79,20 @@ def tr_month(value: object) -> str:
         if year.isdigit() and month.isdigit() and 1 <= int(month) <= 12:
             return f"{_TR_MONTHS[int(month) - 1]} {year}"
     return "" if value is None else str(value)
+
+
+@register.filter
+def tr_decimal(value: object, places: int = 2) -> str:
+    """A number the Turkish way: "1.234,56". Thousands with dots, decimals with a comma.
+
+    For documents a person reads (the invoice draft PDF). Anything that is not a
+    number is printed as it came.
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return str(value)
+    formatted = f"{number:,.{int(places)}f}"
+    return formatted.replace(",", "\x00").replace(".", ",").replace("\x00", ".")

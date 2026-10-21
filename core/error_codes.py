@@ -97,6 +97,18 @@ class ErrorCode(models.TextChoices):
         "PORTAL_EMAIL_IN_USE",
         "Another active portal account already uses this e-mail address",
     )
+    INVOICE_TRANSITION_NOT_ALLOWED = (
+        "INVOICE_TRANSITION_NOT_ALLOWED",
+        "The invoice draft is not in a state this action can be taken from",
+    )
+    INVOICE_LINES_NEED_PRICE = (
+        "INVOICE_LINES_NEED_PRICE",
+        "Every line needs a price before the draft can be issued",
+    )
+    DUPLICATE_INVOICE_NUMBER = (
+        "DUPLICATE_INVOICE_NUMBER",
+        "Another issued invoice of this company already has this number",
+    )
     FAULT_TRANSITION_NOT_ALLOWED = (
         "FAULT_TRANSITION_NOT_ALLOWED",
         "The fault is not in a state this action can be taken from",

@@ -1,0 +1,1 @@
+{% load email_format %}{% autoescape off %}Asansör bakım bedeli: {{ elevator_name }} ({{ building_name }}), {{ period_start|tr_date }} – {{ period_end|tr_date }}{% if prorated %} ({% if months > 1 %}{{ months }} aylık dönemin {% endif %}{{ covered_days }}/{{ period_days }} günü){% endif %}{% endautoescape %}
