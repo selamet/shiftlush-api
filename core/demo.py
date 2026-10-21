@@ -460,7 +460,7 @@ def _elevators(
     created = []
     counter = 0
     for building in buildings:
-        # Each lift of a building has a name of its own: two "Sol asansör" in one
+        # Each lift of a building has a name of its own: two lifts both called "left" in one
         # block is a list nobody can tell apart.
         names = rng.sample(DEMO["elevator_names"], k=rng.randint(1, 4))
         for name in names:
