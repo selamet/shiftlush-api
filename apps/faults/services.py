@@ -288,6 +288,32 @@ def report_public(*, elevator: Elevator, report: PublicReport) -> Fault:
         return fault
 
 
+def report_by_portal(*, account: Any, elevator: Elevator, report: PublicReport) -> Fault:
+    """A report from a customer contact signed in to the portal (M6).
+
+    The public report's fields and priority mapping, without its honeypot or its
+    30-minute merge: the contact is identified, and two reports from a person
+    who can be called back are two things they chose to say. Runs in the
+    caller's tenant context, which the portal view has set to the account's
+    firm.
+    """
+    with transaction.atomic():
+        fault = _insert(
+            company_id=elevator.company_id,
+            elevator=elevator,
+            channel=FaultChannel.CUSTOMER_PORTAL,
+            reported_by_portal_account=account,
+            description=report.description,
+            priority=public_priority(report),
+            reported_at=timezone.now(),
+            stopped_elevator=report.elevator_stopped,
+        )
+        if report.elevator_stopped:
+            _stop(elevator)
+        _announce_report(fault)
+    return fault
+
+
 def _merge(fault: Fault, *, report: PublicReport, priority: str, at: datetime) -> Fault:
     fault.additional_reports = [
         *fault.additional_reports,

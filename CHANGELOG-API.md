@@ -223,6 +223,43 @@ carried as compatibility shims nobody will ever remove.
   - New enums `InspectionResultLabel`, `InspectionKind`, `NonConformityStatus`,
     `InspectionDueType`.
 
+- **Customer portal** (M6) — a customer's contacts read their own lifts and
+  report faults, on a principal of their own.
+  - **A separate session.** Portal tokens carry `aud: "portal"` and a
+    `portal_account_id`; staff endpoints refuse them with `401`, and portal
+    endpoints refuse staff tokens with `401`. The contract names the scheme
+    `portalJwtAuth`. The refresh token is the `portal_refresh` cookie, scoped to
+    `/api/v1/portal/` and rotated on every use, with the staff replay rules.
+  - Anonymous: `POST /portal/auth/accept`, `login`, `refresh`, `logout`,
+    `password-reset`, `password-reset/confirm`. The same throttle and the same
+    lockout as the staff sign-in (per e-mail and address), in a key space of
+    their own. Answers carry `{access, account}`.
+  - `GET /portal/me` — the account, the contact's and customer's names, and the
+    firm's name and phone.
+  - Read-only, narrowed to the account's customer: `/portal/elevators/`,
+    `/portal/visits/` (`?elevator=`), `/portal/inspections/` (`?elevator=`),
+    `/portal/faults/` (`?elevator=`, `?status=`), each with `/{id}/`. Another
+    customer's record is `404`. The portal's serializers name their fields one
+    by one: no work notes or checklist notes, no billable flag, no contract
+    money, no technical data or internal notes, no public reporter's contact
+    details, and the technician by first name only.
+  - Photos and report PDFs are listed by id; `GET /portal/files/{id}/download-url/`
+    signs one, for the customer's visit photos, inspection reports and fault
+    photos only.
+  - `POST /portal/faults/` — `elevator`, `description`, `someone_trapped`,
+    `elevator_stopped`. The public report's priority mapping, without its
+    honeypot or merge. Replay-protected by `Idempotency-Key`, now keyed by the
+    portal account for these requests. Raises the usual fault notifications.
+  - Faults gain the `customer_portal` value of `FaultChannel`.
+  - Office: `POST /customers/{id}/portal-invitations/` (`{contact}`; the
+    contact must be the customer's — `CONTACT_NOT_OF_CUSTOMER` — and have an
+    e-mail — `CONTACT_HAS_NO_EMAIL`; an active account is
+    `409 PORTAL_ACCOUNT_ALREADY_ACTIVE`, an e-mail another active account uses
+    `409 PORTAL_EMAIL_IN_USE`), `GET /customers/{id}/portal-accounts/`,
+    `POST /portal-accounts/{id}/deactivate/`. Owner, admin and operations.
+    Accounts carry a `status` (`PortalAccountStatus`: `invited`, `active`,
+    `inactive`). A contact that is deleted closes its account at once.
+
 ### Changed
 
 - **`PATCH /inspections/{id}/` and `PATCH /nonconformities/{id}/` are

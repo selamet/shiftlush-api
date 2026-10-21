@@ -21,6 +21,7 @@ from typing import Any
 
 from django.db.models import QuerySet
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 
 class _WithCompany:
@@ -46,6 +47,16 @@ class _WithCompany:
 
 
 class CompanyAwareJWTAuthentication(JWTAuthentication):
+    def get_validated_token(self, raw_token: bytes) -> Any:
+        token = super().get_validated_token(raw_token)
+        # A customer portal token (M6) is signed with the same key, so the
+        # signature alone says nothing about who may use it. Staff views take
+        # staff tokens, which carry no audience; anything that names one is
+        # refused here, before any view gets to forget to check.
+        if token.get("aud") is not None:
+            raise InvalidToken("Not a staff token.")
+        return token
+
     def get_user(self, validated_token: Any) -> Any:
         # DRF builds an authenticator per request, so this substitution is not
         # shared between requests; it is still restored, because an exception

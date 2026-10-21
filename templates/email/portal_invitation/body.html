@@ -1,0 +1,13 @@
+{% extends "email/base.html" %}
+{% block preheader %}{{ customer_name }} asansörlerinin bakım, muayene ve arıza kayıtlarını portaldan izleyebilirsiniz. Bağlantı {{ valid_for_hours }} saat geçerli.{% endblock %}
+{% block title %}{{ company_name }} sizi müşteri portalına davet etti{% endblock %}
+{% block content %}
+  <p style="margin:0 0 14px 0;">Merhaba {{ full_name }},</p>
+  <p style="margin:0 0 28px 0;color:#5a5f6b;"><strong style="color:#16171c;font-weight:600;">{{ company_name }}</strong>, {{ customer_name }} adına asansörlerinizin bakım, muayene ve arıza kayıtlarını izleyebilmeniz için sizi ShiftLush müşteri portalına davet etti. Aşağıdaki düğmeden şifrenizi belirleyip portala girebilirsiniz.</p>
+  {% include "email/_button.html" with label="Portala giriş yap" %}
+  {% include "email/_notice.html" with hours=valid_for_hours single_use=True %}
+  {% include "email/_fallback_link.html" %}
+{% endblock %}
+{% block footer %}
+  Bu daveti beklemiyorsanız e-postayı yok sayabilirsiniz; hesabınız açılmaz.
+{% endblock %}

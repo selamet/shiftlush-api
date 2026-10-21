@@ -238,17 +238,37 @@ class RefreshSession(models.Model):
 class TokenPurpose(models.TextChoices):
     PASSWORD_RESET = "password_reset", "Password reset"
     EMAIL_VERIFICATION = "email_verification", "E-mail verification"
+    # The customer portal's (M6). Their own purposes, so that no staff flow can
+    # ever consume one: every lookup filters on the purpose first.
+    PORTAL_INVITATION = "portal_invitation", "Portal invitation"
+    PORTAL_PASSWORD_RESET = "portal_password_reset", "Portal password reset"
+
+
+#: The purposes that belong to a portal account rather than a staff user.
+PORTAL_PURPOSES = frozenset({TokenPurpose.PORTAL_INVITATION, TokenPurpose.PORTAL_PASSWORD_RESET})
 
 
 class OneTimeToken(models.Model):
-    """Password reset and e-mail verification.
+    """Password reset and e-mail verification, for staff and portal accounts.
 
     Single-use and short-lived, so `used_at` is the whole lifecycle; there is
     nothing for soft delete to preserve.
+
+    A token belongs to exactly one principal: a staff user, or (M6) a customer
+    portal account — never both, and the purpose says which.
     """
 
     id = models.BigAutoField(primary_key=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="one_time_tokens")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="one_time_tokens", null=True, blank=True
+    )
+    portal_account = models.ForeignKey(
+        "portal.PortalAccount",
+        on_delete=models.CASCADE,
+        related_name="one_time_tokens",
+        null=True,
+        blank=True,
+    )
     purpose = models.CharField(max_length=32, choices=TokenPurpose.choices)
     token_hash = models.CharField(max_length=255, unique=True)
     expires_at = models.DateTimeField()
@@ -264,8 +284,19 @@ class OneTimeToken(models.Model):
             models.CheckConstraint(
                 condition=models.Q(purpose__in=TokenPurpose.values),
                 name="one_time_token_purpose_valid",
-            )
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(user__isnull=False, portal_account__isnull=True)
+                    & ~models.Q(purpose__in=PORTAL_PURPOSES)
+                )
+                | (
+                    models.Q(user__isnull=True, portal_account__isnull=False)
+                    & models.Q(purpose__in=PORTAL_PURPOSES)
+                ),
+                name="one_time_token_one_principal",
+            ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.purpose} for {self.user_id}"
+        return f"{self.purpose} for {self.user_id or self.portal_account_id}"

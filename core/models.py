@@ -148,7 +148,15 @@ class IdempotencyKey(models.Model):
 
     id = models.BigAutoField(primary_key=True)
     company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="+")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    # Whose key it is: a staff user, or (M6) a customer portal account. Exactly
+    # one — two principals sharing a key space would let one replay the other's
+    # answer.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+", null=True, blank=True
+    )
+    portal_account = models.ForeignKey(
+        "portal.PortalAccount", on_delete=models.CASCADE, related_name="+", null=True, blank=True
+    )
     key = models.CharField(max_length=255)
     endpoint = models.CharField(max_length=200)
     # The same key with a different body is a client bug, not a retry. Replaying
@@ -164,8 +172,20 @@ class IdempotencyKey(models.Model):
         db_table = "idempotency_key"
         constraints = [
             models.UniqueConstraint(
-                fields=["company", "user", "key"], name="uq_idempotency_key_per_user"
-            )
+                fields=["company", "user", "key"],
+                condition=models.Q(user__isnull=False),
+                name="uq_idempotency_key_per_user",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "portal_account", "key"],
+                condition=models.Q(portal_account__isnull=False),
+                name="uq_idempotency_key_per_portal_account",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(user__isnull=False, portal_account__isnull=True)
+                | models.Q(user__isnull=True, portal_account__isnull=False),
+                name="idempotency_key_one_principal",
+            ),
         ]
 
     def __str__(self) -> str:

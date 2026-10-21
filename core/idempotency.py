@@ -72,6 +72,19 @@ def _fingerprint(request: Request) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _owner(request: Request) -> tuple[Any, dict[str, Any]]:
+    """The company and the principal a key is stored under.
+
+    A staff user, or a customer portal account (M6) — which is not a User and
+    has its own column, so the two can never read each other's stored answers.
+    """
+    principal = request.user
+    if getattr(principal, "is_portal_account", False):
+        return principal.company_id, {"user_id": None, "portal_account_id": principal.pk}  # type: ignore[union-attr]
+    user = authenticated_user(request)
+    return user.company_id, {"user_id": user.pk, "portal_account_id": None}
+
+
 def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response]:
     """Wrap a create view so the same key returns the same answer.
 
@@ -94,17 +107,14 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
 
         endpoint = f"{request.method} {request.path}"
         fingerprint = _fingerprint(request)
-        user = authenticated_user(request)
-        company_id = user.company_id
+        company_id, owner = _owner(request)
         if company_id is None:
             # The stored row is keyed by company, and a user without one cannot
             # reach any of the endpoints this wraps — every one of them is
             # company-scoped and the permission class refuses first.
             return handler(self, request, *args, **kwargs)
 
-        existing = IdempotencyKey.objects.filter(
-            company_id=company_id, user_id=user.pk, key=key
-        ).first()
+        existing = IdempotencyKey.objects.filter(company_id=company_id, key=key, **owner).first()
 
         if existing is not None:
             if existing.expires_at <= timezone.now():
@@ -122,8 +132,8 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
             response_data = response.data
             IdempotencyKey.objects.update_or_create(
                 company_id=company_id,
-                user_id=user.pk,
                 key=key,
+                **owner,
                 defaults={
                     "endpoint": endpoint,
                     "request_hash": fingerprint,

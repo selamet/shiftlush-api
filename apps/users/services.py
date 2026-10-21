@@ -56,6 +56,12 @@ def _new_token() -> str:
     return secrets.token_urlsafe(48)
 
 
+# Public names for the two primitives the customer portal (apps.portal) shares
+# with staff authentication: one way to make a token, one way to store it.
+hash_token = _hash
+new_token = _new_token
+
+
 @dataclass(frozen=True)
 class TokenPair:
     access: str
@@ -435,6 +441,8 @@ def _consume_one_time_token(token: str, purpose: TokenPurpose) -> User:
             raise BusinessRuleError(ErrorCode.TOKEN_EXPIRED)
         record.used_at = timezone.now()
         record.save(update_fields=["used_at"])
+        # A staff purpose, so a staff token: the check constraint guarantees it.
+        assert record.user is not None
         return record.user
 
 

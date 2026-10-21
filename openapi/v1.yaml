@@ -1615,6 +1615,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerRead'
           description: ''
+  /api/v1/customers/{customer_id}/portal-accounts/:
+    get:
+      operationId: customers_portal_accounts_list
+      description: '`GET /customers/{id}/portal-accounts/` — the customer''s accounts.'
+      parameters:
+      - in: path
+        name: customer_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalAccountList'
+          description: ''
+  /api/v1/customers/{customer_id}/portal-invitations/:
+    post:
+      operationId: customers_portal_invitations_create
+      description: '`POST /customers/{id}/portal-invitations/` — invite a contact.'
+      parameters:
+      - in: path
+        name: customer_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalInvitationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalInvitationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalInvitationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalAccount'
+          description: ''
   /api/v1/customers/{id}/:
     get:
       operationId: customers_retrieve
@@ -2129,11 +2203,13 @@ paths:
         schema:
           type: string
           enum:
+          - customer_portal
           - public_qr
           - staff
         description: |-
           * `staff` - Staff
           * `public_qr` - Public QR report
+          * `customer_portal` - Customer portal
       - in: query
         name: customer
         schema:
@@ -3792,6 +3868,489 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlanSummary'
+          description: ''
+  /api/v1/portal-accounts/{id}/deactivate/:
+    post:
+      operationId: portal_accounts_deactivate_create
+      description: 'Close the account now: no sign-in, and its sessions end.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this portal account.
+        required: true
+      tags:
+      - portal-accounts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalAccount'
+          description: ''
+  /api/v1/portal/auth/accept:
+    post:
+      operationId: portal_auth_accept_create
+      description: 'Accept an invitation: set a password and sign in.'
+      tags:
+      - portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalAcceptRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalAcceptRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalAcceptRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTokenResponse'
+          description: ''
+  /api/v1/portal/auth/login:
+    post:
+      operationId: portal_auth_login_create
+      description: Sign in with e-mail and password; the staff lockout rules apply.
+      tags:
+      - portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalLoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalLoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalLoginRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTokenResponse'
+          description: ''
+  /api/v1/portal/auth/logout:
+    post:
+      operationId: portal_auth_logout_create
+      description: End this session and clear the `portal_refresh` cookie.
+      tags:
+      - portal
+      security:
+      - {}
+      responses:
+        '204':
+          description: No response body
+  /api/v1/portal/auth/password-reset:
+    post:
+      operationId: portal_auth_password_reset_create
+      description: Mail a reset link. 202 whether or not the address has an account.
+      tags:
+      - portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetRequestRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '202':
+          description: No response body
+  /api/v1/portal/auth/password-reset/confirm:
+    post:
+      operationId: portal_auth_password_reset_confirm_create
+      description: Set a new password from the mailed link; every session ends.
+      tags:
+      - portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalPasswordResetConfirmRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: No response body
+  /api/v1/portal/auth/refresh:
+    post:
+      operationId: portal_auth_refresh_create
+      description: Exchange the `portal_refresh` cookie for a new access token; rotates.
+      tags:
+      - portal
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTokenResponse'
+          description: ''
+  /api/v1/portal/elevators/:
+    get:
+      operationId: portal_elevators_list
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalElevatorList'
+          description: ''
+  /api/v1/portal/elevators/{id}/:
+    get:
+      operationId: portal_elevators_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this elevator.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalElevator'
+          description: ''
+  /api/v1/portal/faults/:
+    get:
+      operationId: portal_faults_list
+      description: |-
+        The customer's faults — the contact's own and everybody else's at the
+        customer — and reporting a new one.
+      parameters:
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - assigned
+          - cancelled
+          - closed
+          - on_site
+          - open
+          - resolved
+        description: |-
+          * `open` - Open
+          * `assigned` - Assigned
+          * `on_site` - On site
+          * `resolved` - Resolved
+          * `closed` - Closed
+          * `cancelled` - Cancelled
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalFaultList'
+          description: ''
+    post:
+      operationId: portal_faults_create
+      description: |-
+        Report a fault on one of the customer's lifts.
+
+        The public QR report's fields and priority mapping: `someone_trapped`
+        makes it an emergency, `elevator_stopped` high, otherwise normal. Raises
+        the same notifications as any report. Replay-protected by
+        `Idempotency-Key`, keyed by this portal account.
+      tags:
+      - portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalFaultReportRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalFaultReportRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalFaultReportRequest'
+        required: true
+      security:
+      - portalJwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalFault'
+          description: ''
+  /api/v1/portal/faults/{id}/:
+    get:
+      operationId: portal_faults_retrieve
+      description: |-
+        The customer's faults — the contact's own and everybody else's at the
+        customer — and reporting a new one.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this fault.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalFault'
+          description: ''
+  /api/v1/portal/files/{id}/download-url/:
+    get:
+      operationId: portal_files_download_url_retrieve
+      description: |-
+        Signed download URLs, for the customer's own files only.
+
+        The same signed-URL flow as the staff endpoint; what differs is the set of
+        files: anything outside the customer's scope is a 404, as if it did not
+        exist.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this attachment.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+          description: ''
+  /api/v1/portal/inspections/:
+    get:
+      operationId: portal_inspections_list
+      parameters:
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalInspectionList'
+          description: ''
+  /api/v1/portal/inspections/{id}/:
+    get:
+      operationId: portal_inspections_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inspection.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalInspection'
+          description: ''
+  /api/v1/portal/me:
+    get:
+      operationId: portal_me_retrieve
+      description: Who is signed in, for whom, and whom to call.
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalMe'
+          description: ''
+  /api/v1/portal/visits/:
+    get:
+      operationId: portal_visits_list
+      parameters:
+      - in: query
+        name: elevator
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalVisitList'
+          description: ''
+  /api/v1/portal/visits/{id}/:
+    get:
+      operationId: portal_visits_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this maintenance visit.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalVisit'
           description: ''
   /api/v1/provinces/:
     get:
@@ -6172,10 +6731,12 @@ components:
       enum:
       - staff
       - public_qr
+      - customer_portal
       type: string
       description: |-
         * `staff` - Staff
         * `public_qr` - Public QR report
+        * `customer_portal` - Customer portal
     FaultCreateRequest:
       type: object
       description: |-
@@ -7651,6 +8212,156 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedPortalAccountList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalAccount'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPortalElevatorList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalElevator'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPortalFaultList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalFault'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPortalInspectionList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalInspection'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPortalVisitList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalVisit'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedUserList:
       type: object
       required:
@@ -8440,6 +9151,512 @@ components:
         * `planned` - Planned
         * `done` - Done
         * `cancelled` - Cancelled
+    PortalAcceptRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 6
+      required:
+      - password
+      - token
+    PortalAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        contact:
+          type: string
+          format: uuid
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PortalAccountStatus'
+          readOnly: true
+        invited_at:
+          type: string
+          format: date-time
+          readOnly: true
+        accepted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        deactivated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_login_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - accepted_at
+      - contact
+      - contact_name
+      - customer
+      - deactivated_at
+      - email
+      - id
+      - invited_at
+      - last_login_at
+      - status
+    PortalAccountStatus:
+      enum:
+      - invited
+      - active
+      - inactive
+      type: string
+      description: |-
+        * `invited` - Invited
+        * `active` - Active
+        * `inactive` - Inactive
+    PortalElevator:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        building:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ElevatorStatus'
+          readOnly: true
+        last_maintenance_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        next_maintenance_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        inspection_label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionLabelEnum'
+          readOnly: true
+        next_inspection_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+      required:
+      - building
+      - building_name
+      - id
+      - inspection_label
+      - last_maintenance_date
+      - name
+      - next_inspection_date
+      - next_maintenance_date
+      - status
+    PortalFault:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/FaultChannel'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/FaultStatus'
+          readOnly: true
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/FaultPriority'
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        reported_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assigned_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        on_site_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        technician_first_name:
+          type: string
+          nullable: true
+          readOnly: true
+        resolution_notes:
+          type: string
+          readOnly: true
+        reported_by_me:
+          type: boolean
+          readOnly: true
+      required:
+      - assigned_at
+      - building_name
+      - cancelled_at
+      - channel
+      - closed_at
+      - description
+      - elevator
+      - elevator_name
+      - id
+      - on_site_at
+      - priority
+      - reference
+      - reported_at
+      - reported_by_me
+      - resolution_notes
+      - resolved_at
+      - status
+      - technician_first_name
+    PortalFaultReportRequest:
+      type: object
+      description: The public report's fields, from an identified contact.
+      properties:
+        elevator:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        someone_trapped:
+          type: boolean
+          default: false
+        elevator_stopped:
+          type: boolean
+          default: false
+      required:
+      - description
+      - elevator
+    PortalInspection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InspectionKind'
+          readOnly: true
+        inspected_on:
+          type: string
+          format: date
+          readOnly: true
+        inspection_body:
+          type: string
+          readOnly: true
+        report_number:
+          type: string
+          readOnly: true
+        label:
+          allOf:
+          - $ref: '#/components/schemas/InspectionResultLabel'
+          readOnly: true
+        next_inspection_due:
+          type: string
+          format: date
+          readOnly: true
+        report:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        nonconformities:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalNonConformity'
+          readOnly: true
+      required:
+      - elevator
+      - elevator_name
+      - id
+      - inspected_on
+      - inspection_body
+      - kind
+      - label
+      - next_inspection_due
+      - nonconformities
+      - report
+      - report_number
+    PortalInvitationRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        contact:
+          type: string
+          format: uuid
+      required:
+      - contact
+    PortalLoginRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - email
+      - password
+    PortalMe:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        contact_name:
+          type: string
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        company_name:
+          type: string
+          readOnly: true
+        company_phone:
+          type: string
+          readOnly: true
+      required:
+      - company_name
+      - company_phone
+      - contact_name
+      - customer_name
+      - email
+      - id
+    PortalNonConformity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        severity:
+          allOf:
+          - $ref: '#/components/schemas/InspectionResultLabel'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/NonConformityStatus'
+          readOnly: true
+        fixed_on:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+      required:
+      - description
+      - fixed_on
+      - id
+      - severity
+      - status
+    PortalPasswordResetConfirmRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 6
+      required:
+      - password
+      - token
+    PortalPasswordResetRequestRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    PortalTokenResponse:
+      type: object
+      properties:
+        access:
+          type: string
+        account:
+          $ref: '#/components/schemas/PortalMe'
+      required:
+      - access
+      - account
+    PortalVisit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        visit_date:
+          type: string
+          format: date
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/MaintenanceVisitStatus'
+          readOnly: true
+        technician_first_name:
+          type: string
+          readOnly: true
+        parts_replaced:
+          type: string
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalVisitItem'
+          readOnly: true
+        photos:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+      required:
+      - elevator
+      - elevator_name
+      - id
+      - items
+      - parts_replaced
+      - photos
+      - status
+      - technician_first_name
+      - visit_date
+    PortalVisitItem:
+      type: object
+      properties:
+        item:
+          allOf:
+          - $ref: '#/components/schemas/MaintenanceChecklistItem'
+          readOnly: true
+        result:
+          allOf:
+          - $ref: '#/components/schemas/MaintenanceChecklistResult'
+          readOnly: true
+      required:
+      - item
+      - result
     PricingTypeEnum:
       enum:
       - per_elevator
@@ -8979,6 +10196,10 @@ components:
       - IDEMPOTENCY_KEY_REQUIRED
       - ELEVATOR_ALREADY_CONTRACTED
       - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
+      - CONTACT_NOT_OF_CUSTOMER
+      - CONTACT_HAS_NO_EMAIL
+      - PORTAL_ACCOUNT_ALREADY_ACTIVE
+      - PORTAL_EMAIL_IN_USE
       - FAULT_TRANSITION_NOT_ALLOWED
       - NOTIFICATION_EMAIL_LOCKED
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
@@ -9027,6 +10248,10 @@ components:
         * `IDEMPOTENCY_KEY_REQUIRED` - This request must carry an Idempotency-Key header
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
         * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
+        * `CONTACT_NOT_OF_CUSTOMER` - The contact does not belong to this customer
+        * `CONTACT_HAS_NO_EMAIL` - The contact has no e-mail address to send a portal invitation to
+        * `PORTAL_ACCOUNT_ALREADY_ACTIVE` - This contact already has an active portal account
+        * `PORTAL_EMAIL_IN_USE` - Another active portal account already uses this e-mail address
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
         * `NOTIFICATION_EMAIL_LOCKED` - This notification is always e-mailed and cannot be turned off
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
@@ -9082,3 +10307,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    portalJwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A customer portal access token (audience `portal`).
