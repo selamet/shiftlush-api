@@ -125,6 +125,11 @@ class InspectionViewSet(TenantViewSet[Inspection]):
         services.edit(inspection, changes=dict(form.validated_data), by=authenticated_user(request))
         return self._read(inspection)
 
+    # PATCH routes here; a schema on `update` alone does not reach it.
+    @extend_schema(request=InspectionEditSerializer, responses={200: InspectionReadSerializer})
+    def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return self.update(request, *args, **kwargs)
+
     @extend_schema(request=NonConformityEntrySerializer, responses={201: NonConformitySerializer})
     @action(detail=True, methods=["post"], url_path="nonconformities", url_name="nonconformities")
     def add_nonconformity(self, request: Request, pk: str | None = None) -> Response:
@@ -280,6 +285,10 @@ class NonConformityViewSet(
             nonconformity, changes=dict(form.validated_data), by=authenticated_user(request)
         )
         return Response(NonConformitySerializer(nonconformity).data)
+
+    @extend_schema(request=NonConformityEditSerializer, responses={200: NonConformitySerializer})
+    def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return self.update(request, *args, **kwargs)
 
     @extend_schema(
         request=None,

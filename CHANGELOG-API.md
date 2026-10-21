@@ -225,6 +225,11 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **`PATCH /inspections/{id}/` and `PATCH /nonconformities/{id}/` are
+  described with the fields they take.** The inspection edit was described
+  with the create body, and the non-conformity edit with no body at all.
+  Nothing on the wire changed.
+
 - **`PATCH /faults/{id}/` is described with the fields it takes**
   (`priority`, `description`, `billable`). The contract used to describe the
   create body. Nothing on the wire changed.
