@@ -21,7 +21,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.users.services import register_company
-from core import demo
+from core import demo, demo_activity, mail
 from core.context import system_context
 
 
@@ -51,6 +51,12 @@ class Command(BaseCommand):
         if not demo.has_address_data():
             raise CommandError("Run load_address_data first — buildings need somewhere to be.")
 
+        # Demo seeding sends no e-mail, the owner's verification message
+        # included: nobody is there to read it.
+        with mail.suppressed():
+            self._seed(options)
+
+    def _seed(self, options: dict[str, Any]) -> None:
         company, _owner = register_company(
             legal_name=demo.DEMO["company"]["legal_name"],
             display_name=demo.DEMO["company"]["display_name"],
@@ -67,5 +73,10 @@ class Command(BaseCommand):
             f"sign in: {options['email']} / {demo.DEMO_PASSWORD}\n"
             f"users: {filled.users + 1}  customers: {filled.customers}  "
             f"buildings: {filled.buildings}  elevators: {filled.elevators}  "
-            f"contracts: {filled.contracts}"
+            f"contracts: {filled.contracts}\n"
+            f"visits: {filled.activity.visits}  faults: {filled.activity.faults}  "
+            f"inspections: {filled.activity.inspections}  drafts: {filled.activity.drafts}"
         )
+        portal = demo_activity.portal_login(company)
+        if portal:
+            self.stdout.write(f"portal sign in: {portal} / {demo_activity.PORTAL_PASSWORD}")

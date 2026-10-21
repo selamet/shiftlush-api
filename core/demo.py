@@ -103,6 +103,8 @@ class Populated:
     buildings: int
     elevators: int
     contracts: int
+    #: Phase 2: visits, the plan, faults, inspections, the portal, drafts.
+    activity: Any = None
 
 
 @transaction.atomic
@@ -111,6 +113,7 @@ def populate(
     *,
     staff_domain: str = STAFF_DOMAIN,
     rng: random.Random | None = None,
+    today: date | None = None,
 ) -> Populated:
     """Fill one company with a plausible amount of data.
 
@@ -130,12 +133,20 @@ def populate(
         contracts = _contracts(company, generator, customers, elevators)
         _assign_technicians(company, users, customers)
 
+    # Phase 2 on top: a few months of visits, the plan, faults, inspections,
+    # the portal and invoice drafts, through the real services and with every
+    # e-mail suppressed. See core.demo_activity.
+    from core.demo_activity import populate_activity
+
+    activity = populate_activity(company, staff_domain=staff_domain, today=today)
+
     return Populated(
         users=len(users),
         customers=len(customers),
         buildings=len(buildings),
         elevators=len(elevators),
         contracts=len(contracts),
+        activity=activity,
     )
 
 

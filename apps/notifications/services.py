@@ -26,6 +26,7 @@ from apps.notifications.models import (
 )
 from apps.notifications.tasks import send_notification_email
 from apps.users.models import User
+from core import mail
 
 
 class PreferenceEntry(TypedDict):
@@ -101,7 +102,11 @@ def notify(
         if notification is not None:
             created.append(notification)
 
-    emailed = _wants_email({n.recipient_id for n in created}, kind)
+    # Inside core.mail.suppressed() — the demo seeding — the in-app
+    # notifications are raised and nothing is e-mailed.
+    emailed = (
+        set() if mail.is_suppressed() else _wants_email({n.recipient_id for n in created}, kind)
+    )
     for notification in created:
         if notification.recipient_id in emailed:
             # robust: one notification failing to enqueue (the queue table

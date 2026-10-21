@@ -18,6 +18,9 @@ fourth, the e-mail copy of an in-app notification. That shapes the rules here:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from django.conf import settings
@@ -26,6 +29,31 @@ from django.db import transaction
 from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
+
+# Set only inside `suppressed()`. A contextvar, like the tenant context, so it
+# cannot leak from one request or command into another.
+_suppressed: ContextVar[bool] = ContextVar("mail_suppressed", default=False)
+
+
+@contextmanager
+def suppressed() -> Iterator[None]:
+    """Send no e-mail for anything queued inside the block.
+
+    For the demo seeding (core.demo_activity): it drives the real services,
+    which notify people and send invitations exactly as they would for a firm,
+    and the demo owner's address is a real mailbox. Checked when a message is
+    queued rather than when it is sent, because a send queued for after commit
+    runs after this block has already exited.
+    """
+    token = _suppressed.set(True)
+    try:
+        yield
+    finally:
+        _suppressed.reset(token)
+
+
+def is_suppressed() -> bool:
+    return _suppressed.get()
 
 
 def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) -> None:
@@ -62,8 +90,11 @@ def send_after_commit(**kwargs: object) -> None:
     """Queue a send for after the current transaction commits.
 
     Outside a transaction this sends immediately, which is what the tests and
-    management commands want.
+    management commands want. Inside `suppressed()` nothing is queued at all.
     """
+    if is_suppressed():
+        logger.info("E-mail suppressed: %s to %s", kwargs.get("template"), kwargs.get("to"))
+        return
     transaction.on_commit(lambda: _send(**kwargs))  # type: ignore[arg-type]
 
 

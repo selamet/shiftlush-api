@@ -10,33 +10,126 @@
     "landline_prefix": "+90442"
   },
   "staff": [
-    ["Ayşe", "Demir", "operations"],
-    ["Hakan", "Çelik", "technician"],
-    ["Zeynep", "Kaya", "accountant"],
-    ["Emre", "Şahin", "technician"]
+    [
+      "Ayşe",
+      "Demir",
+      "operations"
+    ],
+    [
+      "Hakan",
+      "Çelik",
+      "technician"
+    ],
+    [
+      "Zeynep",
+      "Kaya",
+      "accountant"
+    ],
+    [
+      "Emre",
+      "Şahin",
+      "technician"
+    ]
   ],
   "customers": [
-    ["Dadaş Konakları Site Yönetimi", "complex_management", "Ayşe Demir", "7000000007"],
-    ["{province} Ticaret Merkezi A.Ş.", "corporate", "Hakan Çelik", "7000000015"],
-    ["{province} Belediyesi", "public", "Zeynep Kaya", "7000000023"],
-    ["Kardelen Sitesi Yönetimi", "complex_management", "Emre Şahin", "7000000031"],
-    ["Şelale Apartmanı Yönetimi", "building_management", "Fatma Aydın", "7000000048"],
-    ["Ufuk Konutları Yönetimi", "complex_management", "Murat Doğan", "7000000056"],
-    ["Zirve Plaza İşletmeleri", "corporate", "Selin Yıldırım", "7000000064"],
-    ["{province} İl Özel İdaresi", "public", "Kerem Arslan", "7000000072"],
-    ["Lale Rezidans Yönetimi", "complex_management", "Deniz Koç", "7000000080"],
-    ["Kristal İş Merkezi A.Ş.", "corporate", "Burak Öztürk", "7000000099"]
+    [
+      "Dadaş Konakları Site Yönetimi",
+      "complex_management",
+      "Ayşe Demir",
+      "7000000007"
+    ],
+    [
+      "{province} Ticaret Merkezi A.Ş.",
+      "corporate",
+      "Hakan Çelik",
+      "7000000015"
+    ],
+    [
+      "{province} Belediyesi",
+      "public",
+      "Zeynep Kaya",
+      "7000000023"
+    ],
+    [
+      "Kardelen Sitesi Yönetimi",
+      "complex_management",
+      "Emre Şahin",
+      "7000000031"
+    ],
+    [
+      "Şelale Apartmanı Yönetimi",
+      "building_management",
+      "Fatma Aydın",
+      "7000000048"
+    ],
+    [
+      "Ufuk Konutları Yönetimi",
+      "complex_management",
+      "Murat Doğan",
+      "7000000056"
+    ],
+    [
+      "Zirve Plaza İşletmeleri",
+      "corporate",
+      "Selin Yıldırım",
+      "7000000064"
+    ],
+    [
+      "{province} İl Özel İdaresi",
+      "public",
+      "Kerem Arslan",
+      "7000000072"
+    ],
+    [
+      "Lale Rezidans Yönetimi",
+      "complex_management",
+      "Deniz Koç",
+      "7000000080"
+    ],
+    [
+      "Kristal İş Merkezi A.Ş.",
+      "corporate",
+      "Burak Öztürk",
+      "7000000099"
+    ]
   ],
   "brands": [
-    ["Schindler", "3300 AP"],
-    ["Otis", "Gen2 Switch"],
-    ["Kone", "MonoSpace 500"],
-    ["ThyssenKrupp", "Synergy 100"],
-    ["Merih Asansör", "MY-1600"],
-    ["Akış Asansör", "AK-320"]
+    [
+      "Schindler",
+      "3300 AP"
+    ],
+    [
+      "Otis",
+      "Gen2 Switch"
+    ],
+    [
+      "Kone",
+      "MonoSpace 500"
+    ],
+    [
+      "ThyssenKrupp",
+      "Synergy 100"
+    ],
+    [
+      "Merih Asansör",
+      "MY-1600"
+    ],
+    [
+      "Akış Asansör",
+      "AK-320"
+    ]
   ],
-  "tax_offices": ["Aziziye", "Kazım Karabekir"],
-  "elevator_names": ["Sol asansör", "Sağ asansör", "Yük asansörü", "A1", "Servis asansörü"],
+  "tax_offices": [
+    "Aziziye",
+    "Kazım Karabekir"
+  ],
+  "elevator_names": [
+    "Sol asansör",
+    "Sağ asansör",
+    "Yük asansörü",
+    "A1",
+    "Servis asansörü"
+  ],
   "block_suffix": " Blok",
   "street_suffix": ". Sokak",
   "address_notes": [
@@ -45,7 +138,72 @@
     "Cami karşısındaki ara sokaktan giriliyor, kışın yol dar.",
     "Otoparkın yan kapısından makine dairesine iniliyor."
   ],
-  "public_buildings": ["Hizmet Binası", "Ek Hizmet Binası", "Kültür Merkezi", "İdare Binası"],
+  "public_buildings": [
+    "Hizmet Binası",
+    "Ek Hizmet Binası",
+    "Kültür Merkezi",
+    "İdare Binası"
+  ],
   "annex_suffix": "Ek Bina",
-  "complex_strip": [" Site Yönetimi", " Yönetimi", " İşletmeleri", " A.Ş."]
+  "complex_strip": [
+    " Site Yönetimi",
+    " Yönetimi",
+    " İşletmeleri",
+    " A.Ş."
+  ],
+  "activity": {
+    "inspection_bodies": [
+      "TSE Asansör Muayene Birimi",
+      "Doğu Anadolu Muayene ve Belgelendirme A.Ş.",
+      "Kalite Periyodik Kontrol Ltd. Şti."
+    ],
+    "work_notes": [
+      "Halat gerginliği ayarlandı, kılavuz raylar yağlandı.",
+      "Kapı kilit kontakları temizlendi, fren boşluğu ölçüldü.",
+      "Makine dairesi temizlendi, acil aydınlatma bataryası test edildi.",
+      "Kabin butonları ve kat göstergeleri kontrol edildi."
+    ],
+    "attention_notes": [
+      "Fren balatasında aşınma var, bir sonraki bakımda değiştirilmeli.",
+      "Kat kapısı kilidinde gecikme, takip edilecek.",
+      "Kuyu dibinde su birikintisi; yönetime bildirildi.",
+      "Acil durum interkomu cızırtılı çalışıyor."
+    ],
+    "parts": [
+      "Kapı kilit kontağı",
+      "Fren balatası seti",
+      "Kabin aydınlatma armatürü",
+      "Kat butonu (2 adet)"
+    ],
+    "incomplete_note": "Yedek parça gelmediği için fren ayarı tamamlanamadı; parça gelince devam edilecek.",
+    "access_denied_note": "Makine dairesi kilitliydi, yönetimden anahtar alınamadı.",
+    "faults": {
+      "emergency": "Kabinde mahsur kalan var, asansör iki kat arasında durdu.",
+      "emergency_reporter_name": "Gülsüm Er",
+      "emergency_reporter_phone": "+905321234567",
+      "assigned": "Asansör kapısı kapanırken tekrar açılıyor.",
+      "on_site": "Kabin katla aynı seviyede durmuyor, 5 cm basamak oluşuyor.",
+      "resolved": "Kat göstergesi yanlış katı gösteriyor.",
+      "resolved_notes": "Gösterge kartı yeniden programlandı.",
+      "closed_billable": "Kapı kilidi arızası nedeniyle asansör sık sık duruyor.",
+      "closed_billable_notes": "Kapı kilit kontağı değiştirildi, test edildi.",
+      "closed_free": "Kabin aydınlatması yanmıyor.",
+      "closed_free_notes": "Sigorta değiştirildi, aydınlatma çalışıyor.",
+      "duplicate": "Asansör çalışmıyor.",
+      "duplicate_reason": "Aynı arıza için mükerrer bildirim.",
+      "open": "Asansör çalışırken makine dairesinden yüksek ses geliyor."
+    },
+    "nonconformities": {
+      "yellow": [
+        "Kuyu aydınlatması yetersiz.",
+        "Kabin acil durum aydınlatması 1 saatten kısa sürüyor."
+      ],
+      "red": "Kat kapısı kilidi kabin yokken açılabiliyor.",
+      "blue": "Makine dairesi kapısında uyarı levhası eksik."
+    },
+    "portal": {
+      "active_email_local": "yonetim",
+      "pending_email_local": "site.muduru"
+    }
+  }
 }
