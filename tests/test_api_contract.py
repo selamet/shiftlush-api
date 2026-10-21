@@ -219,3 +219,10 @@ class TestTheContractDescribesWhatWritesReturn:
                             f"{method.upper()} {path} {code} -> {ref.rsplit('/', 1)[-1]}"
                         )
         assert offenders == []
+
+
+class TestEditBodiesAreWhatTheEditValidates:
+    def test_a_fault_edit_is_described_with_the_edit_serializer(self, spec):
+        operation = spec["paths"]["/api/v1/faults/{id}/"]["patch"]
+        body = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+        assert body.endswith("/PatchedFaultEditRequest")

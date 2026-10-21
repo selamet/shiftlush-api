@@ -121,6 +121,13 @@ class FaultViewSet(TenantViewSet[Fault]):
         services.edit(fault, changes=dict(write.validated_data), by=authenticated_user(request))
         return self._read(fault)
 
+    # PATCH routes to partial_update, and a schema declared on `update` does not
+    # reach it: without this the contract described the edit body with the
+    # create serializer, which is not what `update` validates.
+    @extend_schema(request=FaultEditSerializer, responses={200: FaultReadSerializer})
+    def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return self.update(request, *args, **kwargs)
+
     @extend_schema(request=AssignSerializer, responses={200: FaultReadSerializer})
     @action(detail=True, methods=["post"])
     def assign(self, request: Request, pk: str | None = None) -> Response:

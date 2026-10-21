@@ -225,6 +225,10 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **`PATCH /faults/{id}/` is described with the fields it takes**
+  (`priority`, `description`, `billable`). The contract used to describe the
+  create body. Nothing on the wire changed.
+
 - **Breaking: the elevator's inspection fields are read-only.**
   - `last_inspection_date`, `inspection_label`, `next_inspection_date`,
     `inspection_body` and `inspection_report_number` are no longer accepted by
