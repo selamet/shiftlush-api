@@ -182,6 +182,16 @@ firm already has, and because the modules after it publish into it.
 
 ### M3 — Maintenance planning (M–L)
 
+**Status (2026-10-21): shipped.** Design:
+`2026-10-20-m3-maintenance-planning-design.md`.
+- **#106:** the plan (one row per covered lift per month), generated daily for
+  this month and next, kept in step with visits, with bulk assignment and the
+  `visit_assigned` notification. It is running in production: 84 rows for the
+  demo firm.
+- **selamet/shiftlush-web#107:** `/plan` for the office; `/today` and `/week`
+  for technicians, with `/today` as their landing page.
+
+
 Turns "every elevator needs a visit every ≤30 days" into a monthly schedule
 someone can follow.
 
@@ -208,6 +218,17 @@ someone can follow.
   fact.
 
 ### M4 — Fault management (L)
+
+**Status (2026-10-21): shipped.** Design:
+`2026-10-20-m4-fault-management-design.md`.
+- **#108:** faults with a strict, timestamped state machine; billable from the
+  contract that covered the lift; photos; the four notification kinds
+  (emergency always e-mailed); the public QR report (throttled, a honeypot,
+  30-minute merging, no data in the answer); and reporter-data retention.
+- **#111:** the edit schema.
+- **selamet/shiftlush-web#109:** the board, the detail, "Arızalarım", "Arıza
+  bildir", and the anonymous sticker form.
+
 
 What happens when an elevator stops.
 
@@ -242,6 +263,21 @@ What happens when an elevator stops.
   timeline, and the technician's "my faults" view on the phone.
 
 ### M5 — Periodic inspection (M)
+
+**Status (2026-10-21): shipped.** Design:
+`2026-10-20-m5-periodic-inspection-design.md`. The deadlines come from APKY
+(RG 30411, amended by RG 31952) and are kept as a data table with citations.
+- **#110:** inspections and non-conformities; the elevator's inspection fields
+  written by the latest inspection (read-only on the elevator since then); a
+  red label taking the lift out of service; non-conformity to fault; and
+  warnings before and after deadlines.
+- **#112:** the edit schemas.
+- **Web.** Two PRs, merged in this order:
+  - selamet/shiftlush-web#110 stopped the elevator form sending the
+    read-only fields, so it shipped before #110.
+  - selamet/shiftlush-web#111 added `/inspections`, the history on the
+    elevator, and the inspection form.
+
 
 The yearly inspection by an accredited inspection body (spec §4.3 glossary:
 `inspection`, `inspection_body`, `inspection_label`).
