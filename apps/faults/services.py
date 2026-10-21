@@ -254,6 +254,10 @@ def report_public(*, elevator: Elevator, report: PublicReport) -> Fault:
     stays in the two columns the retention job blanks.
     """
     with company_context(elevator.company_id), transaction.atomic():
+        # Two first reports on the same lift in the same instant would both
+        # find no open fault and open two. Locking the lift's row queues them:
+        # the second waits, then finds the fault the first just opened.
+        Elevator.objects.select_for_update().filter(pk=elevator.pk).first()
         now = timezone.now()
         priority = public_priority(report)
         existing = (

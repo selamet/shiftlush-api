@@ -108,6 +108,7 @@ lives in the default cache, so without `REDIS_URL` the count is per process and
 several workers multiply the effective limit by their number.
 
 **`PUBLIC_FAULT_TOKEN_RATE_LIMIT`** and **`PUBLIC_FAULT_ADDRESS_RATE_LIMIT`**
+| `PORTAL_RATE_LIMIT` | optional, default `120/min`, per customer-portal account (M6) |
 (defaults `5/hour` and `20/hour`) bound `POST /public/elevators/{qr_token}/faults/`,
 the fault report a resident sends from the lift's QR sticker — the one write that
 takes no token. The first counts per sticker, the second per caller address, and

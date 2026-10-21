@@ -820,3 +820,20 @@ class TestThePortalLeavesNoFirmBehind:
 
         assert response.status_code == 500
         assert get_current_company_id() is None
+
+
+class TestThePortalHasItsOwnBudget:
+    def test_an_account_is_limited_per_account_not_by_the_staff_limit(self, world, monkeypatch):
+        from core.throttling import ScopedRateThrottle
+
+        monkeypatch.setattr(ScopedRateThrottle, "THROTTLE_RATES", {"portal": "3/min"})
+        client = portal_for(world["ours"].account)
+        url = reverse("portal-elevator-list")
+
+        assert [client.get(url).status_code for _ in range(3)] == [200, 200, 200]
+        refused = client.get(url)
+        assert refused.status_code == 429
+        assert refused.headers["RateLimit-Limit"] == "3"
+
+        # Another customer's contact has an allowance of their own.
+        assert portal_for(world["neighbour"].account).get(url).status_code == 200

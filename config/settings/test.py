@@ -56,6 +56,7 @@ REST_FRAMEWORK = {
         **cast("dict[str, Any]", REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]),
         "anon": None,
         "user": None,
+        "portal": None,
     },
 }
 

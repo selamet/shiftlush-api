@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 from apps.portal.authentication import PortalJWTAuthentication
 from apps.portal.models import PortalAccount
 from core.context import company_context
+from core.throttling import ScopedRateThrottle
 
 ModelT = TypeVar("ModelT", bound=Model)
 
@@ -50,6 +51,11 @@ class PortalContextMixin(APIView):
 
     authentication_classes = [PortalJWTAuthentication]
     permission_classes = [IsPortalAccount]
+    # Its own budget per account (PORTAL_RATE_LIMIT), instead of the staff
+    # user limit. Declaring throttle_classes replaces the default rather than
+    # adding to it.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "portal"
 
     def initial(self, request: Request, *args: Any, **kwargs: Any) -> None:
         super().initial(request, *args, **kwargs)
