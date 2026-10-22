@@ -89,10 +89,11 @@ class CustomerContactWriteSerializer(StrictMixin, serializers.ModelSerializer[Cu
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
         email = attrs.get("email", self.instance.email if self.instance else "")
-        if "email" in attrs and not email:
+        if "email" in attrs and not email and "receives_monthly_report" not in attrs:
             # Clearing the address of a ticked contact unticks it in the same
             # write, rather than refusing: the office asked for the address to
-            # go, and a ticked contact with none is the state this prevents.
+            # go, and a ticked contact with none is the state this prevents. A
+            # body that also asks for True contradicts itself and is refused.
             attrs["receives_monthly_report"] = False
         wants = attrs.get(
             "receives_monthly_report",

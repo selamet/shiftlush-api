@@ -152,6 +152,25 @@ class TestTheRecord:
             contact.refresh_from_db()
         assert contact.receives_monthly_report is False
 
+    def test_asking_to_tick_while_clearing_the_email_is_refused(self, firm):
+        company, owner, customer = firm
+        contact = make_contact(
+            company, customer, email="a@example.com", receives_monthly_report=True
+        )
+        response = api_for(owner).patch(
+            reverse("customer-contact-detail", args=[contact.pk]),
+            {"email": "", "receives_monthly_report": True},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "receives_monthly_report", "code": "MONTHLY_REPORT_NEEDS_EMAIL"}
+        ]
+        with company_context(company.id):
+            contact.refresh_from_db()
+        assert contact.email == "a@example.com"
+        assert contact.receives_monthly_report is True
+
     def test_the_migration_ticks_the_primary_contact_with_email(self, firm):
         company, _, customer = firm
         with company_context(company.id):
