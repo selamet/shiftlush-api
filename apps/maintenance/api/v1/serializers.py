@@ -16,7 +16,12 @@ from apps.maintenance.models import (
     SignatureStatus,
     VisitStatus,
 )
-from apps.maintenance.signatures import SIGNATURE_FIELDS, check_signature_fields
+from apps.maintenance.signatures import (
+    SIGNATURE_FIELDS,
+    SignatureState,
+    check_signature_fields,
+    signature_state,
+)
 from apps.users.models import Role, User
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict, field_error
@@ -51,6 +56,10 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
     elevator_name = serializers.CharField(source="elevator.name", read_only=True)
     technician_name = serializers.SerializerMethodField()
     items = MaintenanceVisitItemSerializer(many=True, read_only=True)
+    signature_state = serializers.SerializerMethodField(
+        help_text="signed, pending (signed, image not arrived yet), not_present, declined, "
+        "or none (recorded before signatures existed)."
+    )
 
     class Meta:
         model = MaintenanceVisit
@@ -67,10 +76,20 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
             "work_notes",
             "parts_replaced",
             "items",
+            "signature_status",
+            "signer_name",
+            "signer_role",
+            "signed_at",
+            "amended_after_signature",
+            "signature_state",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.ChoiceField(choices=SignatureState.ALL))
+    def get_signature_state(self, visit: MaintenanceVisit) -> str:
+        return signature_state(visit)
 
     def get_technician_name(self, visit: MaintenanceVisit) -> str:
         user = visit.technician

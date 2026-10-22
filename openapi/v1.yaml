@@ -3445,6 +3445,24 @@ paths:
         schema:
           type: integer
       - in: query
+        name: signature
+        schema:
+          type: string
+          enum:
+          - declined
+          - none
+          - not_present
+          - pending
+          - signed
+        description: |-
+          signed, pending, not_present, declined or none.
+
+          * `signed` - signed
+          * `pending` - pending
+          * `not_present` - not_present
+          * `declined` - declined
+          * `none` - none
+      - in: query
         name: status
         schema:
           type: string
@@ -3665,6 +3683,24 @@ paths:
         description: Which field to use when ordering the results.
         schema:
           type: string
+      - in: query
+        name: signature
+        schema:
+          type: string
+          enum:
+          - declined
+          - none
+          - not_present
+          - pending
+          - signed
+        description: |-
+          signed, pending, not_present, declined or none.
+
+          * `signed` - signed
+          * `pending` - pending
+          * `not_present` - not_present
+          * `declined` - declined
+          * `none` - none
       - in: query
         name: status
         schema:
@@ -8259,6 +8295,31 @@ components:
           items:
             $ref: '#/components/schemas/MaintenanceVisitItem'
           readOnly: true
+        signature_status:
+          allOf:
+          - $ref: '#/components/schemas/SignatureStatusEnum'
+          readOnly: true
+        signer_name:
+          type: string
+          readOnly: true
+        signer_role:
+          allOf:
+          - $ref: '#/components/schemas/SignerRoleEnum'
+          readOnly: true
+        signed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        amended_after_signature:
+          type: boolean
+          readOnly: true
+        signature_state:
+          allOf:
+          - $ref: '#/components/schemas/SignatureStateEnum'
+          description: signed, pending (signed, image not arrived yet), not_present,
+            declined, or none (recorded before signatures existed).
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -8268,6 +8329,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - amended_after_signature
       - contract
       - created_at
       - elevator
@@ -8275,6 +8337,11 @@ components:
       - id
       - items
       - parts_replaced
+      - signature_state
+      - signature_status
+      - signed_at
+      - signer_name
+      - signer_role
       - status
       - status_note
       - technician
@@ -10307,6 +10374,29 @@ components:
           default: false
       required:
       - elevator
+    PortalFile:
+      type: object
+      description: A file the contact may download, through `/portal/files/{id}/download-url/`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        original_filename:
+          type: string
+          readOnly: true
+        mime_type:
+          type: string
+          readOnly: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/AttachmentCategory'
+          readOnly: true
+      required:
+      - category
+      - id
+      - mime_type
+      - original_filename
     PortalInspection:
       type: object
       properties:
@@ -10541,13 +10631,43 @@ components:
             type: object
             additionalProperties: {}
           readOnly: true
+        signature_state:
+          allOf:
+          - $ref: '#/components/schemas/SignatureStateEnum'
+          readOnly: true
+        signer_name:
+          type: string
+          readOnly: true
+        signer_role:
+          allOf:
+          - $ref: '#/components/schemas/SignerRoleEnum'
+          readOnly: true
+        signed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        amended_after_signature:
+          type: boolean
+          readOnly: true
+        signature:
+          allOf:
+          - $ref: '#/components/schemas/PortalFile'
+          nullable: true
+          readOnly: true
       required:
+      - amended_after_signature
       - elevator
       - elevator_name
       - id
       - items
       - parts_replaced
       - photos
+      - signature
+      - signature_state
+      - signed_at
+      - signer_name
+      - signer_role
       - status
       - technician_first_name
       - visit_date
@@ -10983,6 +11103,14 @@ components:
       required:
       - item
       - result
+    SignatureStateEnum:
+      enum:
+      - signed
+      - pending
+      - not_present
+      - declined
+      - none
+      type: string
     SignatureStatusEnum:
       enum:
       - signed

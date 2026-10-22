@@ -35,6 +35,7 @@ from apps.maintenance.api.v1.serializers import (
 )
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
 from apps.maintenance.routing import Stop, plan_route
+from apps.maintenance.signatures import SignatureState, filter_by_state, with_signature
 from apps.properties.services import position_of
 from apps.users.models import Role, User
 from core.context import require_current_company_id
@@ -47,12 +48,22 @@ from core.viewsets import TenantViewSet
 
 class MaintenanceVisitFilter(TenantFilterSet):
     customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
+    signature = django_filters.ChoiceFilter(
+        choices=[(state, state) for state in SignatureState.ALL],
+        method="filter_signature",
+        help_text="signed, pending, not_present, declined or none.",
+    )
     # `visit_date_after` / `visit_date_before`, both inclusive.
     visit_date = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = MaintenanceVisit
-        fields = ["elevator", "customer", "status", "technician"]
+        fields = ["elevator", "customer", "status", "technician", "signature"]
+
+    def filter_signature(
+        self, queryset: QuerySet[MaintenanceVisit], name: str, value: str
+    ) -> QuerySet[MaintenanceVisit]:
+        return filter_by_state(queryset, value)
 
 
 class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
@@ -77,9 +88,11 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
     customer_path = "elevator__building__customer_id"
 
     def get_base_queryset(self) -> QuerySet[MaintenanceVisit]:
-        return MaintenanceVisit.objects.select_related(
-            "elevator", "contract", "technician"
-        ).prefetch_related("items")
+        return with_signature(
+            MaintenanceVisit.objects.select_related(
+                "elevator", "contract", "technician"
+            ).prefetch_related("items")
+        )
 
     def perform_create(self, serializer: BaseSerializer[MaintenanceVisit]) -> None:
         elevator = serializer.validated_data["elevator"]

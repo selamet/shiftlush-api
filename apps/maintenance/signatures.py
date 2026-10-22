@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -128,3 +129,66 @@ def check_signature_confirm(
         is_deleted=False,
     ).exists():
         raise Conflict(ErrorCode.SIGNATURE_EXISTS)
+
+
+# Reading ----------------------------------------------------------------------
+
+
+class SignatureState:
+    SIGNED = "signed"
+    PENDING = "pending"
+    NOT_PRESENT = "not_present"
+    DECLINED = "declined"
+    NONE = "none"
+
+    ALL: tuple[str, ...] = (SIGNED, PENDING, NOT_PRESENT, DECLINED, NONE)
+
+
+def _signature_images() -> QuerySet[Attachment]:
+    return Attachment.unscoped.filter(
+        object_type=ObjectType.MAINTENANCE_VISIT,
+        object_id=OuterRef("pk"),
+        category=AttachmentCategory.SIGNATURE,
+        is_deleted=False,
+    )
+
+
+def with_signature(queryset: QuerySet[MaintenanceVisit]) -> QuerySet[MaintenanceVisit]:
+    """Annotate whether each visit's signature image has arrived, in the list's query."""
+    return queryset.annotate(has_signature_image=Exists(_signature_images()))
+
+
+def signature_state(visit: MaintenanceVisit) -> str:
+    """What every reader says about the signature — office, portal, report.
+
+    "Pending" is a signed visit whose image has not arrived: the outbox sent
+    the visit and is still sending the picture.
+    """
+    status = visit.signature_status
+    if status == SignatureStatus.SIGNED:
+        has_image = getattr(visit, "has_signature_image", None)
+        if has_image is None:
+            has_image = Attachment.unscoped.filter(
+                object_type=ObjectType.MAINTENANCE_VISIT,
+                object_id=visit.pk,
+                category=AttachmentCategory.SIGNATURE,
+                is_deleted=False,
+            ).exists()
+        return SignatureState.SIGNED if has_image else SignatureState.PENDING
+    if status == SignatureStatus.NOT_PRESENT:
+        return SignatureState.NOT_PRESENT
+    if status == SignatureStatus.DECLINED:
+        return SignatureState.DECLINED
+    return SignatureState.NONE
+
+
+def filter_by_state(queryset: QuerySet[MaintenanceVisit], state: str) -> QuerySet[MaintenanceVisit]:
+    """Narrow an annotated queryset (`with_signature`) to one state."""
+    signed = Q(signature_status=SignatureStatus.SIGNED)
+    return {
+        SignatureState.SIGNED: queryset.filter(signed, has_signature_image=True),
+        SignatureState.PENDING: queryset.filter(signed, has_signature_image=False),
+        SignatureState.NOT_PRESENT: queryset.filter(signature_status=SignatureStatus.NOT_PRESENT),
+        SignatureState.DECLINED: queryset.filter(signature_status=SignatureStatus.DECLINED),
+        SignatureState.NONE: queryset.filter(signature_status=""),
+    }[state]

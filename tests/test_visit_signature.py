@@ -12,13 +12,14 @@ from django.utils import timezone
 from apps.maintenance.models import MaintenanceVisit, VisitStatus
 from apps.users.models import User
 from core.context import company_context
-from tests import test_maintenance_attachments, test_maintenance_visits
+from tests import test_maintenance_attachments, test_maintenance_visits, test_portal
 from tests.test_attachments import uploaded
 from tests.test_maintenance_visit_create import api_for, body, post
 
 visit_fixture = test_maintenance_visits.visit_fixture
 a_visit = test_maintenance_attachments.a_visit
 bucket = test_maintenance_attachments.bucket
+world = test_portal.world
 
 SIGNED = {
     "signature_status": "signed",
@@ -272,3 +273,91 @@ class TestSignatureImage:
         uploaded(bucket, photo_ticket.data["storage_key"])
         photo = confirm(client, photo_ticket.data["storage_key"]).data["id"]
         assert client.delete(reverse("attachment-detail", args=[photo])).status_code == 204
+
+
+# Reading -----------------------------------------------------------------------
+
+
+class TestReading:
+    @pytest.fixture
+    def five(self, world: Any) -> dict[str, Any]:
+        """The portal world's own visit, signed with its image, and four more."""
+        from apps.attachments.models import ObjectType
+
+        site = world["ours"]
+        shop = world["shop"]
+        MaintenanceVisit.unscoped.filter(pk=site.visit.pk).update(
+            signature_status="signed",
+            signer_name="Ayşe Yılmaz",
+            signer_role="manager",
+            signed_at=timezone.now(),
+        )
+        with company_context(shop.company.id):
+            site.signature = site._file(ObjectType.MAINTENANCE_VISIT, site.visit.pk, "signature")
+            others = {}
+            for state, status in (
+                ("pending", "signed"),
+                ("not_present", "not_present"),
+                ("declined", "declined"),
+                ("none", ""),
+            ):
+                visit = MaintenanceVisit.objects.create(
+                    company=shop.company,
+                    elevator=site.visit.elevator,
+                    contract=site.visit.contract,
+                    technician=site.visit.technician,
+                    visit_date=site.visit.visit_date,
+                    status=VisitStatus.COMPLETED,
+                    signature_status=status,
+                    signer_name="Ali" if status == "signed" else "",
+                    signer_role="caretaker" if status == "signed" else "",
+                )
+                others[state] = visit
+        return {"world": world, "signed": site.visit, **others}
+
+    def office(self, five: dict[str, Any]) -> Any:
+        return api_for(five["world"]["shop"].owner)
+
+    def test_the_states(self, five):
+        rows = self.office(five).get(reverse("maintenance-visit-list"), {"page_size": 100}).data
+        by_id = {row["id"]: row["signature_state"] for row in rows["results"]}
+        for state in ("signed", "pending", "not_present", "declined", "none"):
+            assert by_id[str(five[state].pk)] == state, state
+
+    def test_the_list_filters_by_state(self, five):
+        client = self.office(five)
+        states = ("signed", "pending", "not_present", "declined", "none")
+        ours = {str(five[state].pk): state for state in states}
+        for state in states:
+            rows = client.get(
+                reverse("maintenance-visit-list"), {"signature": state, "page_size": 100}
+            ).data
+            # The portal world has other visits of the firm; only ours are known.
+            found = {row["id"] for row in rows["results"]} & ours.keys()
+            assert found == {str(five[state].pk)}, state
+
+    def test_the_list_has_no_n_plus_one(self, five, django_assert_max_num_queries):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        client = self.office(five)
+        with CaptureQueriesContext(connection) as one:
+            client.get(reverse("maintenance-visit-list"), {"page_size": 1})
+        with CaptureQueriesContext(connection) as five_rows:
+            client.get(reverse("maintenance-visit-list"), {"page_size": 5})
+        assert len(five_rows) == len(one)
+
+    def test_portal_and_office_read_the_same_state(self, five):
+        from tests.test_portal import portal_for
+
+        site = five["world"]["ours"]
+        office = (
+            self.office(five).get(reverse("maintenance-visit-detail", args=[site.visit.pk])).data
+        )
+        portal = (
+            portal_for(site.account).get(reverse("portal-visit-detail", args=[site.visit.pk])).data
+        )
+        assert office["signature_state"] == portal["signature_state"] == "signed"
+        assert office["signer_name"] == portal["signer_name"] == "Ayşe Yılmaz"
+        assert str(portal["signature"]["id"]) == str(site.signature.pk)
+        assert [str(p["id"]) for p in portal["photos"]] == [str(site.photo.pk)]

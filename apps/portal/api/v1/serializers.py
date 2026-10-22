@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.attachments.models import Attachment
@@ -24,6 +25,7 @@ from apps.faults.models import Fault
 from apps.inspections.api.v1.serializers import OpenCorrectionMixin
 from apps.inspections.models import Inspection, NonConformity
 from apps.maintenance.models import MaintenanceVisit, MaintenanceVisitItem
+from apps.maintenance.signatures import SignatureState, signature_state
 from apps.portal.models import PortalAccount, PortalAccountStatus
 from apps.users.api.v1.serializers import PasswordField, StrictSerializer
 
@@ -75,6 +77,10 @@ class PortalVisitSerializer(serializers.ModelSerializer[MaintenanceVisit]):
     technician_first_name = serializers.CharField(source="technician.first_name", read_only=True)
     items = PortalVisitItemSerializer(many=True, read_only=True)
     photos = serializers.SerializerMethodField()
+    # The building's signature, as the office reads it: the same state, the
+    # same name, the image beside the photos rather than among them.
+    signature_state = serializers.SerializerMethodField()
+    signature = serializers.SerializerMethodField()
 
     class Meta:
         model = MaintenanceVisit
@@ -88,12 +94,27 @@ class PortalVisitSerializer(serializers.ModelSerializer[MaintenanceVisit]):
             "parts_replaced",
             "items",
             "photos",
+            "signature_state",
+            "signer_name",
+            "signer_role",
+            "signed_at",
+            "amended_after_signature",
+            "signature",
         ]
         read_only_fields = fields
 
     def get_photos(self, visit: MaintenanceVisit) -> list[dict[str, Any]]:
         files = self.context.get("files", {}).get(visit.pk, [])
         return cast(list[dict[str, Any]], PortalFileSerializer(files, many=True).data)
+
+    @extend_schema_field(serializers.ChoiceField(choices=SignatureState.ALL))
+    def get_signature_state(self, visit: MaintenanceVisit) -> str:
+        return signature_state(visit)
+
+    @extend_schema_field(PortalFileSerializer(allow_null=True))
+    def get_signature(self, visit: MaintenanceVisit) -> dict[str, Any] | None:
+        image = self.context.get("signatures", {}).get(visit.pk)
+        return None if image is None else cast(dict[str, Any], PortalFileSerializer(image).data)
 
 
 class PortalNonConformitySerializer(serializers.ModelSerializer[NonConformity]):
