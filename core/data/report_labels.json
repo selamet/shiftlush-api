@@ -1,24 +1,25 @@
 {
+  "_note": "items and roles are copied verbatim from shiftlush-web messages/tr.json (visit.checklistItem, visit.signerRole), the source of truth for these words; change them there first.",
   "roles": {
     "manager": "Yönetici",
     "caretaker": "Kapıcı",
-    "staff": "Bina görevlisi",
+    "staff": "Site/bina görevlisi",
     "other": "Diğer"
   },
   "items": {
     "brake_system": "Fren sistemi",
-    "hoisting_ropes": "Çekiş halatları ve kablolar",
+    "hoisting_ropes": "Halatlar ve kablolar",
     "landing_doors": "Kat kapıları ve kilitleri",
-    "car_door_safety_edge": "Kabin kapısı ve emniyet kenarı",
+    "car_door_safety_edge": "Kabin kapısı ve fotosel/güvenlik kenarı",
     "limit_switches": "Limit şalterleri",
-    "guide_rail_lubrication": "Kılavuz ray yağlaması",
+    "guide_rail_lubrication": "Ray yağlaması",
     "car_lighting": "Kabin aydınlatması",
-    "emergency_lighting": "Acil durum aydınlatması",
-    "emergency_alarm_intercom": "Acil durum alarmı / interkom",
-    "control_panel_buttons": "Kontrol paneli ve çağrı butonları",
+    "emergency_lighting": "Acil aydınlatma",
+    "emergency_alarm_intercom": "Acil alarm / interkom",
+    "control_panel_buttons": "Kumanda paneli ve çağrı butonları",
     "leveling_accuracy": "Kat seviyeleme hassasiyeti",
     "overload_device": "Aşırı yük sensörü",
-    "automatic_rescue_device": "Otomatik kurtarma cihazı (ARD) testi",
+    "automatic_rescue_device": "Otomatik kurtarma (ARD) testi",
     "pit_condition": "Kuyu dibi durumu ve temizliği",
     "machine_room_condition": "Makine dairesi durumu ve havalandırma",
     "earthing_grounding": "Topraklama"

@@ -12,6 +12,7 @@ import base64
 import logging
 from collections.abc import Mapping
 
+from botocore.exceptions import BotoCoreError, ClientError
 from django.template.loader import render_to_string
 
 from apps.attachments.models import Attachment
@@ -47,9 +48,10 @@ def fetch_images(data: ReportData) -> dict[str, str]:
     for attachment in Attachment.unscoped.filter(pk__in=wanted):
         try:
             body, content_type = storage.fetch(attachment.storage_backend, attachment.storage_key)
-        except Exception:
+        except (storage.ObjectNotFound, ClientError, BotoCoreError, OSError):
             logger.warning("report image %s could not be read", attachment.pk, exc_info=True)
             continue
+        content_type = content_type or "image/png"
         encoded = base64.b64encode(body).decode("ascii")
         images[str(attachment.pk)] = f"data:{content_type};base64,{encoded}"
     return images

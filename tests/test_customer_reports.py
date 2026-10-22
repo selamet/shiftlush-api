@@ -747,7 +747,10 @@ class TestContent:
 
 
 SIGNATURE_ID = "00000000-0000-0000-0000-0000000000a1"
-PIXEL = "data:image/png;base64,iVBORw0KGgo="
+PIXEL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+)
 
 
 def make_data(**changes: Any) -> ReportData:
@@ -887,10 +890,13 @@ class TestDocument:
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
 
-    def test_render_pdf_makes_a_pdf(self):
+    def test_render_pdf_makes_a_pdf(self, monkeypatch):
         pytest.importorskip("weasyprint")
+        monkeypatch.setattr(
+            "apps.reports.documents.fetch_images", lambda data: {SIGNATURE_ID: PIXEL}
+        )
         try:
-            pdf = render_pdf(make_data(lifts=[]))
-        except (PdfRenderingUnavailable, OSError):
+            pdf = render_pdf(make_data())
+        except PdfRenderingUnavailable:  # raised only when weasyprint cannot be imported
             pytest.skip("WeasyPrint cannot load its system libraries here")
         assert pdf.startswith(b"%PDF")
