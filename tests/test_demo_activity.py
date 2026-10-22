@@ -128,6 +128,26 @@ class TestVisitsAndThePlan:
                     status=PlannedVisitStatus.PLANNED, due_date__lt=today
                 ).exists()
 
+    def test_the_next_two_weeks_have_planned_days(self, seeded):
+        # The calendar opens on this week: it needs visits on its days, and
+        # some left in the tray for the office to place.
+        today = local_today()
+        with company_context(seeded.id):
+            scheduled = list(PlannedVisit.objects.filter(planned_date__isnull=False))
+            waiting = PlannedVisit.objects.filter(
+                status=PlannedVisitStatus.PLANNED,
+                technician__isnull=False,
+                planned_date__isnull=True,
+            )
+            assert scheduled
+            assert waiting.exists()
+            for row in scheduled:
+                assert row.planned_date is not None
+                assert today <= row.planned_date <= today + timedelta(days=13)
+                assert row.planned_date.weekday() != 6
+                assert period_of(row.planned_date) == row.period
+                assert row.technician_id is not None
+
 
 class TestFaults:
     def test_one_in_every_state(self, seeded):
@@ -324,6 +344,23 @@ class TestRefresh:
             assert InvoiceLine.objects.filter(fault__isnull=False, needs_price=True).exists()
             for draft in InvoiceDraft.objects.all():
                 assert draft.total == draft.subtotal + draft.vat_amount
+
+    def test_planned_days_are_given_once(self, phase_one_demo):
+        def days() -> dict[Any, Any]:
+            with company_context(phase_one_demo.id):
+                return dict(
+                    PlannedVisit.objects.filter(planned_date__isnull=False).values_list(
+                        "id", "planned_date"
+                    )
+                )
+
+        call_command("refresh_demo_data", stdout=StringIO())
+        first = days()
+        assert first
+        out = StringIO()
+        call_command("refresh_demo_data", stdout=out)
+        assert days() == first
+        assert "planned days +0" in out.getvalue()
 
     def test_a_second_run_changes_nothing(self, phase_one_demo):
         call_command("refresh_demo_data", stdout=StringIO())

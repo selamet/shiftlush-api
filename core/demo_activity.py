@@ -93,6 +93,7 @@ class Activity:
 
     visits: int = 0
     planned_visits: int = 0
+    planned_days: int = 0
     faults: int = 0
     inspections: int = 0
     portal_accounts: int = 0
@@ -134,6 +135,7 @@ def populate_activity(
         visits, offsets = _visit_history(firm, generator, day)
         activity.visits += visits
         activity.planned_visits += _plan(firm, generator, day, offsets, activity)
+        activity.planned_days += _planned_days(day)
         activity.faults += _faults(firm, generator, day)
         activity.inspections += _inspections(firm, generator, day)
         activity.portal_accounts += _portal(firm, staff_domain)
@@ -410,6 +412,56 @@ def _plan(
     for row in (upcoming + rest)[:2]:
         maintenance.edit_planned_visit(row, changes={"technician": None}, editor=firm.office)
     return PlannedVisit.objects.count() - before
+
+
+#: How far ahead the demo office has decided its days: this week and the next.
+PLANNED_DAYS_AHEAD = 14
+#: A technician's day in the demo, well under the calendar's busy hint.
+VISITS_PER_DAY = 4
+
+
+def _planned_days(today: date) -> int:
+    """Give the office's next two weeks their days, as an office would have.
+
+    The calendar opens on this week; without days it is an empty grid and a
+    full tray. Each technician's open rows, oldest due first, are spread over
+    the working days (Monday to Saturday) from today to two weeks out, inside
+    the row's own month, a few a day. About a third stay without a day, so the
+    tray has something for the office to place. A period that already has a
+    planned day is left alone: somebody has planned it, or an earlier run did.
+    Returns how many rows got a day.
+    """
+    given = 0
+    for period in (
+        maintenance.period_of(today),
+        maintenance.next_period(maintenance.period_of(today)),
+    ):
+        if PlannedVisit.objects.filter(period=period, planned_date__isnull=False).exists():
+            continue
+        days = [
+            day
+            for day in (today + timedelta(days=offset) for offset in range(PLANNED_DAYS_AHEAD))
+            if day.weekday() != 6 and maintenance.period_of(day) == period
+        ]
+        if not days:
+            continue
+        rows = PlannedVisit.objects.filter(
+            period=period,
+            status=PlannedVisitStatus.PLANNED,
+            technician__isnull=False,
+            planned_date__isnull=True,
+        ).order_by("technician_id", "due_date", "id")
+        by_technician: dict[Any, list[PlannedVisit]] = {}
+        for row in rows:
+            by_technician.setdefault(row.technician_id, []).append(row)
+        for own in by_technician.values():
+            placed = own[: len(own) - len(own) // 3]
+            for index, row in enumerate(placed[: len(days) * VISITS_PER_DAY]):
+                # Round the days, so a week reads like a week, not a Monday.
+                day = days[index % len(days)]
+                PlannedVisit.objects.filter(pk=row.pk).update(planned_date=day)
+                given += 1
+    return given
 
 
 # Faults -------------------------------------------------------------------------------
