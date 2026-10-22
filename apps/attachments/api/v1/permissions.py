@@ -88,7 +88,12 @@ def _technician_may_photograph(
     user: Any, company_id: uuid.UUID, object_type: Any, object_id: Any, category: Any
 ) -> bool:
     check = _PHOTO_CARVE_OUT.get(object_type)
-    if check is None or category != AttachmentCategory.PHOTO:
+    # The building's signature travels from the technician's phone like the
+    # visit's photos do, and only for a visit (visit signature spec).
+    allowed = {AttachmentCategory.PHOTO}
+    if object_type == ObjectType.MAINTENANCE_VISIT:
+        allowed.add(AttachmentCategory.SIGNATURE)
+    if check is None or category not in allowed:
         return False
     return check(user, company_id, object_id)
 

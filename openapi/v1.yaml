@@ -25,6 +25,7 @@ paths:
           - other
           - permit
           - photo
+          - signature
           - signed_contract
         description: |-
           * `photo` - Photo
@@ -34,6 +35,7 @@ paths:
           * `signed_contract` - Signed contract
           * `inspection_report` - Inspection report
           * `logo` - Logo
+          * `signature` - Signature
           * `other` - Other
       - in: query
         name: object_id
@@ -5214,6 +5216,7 @@ components:
       - signed_contract
       - inspection_report
       - logo
+      - signature
       - other
       type: string
       description: |-
@@ -5224,6 +5227,7 @@ components:
         * `signed_contract` - Signed contract
         * `inspection_report` - Inspection report
         * `logo` - Logo
+        * `signature` - Signature
         * `other` - Other
     AttachmentConfirmRequest:
       type: object
@@ -8321,6 +8325,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SetChecklistItemRequest'
+        signature_status:
+          oneOf:
+          - $ref: '#/components/schemas/SignatureStatusEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        signer_name:
+          type: string
+          maxLength: 100
+        signer_role:
+          oneOf:
+          - $ref: '#/components/schemas/SignerRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
       required:
       - contract
       - elevator
@@ -9754,6 +9773,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SetChecklistItemRequest'
+        signature_status:
+          oneOf:
+          - $ref: '#/components/schemas/SignatureStatusEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        signer_name:
+          type: string
+          maxLength: 100
+        signer_role:
+          oneOf:
+          - $ref: '#/components/schemas/SignerRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
     PatchedNonConformityEditRequest:
       type: object
       description: |-
@@ -10949,6 +10983,28 @@ components:
       required:
       - item
       - result
+    SignatureStatusEnum:
+      enum:
+      - signed
+      - not_present
+      - declined
+      type: string
+      description: |-
+        * `signed` - Signed
+        * `not_present` - Nobody from the building was there
+        * `declined` - Declined to sign
+    SignerRoleEnum:
+      enum:
+      - manager
+      - caretaker
+      - staff
+      - other
+      type: string
+      description: |-
+        * `manager` - Manager
+        * `caretaker` - Caretaker
+        * `staff` - Building staff
+        * `other` - Other
     TechnicianOption:
       type: object
       description: One choice in the "who did the work" field — a name and nothing
@@ -11277,6 +11333,9 @@ components:
       - PORTAL_ACCOUNT_ALREADY_ACTIVE
       - PORTAL_EMAIL_IN_USE
       - INVOICE_TRANSITION_NOT_ALLOWED
+      - SIGNATURE_EXISTS
+      - SIGNATURE_NOT_EXPECTED
+      - SIGNATURE_CANNOT_BE_DELETED
       - INVOICE_LINES_NEED_PRICE
       - DUPLICATE_INVOICE_NUMBER
       - FAULT_TRANSITION_NOT_ALLOWED
@@ -11335,6 +11394,9 @@ components:
         * `PORTAL_ACCOUNT_ALREADY_ACTIVE` - This contact already has an active portal account
         * `PORTAL_EMAIL_IN_USE` - Another active portal account already uses this e-mail address
         * `INVOICE_TRANSITION_NOT_ALLOWED` - The invoice draft is not in a state this action can be taken from
+        * `SIGNATURE_EXISTS` - This visit already has its signature
+        * `SIGNATURE_NOT_EXPECTED` - The visit was not recorded as signed, so it takes no signature
+        * `SIGNATURE_CANNOT_BE_DELETED` - A visit's signature is kept for good and cannot be deleted
         * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
         * `DUPLICATE_INVOICE_NUMBER` - Another issued invoice of this company already has this number
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from

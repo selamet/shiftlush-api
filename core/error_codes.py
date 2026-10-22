@@ -106,6 +106,15 @@ class ErrorCode(models.TextChoices):
         "INVOICE_TRANSITION_NOT_ALLOWED",
         "The invoice draft is not in a state this action can be taken from",
     )
+    SIGNATURE_EXISTS = "SIGNATURE_EXISTS", "This visit already has its signature"
+    SIGNATURE_NOT_EXPECTED = (
+        "SIGNATURE_NOT_EXPECTED",
+        "The visit was not recorded as signed, so it takes no signature",
+    )
+    SIGNATURE_CANNOT_BE_DELETED = (
+        "SIGNATURE_CANNOT_BE_DELETED",
+        "A visit's signature is kept for good and cannot be deleted",
+    )
     INVOICE_LINES_NEED_PRICE = (
         "INVOICE_LINES_NEED_PRICE",
         "Every line needs a price before the draft can be issued",

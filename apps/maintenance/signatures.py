@@ -8,12 +8,16 @@ attachment service read one source rather than each keeping half.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.maintenance.models import SignatureStatus, VisitStatus
+from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
+from apps.maintenance.models import MaintenanceVisit, SignatureStatus, VisitStatus
+from core.error_codes import ErrorCode
+from core.exceptions import BusinessRuleError, Conflict
 
 #: Set once, on create. A signature is what the building agreed to then.
 SIGNATURE_FIELDS: tuple[str, ...] = ("signature_status", "signer_name", "signer_role", "signed_at")
@@ -68,3 +72,59 @@ def check_signature_fields(status: str, attrs: dict[str, Any], *, creating: bool
         raise _error("signer_role", "invalid", "Only a signed visit names a signer.")
     attrs.pop("signed_at", None)
     return attrs
+
+
+# The image ------------------------------------------------------------------
+
+
+#: A drawn signature at 600x240 is a few kilobytes; this is generous headroom.
+MAX_SIGNATURE_BYTES = 200 * 1024
+SIGNATURE_MIME_TYPE = "image/png"
+
+
+def _signed_visit_exists(company_id: uuid.UUID, visit_id: Any) -> bool:
+    # Unscoped with an explicit company, as the attachment service reads its
+    # targets: a permission-shaped check must not depend on company_context.
+    return MaintenanceVisit.unscoped.filter(
+        company_id=company_id, pk=visit_id, signature_status=SignatureStatus.SIGNED
+    ).exists()
+
+
+def _check_image(mime_type: str, size_bytes: int) -> None:
+    if mime_type != SIGNATURE_MIME_TYPE:
+        raise BusinessRuleError(ErrorCode.UNSUPPORTED_MIME_TYPE)
+    if size_bytes > MAX_SIGNATURE_BYTES:
+        raise BusinessRuleError(ErrorCode.FILE_TOO_LARGE)
+
+
+def check_signature_upload(
+    company_id: uuid.UUID, object_type: str, visit_id: Any, mime_type: str, size_bytes: int
+) -> None:
+    """Before a signature's upload URL is issued: a small PNG, for a signed visit."""
+    if object_type != ObjectType.MAINTENANCE_VISIT:
+        raise BusinessRuleError(ErrorCode.SIGNATURE_NOT_EXPECTED)
+    _check_image(mime_type, size_bytes)
+    if not _signed_visit_exists(company_id, visit_id):
+        raise Conflict(ErrorCode.SIGNATURE_NOT_EXPECTED)
+
+
+def check_signature_confirm(
+    company_id: uuid.UUID, visit_id: Any, mime_type: str, size_bytes: int
+) -> None:
+    """Before a signature is recorded: still a signed visit, still its only one.
+
+    A retried confirmation of the same object never reaches here — the
+    attachment service returns the record it already made — so "exists" is
+    always a second, different image.
+    """
+    _check_image(mime_type, size_bytes)
+    if not _signed_visit_exists(company_id, visit_id):
+        raise Conflict(ErrorCode.SIGNATURE_NOT_EXPECTED)
+    if Attachment.unscoped.filter(
+        company_id=company_id,
+        object_type=ObjectType.MAINTENANCE_VISIT,
+        object_id=visit_id,
+        category=AttachmentCategory.SIGNATURE,
+        is_deleted=False,
+    ).exists():
+        raise Conflict(ErrorCode.SIGNATURE_EXISTS)

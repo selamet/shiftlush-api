@@ -118,6 +118,10 @@ def prepare_upload(
         # yours" differently from "that elevator does not exist" turns this into
         # a way to count another company's records.
         raise NotFound()
+    if category == AttachmentCategory.SIGNATURE:
+        from apps.maintenance.signatures import check_signature_upload
+
+        check_signature_upload(company_id, object_type, object_id, mime_type, size_bytes)
 
     # Everything the confirmation needs is in the key. That is not decoration:
     # it means the second call cannot disagree with the first about what was
@@ -219,6 +223,12 @@ def confirm_upload(
     if stored.content_type not in ALLOWED_TYPES:
         storage.delete(backend, storage_key)
         raise BusinessRuleError(ErrorCode.UNSUPPORTED_MIME_TYPE)
+    if category == AttachmentCategory.SIGNATURE:
+        from apps.maintenance.signatures import check_signature_confirm
+
+        # The bytes stay where they are when this refuses: they are the
+        # sweeper's, like any upload nobody confirmed.
+        check_signature_confirm(company_id, object_id, stored.content_type, stored.size_bytes)
 
     return Attachment.objects.create(
         company_id=company_id,

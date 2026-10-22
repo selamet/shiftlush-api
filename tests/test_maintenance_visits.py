@@ -359,7 +359,6 @@ class TestMaintenanceVisitSerializers:
                     "technician": str(owner.id),
                     "visit_date": str(date.today()),
                     "status": VisitStatus.COMPLETED,
-                "signature_status": "not_present",
                     "signature_status": "not_present",
                     "not_a_real_field": "x",
                 },

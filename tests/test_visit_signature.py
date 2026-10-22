@@ -5,14 +5,20 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+import pytest
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.maintenance.models import MaintenanceVisit, VisitStatus
-from tests import test_maintenance_visits
+from apps.users.models import User
+from core.context import company_context
+from tests import test_maintenance_attachments, test_maintenance_visits
+from tests.test_attachments import uploaded
 from tests.test_maintenance_visit_create import api_for, body, post
 
 visit_fixture = test_maintenance_visits.visit_fixture
+a_visit = test_maintenance_attachments.a_visit
+bucket = test_maintenance_attachments.bucket
 
 SIGNED = {
     "signature_status": "signed",
@@ -143,3 +149,126 @@ class TestEditsAfterSigning:
         )
         visit = MaintenanceVisit.unscoped.get(pk=visit.pk)
         assert visit.amended_after_signature is False
+
+
+# The image -------------------------------------------------------------------
+
+
+PNG = "image/png"
+
+
+def signature_ticket(client: Any, visit: MaintenanceVisit, **overrides: Any) -> Any:
+    from apps.attachments.models import AttachmentCategory, ObjectType
+
+    payload = {
+        "object_type": ObjectType.MAINTENANCE_VISIT,
+        "object_id": str(visit.id),
+        "category": AttachmentCategory.SIGNATURE,
+        "mime_type": PNG,
+        "size_bytes": 20_000,
+        **overrides,
+    }
+    return client.post(reverse("attachment-upload-url"), payload)
+
+
+def confirm(client: Any, key: str) -> Any:
+    return client.post(
+        reverse("attachment-list"), {"storage_key": key, "original_filename": "imza.png"}
+    )
+
+
+def mark(visit: MaintenanceVisit, status: str) -> None:
+    MaintenanceVisit.unscoped.filter(pk=visit.pk).update(signature_status=status)
+
+
+class TestSignatureImage:
+    @pytest.fixture
+    def signed(self, a_visit: Any) -> tuple[Any, MaintenanceVisit, Any]:
+        company, visit = a_visit
+        mark(visit, "signed")
+        return company, visit, api_for(visit.technician)
+
+    def test_the_technician_uploads_the_signature_of_their_signed_visit(self, signed, bucket):
+        from apps.users.models import Role
+
+        company, visit, _ = signed
+        with company_context(company.id):
+            technician = User.objects.create_user(
+                company=company,
+                email="sig-tech@example.com",
+                password="correct-horse-battery",
+                first_name="T",
+                last_name="Tech",
+                role=Role.TECHNICIAN,
+            )
+            technician.customer_assignments.create(
+                company=company, customer=visit.elevator.building.customer
+            )
+        client = api_for(technician)
+        ticket = signature_ticket(client, visit)
+        assert ticket.status_code == 200, ticket.data
+        uploaded(bucket, ticket.data["storage_key"], size=20_000, content_type=PNG)
+        assert confirm(client, ticket.data["storage_key"]).status_code == 201
+
+    def test_only_png_and_small(self, signed):
+        _, visit, client = signed
+        jpeg = signature_ticket(client, visit, mime_type="image/jpeg")
+        assert (jpeg.status_code, jpeg.data["error"]["code"]) == (422, "UNSUPPORTED_MIME_TYPE")
+        big = signature_ticket(client, visit, size_bytes=300_000)
+        assert (big.status_code, big.data["error"]["code"]) == (422, "FILE_TOO_LARGE")
+
+    def test_upload_url_refuses_a_signature_for_an_unsigned_visit(self, signed):
+        _, visit, client = signed
+        mark(visit, "not_present")
+        response = signature_ticket(client, visit)
+        assert (response.status_code, response.data["error"]["code"]) == (
+            409,
+            "SIGNATURE_NOT_EXPECTED",
+        )
+
+    def test_confirm_refuses_a_signature_for_an_unsigned_visit(self, signed, bucket):
+        _, visit, client = signed
+        key = signature_ticket(client, visit).data["storage_key"]
+        uploaded(bucket, key, size=20_000, content_type=PNG)
+        mark(visit, "declined")
+        response = confirm(client, key)
+        assert (response.status_code, response.data["error"]["code"]) == (
+            409,
+            "SIGNATURE_NOT_EXPECTED",
+        )
+
+    def test_a_second_signature_is_refused(self, signed, bucket):
+        _, visit, client = signed
+        for index in (1, 2):
+            key = signature_ticket(client, visit).data["storage_key"]
+            uploaded(bucket, key, size=20_000, content_type=PNG)
+            response = confirm(client, key)
+            if index == 1:
+                assert response.status_code == 201, response.data
+        assert (response.status_code, response.data["error"]["code"]) == (409, "SIGNATURE_EXISTS")
+
+    def test_a_retried_confirm_is_the_same_signature(self, signed, bucket):
+        from apps.attachments.models import Attachment
+
+        _, visit, client = signed
+        key = signature_ticket(client, visit).data["storage_key"]
+        uploaded(bucket, key, size=20_000, content_type=PNG)
+        first, second = confirm(client, key), confirm(client, key)
+        assert (first.status_code, second.status_code) == (201, 201)
+        assert first.data["id"] == second.data["id"]
+        assert Attachment.unscoped.filter(object_id=visit.id).count() == 1
+
+    def test_nobody_deletes_a_signature(self, signed, bucket):
+        _, visit, client = signed
+        key = signature_ticket(client, visit).data["storage_key"]
+        uploaded(bucket, key, size=20_000, content_type=PNG)
+        signature = confirm(client, key).data["id"]
+        response = client.delete(reverse("attachment-detail", args=[signature]))
+        assert (response.status_code, response.data["error"]["code"]) == (
+            409,
+            "SIGNATURE_CANNOT_BE_DELETED",
+        )
+        photo_ticket = signature_ticket(client, visit, category="photo", mime_type="image/jpeg")
+        uploaded(bucket, photo_ticket.data["storage_key"])
+        photo = confirm(client, photo_ticket.data["storage_key"]).data["id"]
+        assert client.delete(reverse("attachment-detail", args=[photo])).status_code == 204
