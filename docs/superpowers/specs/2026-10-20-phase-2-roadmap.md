@@ -372,6 +372,31 @@ fixed in their own PRs:
 
 Real-device checks that only a person can make are tracked in #104.
 
+## Phase 3
+
+### Calendar planning and route order (shipped 2026-10-22)
+
+Design: `2026-10-22-calendar-planning-and-route-order-design.md` (#122, #123).
+
+- **A, the calendar.** The API part (#125) adds `planned_date` rules on the
+  PATCH, day-range and unscheduled filters, and one-at-a-time assignments that
+  fold into one notice. The web part (shiftlush-web#121) adds the week and
+  month views, drag and drop, and "Taşı…".
+- **B, route order.** The API part (#129) adds the firm's starting point, the
+  routing module (nearest neighbour + 2-opt, never worse than the address
+  order), `/planned-visits/route/`, `has_location` and demo positions. The web
+  part (shiftlush-web#123) makes "Bugün" the suggested route, adds the
+  calendar's day route with a map, the missing-positions notice and the start
+  point in settings.
+- **Demo.** The next two weeks of the plan have planned days (#127).
+
+Phase 2's real-device checks (#104) were confirmed by the product owner on
+2026-10-22.
+
+Candidates for what comes next, from Phase 2's non-goals: e-Fatura /
+e-Arşiv, SMS and push, invoices in the portal, collections, a parts catalogue,
+and offline reads.
+
 ## Non-goals for Phase 2
 
 - **A native mobile app.** The PWA in M1 is the mobile app. Revisit only if
