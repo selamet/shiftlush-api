@@ -29,7 +29,7 @@ from uuid_utils.compat import uuid7
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from core import storage
 from core.error_codes import ErrorCode
-from core.exceptions import BusinessRuleError
+from core.exceptions import BusinessRuleError, Conflict
 
 #: Accepted types and the extension each one gets. Photographs of an installation
 #: and scanned paperwork are the whole of phase 1; anything executable, archived
@@ -226,9 +226,14 @@ def confirm_upload(
     if category == AttachmentCategory.SIGNATURE:
         from apps.maintenance.signatures import check_signature_confirm
 
-        # The bytes stay where they are when this refuses: they are the
-        # sweeper's, like any upload nobody confirmed.
-        check_signature_confirm(company_id, object_id, stored.content_type, stored.size_bytes)
+        # A refused signature is a person's signature with no record pointing
+        # at it, which nothing would ever find again: delete it, as the size
+        # and type refusals above delete theirs.
+        try:
+            check_signature_confirm(company_id, object_id, stored.content_type, stored.size_bytes)
+        except (BusinessRuleError, Conflict):
+            storage.delete(backend, storage_key)
+            raise
 
     return Attachment.objects.create(
         company_id=company_id,

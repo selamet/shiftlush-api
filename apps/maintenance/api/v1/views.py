@@ -33,7 +33,12 @@ from apps.maintenance.api.v1.serializers import (
     SetChecklistSerializer,
     TechnicianOptionSerializer,
 )
-from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
+from apps.maintenance.models import (
+    MaintenanceVisit,
+    PlannedVisit,
+    PlannedVisitStatus,
+    SignatureStatus,
+)
 from apps.maintenance.routing import Stop, plan_route
 from apps.maintenance.signatures import SignatureState, filter_by_state, with_signature
 from apps.properties.services import position_of
@@ -209,7 +214,11 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         form.is_valid(raise_exception=True)
         services.set_checklist(visit=visit, items=form.validated_data["items"])
         visit.updated_by = authenticated_user(request)
-        visit.save(update_fields=["updated_by", "updated_at"])
+        # A new checklist is an edit like any other: the building signed for
+        # the one that was there (visit signature spec).
+        if visit.signature_status == SignatureStatus.SIGNED:
+            visit.amended_after_signature = True
+        visit.save(update_fields=["updated_by", "amended_after_signature", "updated_at"])
         read = self.read_serializer_class(visit, context=self.get_serializer_context())
         return Response(read.data)
 

@@ -342,16 +342,17 @@ class PortalFaultViewSet(
 
 
 def files_of_customer(customer_id: Any) -> Q:
-    """The files a contact may download: the customer's visit photos,
-    inspection reports and fault photos. Nothing filed on the lift itself
-    (certificates, permits) and nothing on the contract."""
+    """The files a contact may download: the customer's visit photos and
+    signatures, inspection reports and fault photos. Nothing filed on the lift
+    itself (certificates, permits) and nothing on the contract."""
     visits = MaintenanceVisit.objects.filter(elevator__building__customer_id=customer_id)
     inspections = Inspection.objects.filter(elevator__building__customer_id=customer_id)
     faults = Fault.objects.filter(elevator__building__customer_id=customer_id)
     return (
         Q(
             object_type=ObjectType.MAINTENANCE_VISIT,
-            category=AttachmentCategory.PHOTO,
+            # The building's own signature is the building's to see.
+            category__in=[AttachmentCategory.PHOTO, AttachmentCategory.SIGNATURE],
             object_id__in=visits.values("id"),
         )
         | Q(

@@ -361,3 +361,42 @@ class TestReading:
         assert office["signer_name"] == portal["signer_name"] == "Ayşe Yılmaz"
         assert str(portal["signature"]["id"]) == str(site.signature.pk)
         assert [str(p["id"]) for p in portal["photos"]] == [str(site.photo.pk)]
+
+
+# Fixes from the branch review --------------------------------------------------
+
+
+class TestReviewFixes:
+    def test_the_portal_downloads_the_signature_it_shows(self, world, bucket):
+        from apps.attachments.models import ObjectType
+        from tests.test_portal import portal_for
+
+        site = world["ours"]
+        MaintenanceVisit.unscoped.filter(pk=site.visit.pk).update(signature_status="signed")
+        with company_context(world["shop"].company.id):
+            image = site._file(ObjectType.MAINTENANCE_VISIT, site.visit.pk, "signature")
+        response = portal_for(site.account).get(
+            reverse("portal-file-download-url", args=[image.pk])
+        )
+        assert response.status_code == 200, response.data
+
+    def test_a_new_checklist_on_a_signed_visit_is_marked(self, visit_fixture):
+        _, owner, elevator, contract = visit_fixture
+        visit = stored(post(owner, body(elevator, contract, owner, **SIGNED)))
+        response = api_for(owner).post(
+            reverse("maintenance-visit-set-checklist", args=[visit.id]),
+            {"items": [{"item": "brake_system", "result": "attention_needed", "note": "x"}]},
+            format="json",
+        )
+        assert response.status_code == 200, response.data
+        assert MaintenanceVisit.unscoped.get(pk=visit.pk).amended_after_signature is True
+
+    def test_a_refused_signature_leaves_no_image_behind(self, a_visit, bucket):
+        _, visit = a_visit
+        mark(visit, "signed")
+        client = api_for(visit.technician)
+        key = signature_ticket(client, visit).data["storage_key"]
+        uploaded(bucket, key, size=20_000, content_type=PNG)
+        mark(visit, "declined")
+        assert confirm(client, key).status_code == 409
+        assert not any(stored_key == key for _, stored_key in bucket.objects)
