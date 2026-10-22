@@ -48,6 +48,11 @@ class FakeS3:
         """Stand in for the client PUTting to the signed URL."""
         self.objects[(bucket, key)] = (size, content_type)
 
+    def put_object(self, Bucket: str, Key: str, Body: bytes, ContentType: str) -> dict:
+        """What core.storage.put does: bytes written by the server itself."""
+        self.objects[(Bucket, Key)] = (len(Body), ContentType)
+        return {}
+
     def generate_presigned_url(self, operation: str, Params: dict, ExpiresIn: int) -> str:
         self.signed.append({"operation": operation, **Params, "expires_in": ExpiresIn})
         return f"https://bucket.test/{Params['Key']}?op={operation}&e={ExpiresIn}"

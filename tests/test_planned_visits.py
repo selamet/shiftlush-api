@@ -398,6 +398,7 @@ def record_visit(plan: Plan, elevator: Elevator, day: date, status: str = VisitS
             "technician": str(plan.tech_a.id),
             "visit_date": day.isoformat(),
             "status": status,
+            "signature_status": "not_present",
         },
         format="json",
         HTTP_IDEMPOTENCY_KEY=str(uuid4()),

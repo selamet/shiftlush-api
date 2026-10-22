@@ -13,7 +13,14 @@ from apps.maintenance.models import (
     MaintenanceVisitItem,
     PlannedVisit,
     PlannedVisitStatus,
+    SignatureStatus,
     VisitStatus,
+)
+from apps.maintenance.signatures import (
+    SIGNATURE_FIELDS,
+    SignatureState,
+    check_signature_fields,
+    signature_state,
 )
 from apps.users.models import Role, User
 from core.error_codes import ErrorCode
@@ -49,6 +56,10 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
     elevator_name = serializers.CharField(source="elevator.name", read_only=True)
     technician_name = serializers.SerializerMethodField()
     items = MaintenanceVisitItemSerializer(many=True, read_only=True)
+    signature_state = serializers.SerializerMethodField(
+        help_text="signed, pending (signed, image not arrived yet), not_present, declined, "
+        "or none (recorded before signatures existed)."
+    )
 
     class Meta:
         model = MaintenanceVisit
@@ -65,10 +76,20 @@ class MaintenanceVisitReadSerializer(serializers.ModelSerializer[MaintenanceVisi
             "work_notes",
             "parts_replaced",
             "items",
+            "signature_status",
+            "signer_name",
+            "signer_role",
+            "signed_at",
+            "amended_after_signature",
+            "signature_state",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.ChoiceField(choices=SignatureState.ALL))
+    def get_signature_state(self, visit: MaintenanceVisit) -> str:
+        return signature_state(visit)
 
     def get_technician_name(self, visit: MaintenanceVisit) -> str:
         user = visit.technician
@@ -124,6 +145,10 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
             "work_notes",
             "parts_replaced",
             "items",
+            "signature_status",
+            "signer_name",
+            "signer_role",
+            "signed_at",
         ]
 
     def get_fields(self) -> dict[str, Any]:
@@ -158,6 +183,10 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
         self, instance: MaintenanceVisit, validated_data: dict[str, Any]
     ) -> MaintenanceVisit:
         items = validated_data.pop("items", None)
+        # The building signed for what the visit said then; any later edit is
+        # marked, for good, wherever the signature is shown.
+        if instance.signature_status == SignatureStatus.SIGNED:
+            validated_data["amended_after_signature"] = True
         visit = super().update(instance, validated_data)
         if items is not None:
             services.set_checklist(visit=visit, items=items)
@@ -165,6 +194,18 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
+        if self.instance is not None:
+            for name in SIGNATURE_FIELDS:
+                if name in self.initial_data:
+                    raise serializers.ValidationError(
+                        {
+                            name: serializers.ErrorDetail(
+                                "Set when the visit is recorded.", code="read_only"
+                            )
+                        }
+                    )
+        else:
+            attrs = check_signature_fields(attrs.get("status", ""), attrs, creating=True)
         user = authenticated_user(self.context["request"])
         named = attrs.get("technician")
 

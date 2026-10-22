@@ -17,9 +17,11 @@ from apps.attachments.api.v1.serializers import (
     UploadUrlRequestSerializer,
     UploadUrlResponseSerializer,
 )
-from apps.attachments.models import Attachment, ObjectType
+from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from apps.attachments.services import confirm_upload, download_url, prepare_upload
 from apps.users.models import Role
+from core.error_codes import ErrorCode
+from core.exceptions import Conflict
 from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate, replay_exempt
 from core.requests import authenticated_company_id, authenticated_user
@@ -53,6 +55,14 @@ class AttachmentViewSet(
     filterset_class = AttachmentFilter
     ordering = ["-created_at", "-id"]
     http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def perform_destroy(self, instance: Attachment) -> None:
+        # A visit's signature is what the building agreed to; it is kept for
+        # good, by every role (visit signature spec). Everything else deletes
+        # as before.
+        if instance.category == AttachmentCategory.SIGNATURE:
+            raise Conflict(ErrorCode.SIGNATURE_CANNOT_BE_DELETED)
+        super().perform_destroy(instance)
 
     def get_queryset(self) -> QuerySet[Attachment]:
         queryset = Attachment.objects.select_related("uploaded_by")

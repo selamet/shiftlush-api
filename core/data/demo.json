@@ -208,6 +208,40 @@
     "portal": {
       "active_email_local": "yonetim",
       "pending_email_local": "site.muduru"
-    }
+    },
+    "signers": [
+      [
+        "Ayşe Kaya",
+        "manager"
+      ],
+      [
+        "Mehmet Demir",
+        "caretaker"
+      ],
+      [
+        "Fatma Arslan",
+        "manager"
+      ],
+      [
+        "Hüseyin Yıldız",
+        "caretaker"
+      ],
+      [
+        "Zehra Koç",
+        "staff"
+      ],
+      [
+        "Mustafa Aydın",
+        "manager"
+      ],
+      [
+        "Elif Doğan",
+        "staff"
+      ],
+      [
+        "İbrahim Öztürk",
+        "caretaker"
+      ]
+    ]
   }
 }

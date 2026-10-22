@@ -173,6 +173,15 @@ def fetch(backend: str, key: str) -> tuple[bytes, str]:
     return body, str(response.get("ContentType", "application/octet-stream"))
 
 
+def put(backend: str, key: str, data: bytes, content_type: str) -> None:
+    """Write bytes the server made itself — never a client's upload, which
+    goes straight to the bucket through a signed URL. The demo's generated
+    signatures are the one caller."""
+    _client(backend).put_object(
+        Bucket=_bucket(backend), Key=key, Body=data, ContentType=content_type
+    )
+
+
 def delete(backend: str, key: str) -> None:
     """Remove an object. Deleting one that is already gone is not an error."""
     _client(backend).delete_object(Bucket=_bucket(backend), Key=key)

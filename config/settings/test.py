@@ -62,3 +62,6 @@ REST_FRAMEWORK = {
 
 # Inline, so a test can see what a task did rather than only that it was queued.
 TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+
+# The demo seeds signatures without images: no bucket to probe on every seed.
+DEMO_SIGNATURE_IMAGES = False

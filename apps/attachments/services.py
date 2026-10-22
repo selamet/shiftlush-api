@@ -29,7 +29,7 @@ from uuid_utils.compat import uuid7
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from core import storage
 from core.error_codes import ErrorCode
-from core.exceptions import BusinessRuleError
+from core.exceptions import BusinessRuleError, Conflict
 
 #: Accepted types and the extension each one gets. Photographs of an installation
 #: and scanned paperwork are the whole of phase 1; anything executable, archived
@@ -118,6 +118,10 @@ def prepare_upload(
         # yours" differently from "that elevator does not exist" turns this into
         # a way to count another company's records.
         raise NotFound()
+    if category == AttachmentCategory.SIGNATURE:
+        from apps.maintenance.signatures import check_signature_upload
+
+        check_signature_upload(company_id, object_type, object_id, mime_type, size_bytes)
 
     # Everything the confirmation needs is in the key. That is not decoration:
     # it means the second call cannot disagree with the first about what was
@@ -219,6 +223,17 @@ def confirm_upload(
     if stored.content_type not in ALLOWED_TYPES:
         storage.delete(backend, storage_key)
         raise BusinessRuleError(ErrorCode.UNSUPPORTED_MIME_TYPE)
+    if category == AttachmentCategory.SIGNATURE:
+        from apps.maintenance.signatures import check_signature_confirm
+
+        # A refused signature is a person's signature with no record pointing
+        # at it, which nothing would ever find again: delete it, as the size
+        # and type refusals above delete theirs.
+        try:
+            check_signature_confirm(company_id, object_id, stored.content_type, stored.size_bytes)
+        except (BusinessRuleError, Conflict):
+            storage.delete(backend, storage_key)
+            raise
 
     return Attachment.objects.create(
         company_id=company_id,
@@ -229,6 +244,37 @@ def confirm_upload(
         mime_type=stored.content_type,
         size_bytes=stored.size_bytes,
         storage_key=storage_key,
+        storage_backend=backend,
+        uploaded_by=uploaded_by,
+    )
+
+
+def save_bytes(
+    *,
+    company_id: uuid.UUID,
+    object_type: str,
+    object_id: uuid.UUID,
+    category: str,
+    data: bytes,
+    mime_type: str,
+    original_filename: str,
+    uploaded_by: Any,
+) -> Attachment:
+    """Store a file the server generated and record it, under the same key
+    scheme an upload gets. For the demo data only: a person's files always
+    arrive through `prepare_upload` and `confirm_upload`."""
+    key = f"{company_id}/{object_type}/{object_id}/{category}/{uuid7()}{ALLOWED_TYPES[mime_type]}"
+    backend = _backend_for(category)
+    storage.put(backend, key, data, mime_type)
+    return Attachment.objects.create(
+        company_id=company_id,
+        object_type=object_type,
+        object_id=object_id,
+        category=category,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        size_bytes=len(data),
+        storage_key=key,
         storage_backend=backend,
         uploaded_by=uploaded_by,
     )

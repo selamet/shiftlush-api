@@ -25,6 +25,8 @@ class AttachmentCategory(models.TextChoices):
     SIGNED_CONTRACT = "signed_contract", "Signed contract"
     INSPECTION_REPORT = "inspection_report", "Inspection report"
     LOGO = "logo", "Logo"
+    #: The building's signature on a maintenance visit; one per visit.
+    SIGNATURE = "signature", "Signature"
     OTHER = "other", "Other"
 
 

@@ -37,6 +37,7 @@ from apps.faults.models import Fault
 from apps.inspections.models import Inspection, NonConformity
 from apps.inspections.services import with_open_correction
 from apps.maintenance.models import MaintenanceVisit
+from apps.maintenance.signatures import with_signature
 from apps.portal import services
 from apps.portal.api.v1.serializers import (
     PortalAcceptSerializer,
@@ -223,8 +224,10 @@ class PortalVisitViewSet(
     ordering = ["-visit_date", "-id"]
 
     def get_base_queryset(self) -> QuerySet[MaintenanceVisit]:
-        return MaintenanceVisit.objects.select_related("elevator", "technician").prefetch_related(
-            "items"
+        return with_signature(
+            MaintenanceVisit.objects.select_related("elevator", "technician").prefetch_related(
+                "items"
+            )
         )
 
     def get_serializer(self, *args: Any, **kwargs: Any) -> Any:
@@ -239,15 +242,20 @@ class PortalVisitViewSet(
         else:
             visits = [instance]
         files: defaultdict[Any, list[Attachment]] = defaultdict(list)
+        signatures: dict[Any, Attachment] = {}
         if visits:
             for attachment in Attachment.objects.filter(
                 object_type=ObjectType.MAINTENANCE_VISIT,
-                category=AttachmentCategory.PHOTO,
+                category__in=[AttachmentCategory.PHOTO, AttachmentCategory.SIGNATURE],
                 object_id__in=[visit.pk for visit in visits],
             ).order_by("created_at", "id"):
-                files[attachment.object_id].append(attachment)
+                if attachment.category == AttachmentCategory.SIGNATURE:
+                    signatures[attachment.object_id] = attachment
+                else:
+                    files[attachment.object_id].append(attachment)
         kwargs.setdefault("context", self.get_serializer_context())
         kwargs["context"]["files"] = files
+        kwargs["context"]["signatures"] = signatures
         if kwargs.get("many"):
             args = (visits, *args[1:])
         return super().get_serializer(*args, **kwargs)
@@ -334,16 +342,17 @@ class PortalFaultViewSet(
 
 
 def files_of_customer(customer_id: Any) -> Q:
-    """The files a contact may download: the customer's visit photos,
-    inspection reports and fault photos. Nothing filed on the lift itself
-    (certificates, permits) and nothing on the contract."""
+    """The files a contact may download: the customer's visit photos and
+    signatures, inspection reports and fault photos. Nothing filed on the lift
+    itself (certificates, permits) and nothing on the contract."""
     visits = MaintenanceVisit.objects.filter(elevator__building__customer_id=customer_id)
     inspections = Inspection.objects.filter(elevator__building__customer_id=customer_id)
     faults = Fault.objects.filter(elevator__building__customer_id=customer_id)
     return (
         Q(
             object_type=ObjectType.MAINTENANCE_VISIT,
-            category=AttachmentCategory.PHOTO,
+            # The building's own signature is the building's to see.
+            category__in=[AttachmentCategory.PHOTO, AttachmentCategory.SIGNATURE],
             object_id__in=visits.values("id"),
         )
         | Q(

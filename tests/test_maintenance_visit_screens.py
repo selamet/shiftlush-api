@@ -65,6 +65,7 @@ def record_visit(owner: User, elevator: Any, contract: Any, day: date) -> Any:
             "technician": str(owner.id),
             "visit_date": str(day),
             "status": VisitStatus.COMPLETED,
+            "signature_status": "not_present",
         },
         format="json",
     )
