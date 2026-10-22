@@ -244,6 +244,37 @@ def confirm_upload(
     )
 
 
+def save_bytes(
+    *,
+    company_id: uuid.UUID,
+    object_type: str,
+    object_id: uuid.UUID,
+    category: str,
+    data: bytes,
+    mime_type: str,
+    original_filename: str,
+    uploaded_by: Any,
+) -> Attachment:
+    """Store a file the server generated and record it, under the same key
+    scheme an upload gets. For the demo data only: a person's files always
+    arrive through `prepare_upload` and `confirm_upload`."""
+    key = f"{company_id}/{object_type}/{object_id}/{category}/{uuid7()}{ALLOWED_TYPES[mime_type]}"
+    backend = _backend_for(category)
+    storage.put(backend, key, data, mime_type)
+    return Attachment.objects.create(
+        company_id=company_id,
+        object_type=object_type,
+        object_id=object_id,
+        category=category,
+        original_filename=original_filename,
+        mime_type=mime_type,
+        size_bytes=len(data),
+        storage_key=key,
+        storage_backend=backend,
+        uploaded_by=uploaded_by,
+    )
+
+
 def download_url(attachment: Attachment) -> str:
     """A short-lived URL for one file, signed against its own backend."""
     if not attachment.storage_key:

@@ -39,10 +39,13 @@ from a seeded generator, so two runs on the same day agree. The Turkish lives in
 from __future__ import annotations
 
 import random
+import struct
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -65,6 +68,7 @@ from apps.maintenance.models import (
     MaintenanceVisit,
     PlannedVisit,
     PlannedVisitStatus,
+    SignatureStatus,
     VisitStatus,
 )
 from apps.notifications.models import Notification
@@ -106,6 +110,7 @@ class Activity:
     issued: int = 0
     notifications: int = 0
     positions: int = 0
+    signatures: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -143,6 +148,7 @@ def populate_activity(
         activity.visits += visits
         activity.planned_visits += _plan(firm, generator, day, offsets, activity)
         activity.planned_days += _planned_days(day)
+        activity.signatures += _signatures(firm, generator)
         activity.faults += _faults(firm, generator, day)
         activity.inspections += _inspections(firm, generator, day)
         activity.portal_accounts += _portal(firm, staff_domain)
@@ -468,6 +474,115 @@ def _planned_days(today: date) -> int:
                 day = days[index % len(days)]
                 PlannedVisit.objects.filter(pk=row.pk).update(planned_date=day)
                 given += 1
+    return given
+
+
+# Signatures ----------------------------------------------------------------------------
+
+
+def _png(width: int, height: int, ink: bytearray) -> bytes:
+    """A greyscale PNG from one byte a pixel (255 white, 0 black), standard library only."""
+    rows = b"".join(b"\x00" + bytes(ink[y * width : (y + 1) * width]) for y in range(height))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _signature_png(rng: random.Random) -> bytes:
+    """A made-up signature: a few joined curves across a white strip.
+
+    Drawn from the seeded generator, never from anybody's real hand — the
+    demo must not carry a signature that could be mistaken for a person's.
+    """
+    width, height = 600, 240
+    ink = bytearray(b"\xff" * (width * height))
+    x, y = 60.0, height / 2 + rng.uniform(-30, 30)
+    for _ in range(rng.randint(3, 5)):
+        control = (x + rng.uniform(20, 90), y + rng.uniform(-80, 80))
+        end = (min(x + rng.uniform(60, 140), width - 40), height / 2 + rng.uniform(-60, 60))
+        for step in range(160):
+            t = step / 159
+            px = (1 - t) ** 2 * x + 2 * (1 - t) * t * control[0] + t**2 * end[0]
+            py = (1 - t) ** 2 * y + 2 * (1 - t) * t * control[1] + t**2 * end[1]
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    cx, cy = int(px) + dx, int(py) + dy
+                    if 0 <= cx < width and 0 <= cy < height:
+                        ink[cy * width + cx] = 0
+        x, y = end
+    return _png(width, height, ink)
+
+
+def _signatures(firm: _Firm, rng: random.Random) -> int:
+    """Give the demo's completed visits the building's answer.
+
+    Of every twenty, one declined, three with nobody there, the rest signed,
+    so each state is on screen. A signed one carries a generated image; with no
+    bucket to put it in (a laptop without MinIO) it says nobody was there
+    instead, because a demo must never show a signature still on its way.
+    Only visits with no answer yet are touched.
+    """
+    from apps.attachments.models import AttachmentCategory, ObjectType
+    from apps.attachments.services import _backend_for, save_bytes
+    from core import storage
+
+    pending = list(
+        MaintenanceVisit.objects.filter(status=VisitStatus.COMPLETED, signature_status="")
+        .select_related("elevator")
+        .order_by("visit_date", "id")
+    )
+    if not pending:
+        return 0
+    can_store = settings.DEMO_SIGNATURE_IMAGES and storage.reachable(
+        _backend_for(AttachmentCategory.SIGNATURE)
+    )
+    signers = ACTIVITY["signers"]
+    given = 0
+    for index, visit in enumerate(pending):
+        slot = index % 20
+        status = (
+            SignatureStatus.DECLINED
+            if slot == 0
+            else SignatureStatus.NOT_PRESENT
+            if slot in (1, 2, 3) or not can_store
+            else SignatureStatus.SIGNED
+        )
+        changes: dict[str, Any] = {"signature_status": status}
+        if status == SignatureStatus.SIGNED:
+            name, role = signers[index % len(signers)]
+            moment = datetime.combine(
+                visit.visit_date, time(rng.randint(10, 15), rng.randint(0, 59))
+            )
+            changes |= {
+                "signer_name": name,
+                "signer_role": role,
+                "signed_at": moment.replace(tzinfo=LOCAL_TZ),
+            }
+            save_bytes(
+                company_id=firm.company.id,
+                object_type=ObjectType.MAINTENANCE_VISIT,
+                object_id=visit.pk,
+                category=AttachmentCategory.SIGNATURE,
+                data=_signature_png(rng),
+                mime_type="image/png",
+                original_filename="imza.png",
+                uploaded_by=visit.technician,
+            )
+        MaintenanceVisit.objects.filter(pk=visit.pk).update(**changes)
+        given += 1
     return given
 
 

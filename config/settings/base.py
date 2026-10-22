@@ -299,6 +299,9 @@ STORAGE_BACKENDS: dict[str, dict[str, str]] = {
 
 #: Where new uploads go. Existing rows keep their own backend.
 DEFAULT_STORAGE_BACKEND = env("STORAGE_BACKEND", default="local")
+# Whether the demo data draws signature images into the bucket. Off in tests,
+# where asking an absent MinIO whether it is there costs two seconds a seed.
+DEMO_SIGNATURE_IMAGES = env.bool("DEMO_SIGNATURE_IMAGES", default=True)
 
 #: Per-category override, for moving one class of file without moving the rest.
 #: Empty in phase 1; `{"signed_contract": "tr_provider"}` is the shape.

@@ -41,7 +41,7 @@ from apps.notifications.models import Notification, NotificationKind
 from apps.portal import services as portal_services
 from apps.portal.models import PortalAccount, PortalAccountStatus
 from apps.users.models import Role, User
-from core import demo_activity
+from core import demo, demo_activity
 from core.context import company_context, system_context
 from core.management.commands.create_demo_account import DEFAULT_EMAIL, LEGAL_NAME
 from core.scheduling import local_today
@@ -535,3 +535,47 @@ class TestSeedConsistency:
                 expected = period_due(row.period, row.elevator.next_maintenance_date)
                 assert row.due_date == expected, (row.elevator, row.period)
         assert today
+
+
+class TestSignatures:
+    """The demo's visits are signed for, or say why not (visit signature spec)."""
+
+    @pytest.fixture
+    def bucket(self, monkeypatch) -> Any:
+        from core import storage
+        from tests.test_attachments import FakeS3
+
+        fake = FakeS3()
+        monkeypatch.setattr(storage, "_client", lambda backend: fake)
+        return fake
+
+    def test_with_storage_completed_visits_are_signed_for_or_say_why(self, bucket, db, settings):
+        settings.DEMO_SIGNATURE_IMAGES = True
+        from apps.attachments.models import Attachment, AttachmentCategory
+
+        call_command("load_address_data", path=SAMPLE_DATA)
+        call_command("seed_demo_data", stdout=StringIO())
+        with system_context():
+            company = Company.objects.get()
+        with company_context(company.id):
+            completed = MaintenanceVisit.objects.filter(status=VisitStatus.COMPLETED)
+            assert not completed.filter(signature_status="").exists()
+            for status in ("signed", "not_present", "declined"):
+                assert completed.filter(signature_status=status).exists(), status
+            signed = completed.filter(signature_status="signed")
+            images = Attachment.objects.filter(category=AttachmentCategory.SIGNATURE)
+            assert images.count() == signed.count()
+            assert {image.object_id for image in images} == {visit.pk for visit in signed}
+            assert all(visit.signer_name and visit.signed_at for visit in signed)
+            assert all(image.mime_type == "image/png" for image in images)
+        # Run again: every visit already has its answer.
+        again = demo_activity.populate_activity(company, staff_domain=demo.STAFF_DOMAIN)
+        assert again.signatures == 0
+
+    def test_without_storage_nobody_is_left_pending(self, seeded):
+        # No bucket (a laptop without MinIO): a demo must never show a signature
+        # that is still on its way, so those visits say nobody was there.
+        with company_context(seeded.id):
+            completed = MaintenanceVisit.objects.filter(status=VisitStatus.COMPLETED)
+            assert not completed.filter(signature_status="").exists()
+            assert not completed.filter(signature_status="signed").exists()

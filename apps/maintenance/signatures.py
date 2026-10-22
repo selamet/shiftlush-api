@@ -186,8 +186,9 @@ def filter_by_state(queryset: QuerySet[MaintenanceVisit], state: str) -> QuerySe
     """Narrow an annotated queryset (`with_signature`) to one state."""
     signed = Q(signature_status=SignatureStatus.SIGNED)
     return {
-        SignatureState.SIGNED: queryset.filter(signed, has_signature_image=True),
-        SignatureState.PENDING: queryset.filter(signed, has_signature_image=False),
+        # Q, not keywords: the annotation is not a model field to the type checker.
+        SignatureState.SIGNED: queryset.filter(signed & Q(has_signature_image=True)),
+        SignatureState.PENDING: queryset.filter(signed & Q(has_signature_image=False)),
         SignatureState.NOT_PRESENT: queryset.filter(signature_status=SignatureStatus.NOT_PRESENT),
         SignatureState.DECLINED: queryset.filter(signature_status=SignatureStatus.DECLINED),
         SignatureState.NONE: queryset.filter(signature_status=""),
