@@ -20,10 +20,11 @@ import uuid
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import NotRequired, TypedDict
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from apps.contracts.models import Contract, ContractElevator, ContractStatus
 from apps.elevators.models import Elevator
@@ -34,7 +35,7 @@ from apps.maintenance.models import (
     PlannedVisitStatus,
     VisitStatus,
 )
-from apps.notifications.models import NotificationKind
+from apps.notifications.models import Notification, NotificationKind
 from apps.notifications.services import notify
 from apps.users.models import Role, User, UserCustomer
 from core.error_codes import ErrorCode
@@ -282,11 +283,46 @@ def edit_planned_visit(
         row.technician_id is not None
         and row.technician_id != previous_technician
         and row.status == PlannedVisitStatus.PLANNED
+        and not coalesce_assignment(row.technician_id, row.period)
     ):
         announce_assignments(
             Counter({(row.technician_id, row.period): 1}), action_id=f"edit:{uuid.uuid4()}"
         )
     return row
+
+
+#: How long a technician's unread "N visits assigned" keeps counting new ones.
+ASSIGNMENT_COALESCE_WINDOW = timedelta(minutes=15)
+
+
+def coalesce_assignment(technician_id: uuid.UUID, period: str, *, now: datetime | None = None) -> bool:
+    """Fold one more assigned row into the technician's recent unread notice.
+
+    The calendar assigns one drop at a time, and ten drops are not ten pieces
+    of news: an unread `visit_assigned` for the same month, raised in the last
+    `ASSIGNMENT_COALESCE_WINDOW`, counts one more instead, and no second e-mail
+    goes out. A read one, an older one or another month's is left alone, and
+    the assignment is announced as usual. Returns whether it folded.
+    """
+    since = (now or timezone.now()) - ASSIGNMENT_COALESCE_WINDOW
+    recent = (
+        Notification.unscoped.select_for_update()
+        .filter(
+            recipient_id=technician_id,
+            kind=NotificationKind.VISIT_ASSIGNED,
+            read_at__isnull=True,
+            is_deleted=False,
+            data__period=period,
+            created_at__gte=since,
+        )
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    if recent is None:
+        return False
+    recent.data = {**recent.data, "count": int(recent.data.get("count", 0)) + 1}
+    recent.save(update_fields=["data", "updated_at"])
+    return True
 
 
 @transaction.atomic

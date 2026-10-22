@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from django.core import mail as django_mail
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.address.models import District, Neighborhood, Province
@@ -731,6 +732,61 @@ class TestEditingRules:
         PlannedVisit.unscoped.filter(pk=row.pk).update(status=PlannedVisitStatus.DONE)
         response = self.patch(planned, row, {"technician": str(planned.tech_b1.id)})
         assert response.status_code == 200, response.data
+
+
+class TestAssignmentsCoalesce:
+    """A calendar assigns one drop at a time; the technician hears about it once."""
+
+    def assign(self, planned: Plan, row: PlannedVisit, technician: User) -> None:
+        response = api_for(planned.ops).patch(
+            reverse("planned-visit-detail", args=[row.pk]),
+            {"technician": str(technician.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.data
+
+    def test_one_at_a_time_is_one_notification(self, planned, django_capture_on_commit_callbacks):
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=True):
+            self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        with django_capture_on_commit_callbacks(execute=True):
+            self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
+            {"period": OCT, "count": 2}
+        ]
+        assert len([m for m in django_mail.outbox if m.to == [planned.tech_b1.email]]) <= 1
+
+    def test_a_read_one_is_not_reused(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        Notification.unscoped.filter(recipient=planned.tech_b1).update(read_at=timezone.now())
+        self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert len(assigned_notifications(planned.tech_b1)) == 2
+
+    def test_an_old_one_is_not_reused(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        Notification.unscoped.filter(recipient=planned.tech_b1).update(
+            created_at=timezone.now() - timedelta(minutes=16)
+        )
+        self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert len(assigned_notifications(planned.tech_b1)) == 2
+
+    def test_another_period_is_its_own_notification(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        self.assign(planned, planned.row(planned.b1, NOV), planned.tech_b1)
+        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
+            {"period": OCT, "count": 1},
+            {"period": NOV, "count": 1},
+        ]
+
+    def test_bulk_assign_still_raises_its_own(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        response = api_for(planned.ops).post(
+            reverse("planned-visit-bulk-assign"),
+            {"ids": [str(planned.row(planned.a2).pk)], "technician": str(planned.tech_b1.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.data
+        assert len(assigned_notifications(planned.tech_b1)) == 2
 
 
 class TestBulkAssign:
