@@ -555,6 +555,28 @@ class TestList:
         assert response.data["elevator_name"] == "A1"
 
 
+class TestDayFilters:
+    """What the calendar's week view reads with: a range of days, or no day yet."""
+
+    @pytest.fixture
+    def days(self, planned: Plan) -> Plan:
+        for elevator, day in ((planned.a1, date(2026, 10, 21)), (planned.b1, date(2026, 10, 27))):
+            PlannedVisit.unscoped.filter(pk=planned.row(elevator).pk).update(planned_date=day)
+        return planned
+
+    def test_a_date_range_is_inclusive(self, days):
+        rows = listed(api_for(days.owner), planned_from="2026-10-21", planned_to="2026-10-27")
+        assert sorted(names(rows)) == ["A1", "B1"]
+
+    def test_a_range_leaves_out_unscheduled_rows(self, days):
+        rows = listed(api_for(days.owner), planned_from="2026-10-01")
+        assert "A2" not in names(rows)
+
+    def test_unscheduled_lists_only_rows_without_a_day(self, days):
+        rows = listed(api_for(days.owner), unscheduled="true")
+        assert names(rows) == ["A2"]
+
+
 class TestTechnicianNarrowing:
     def test_own_rows_and_unassigned_rows_of_their_customers(self, planned):
         a2 = planned.row(planned.a2)
