@@ -190,7 +190,11 @@ def _lift_name(lift: Elevator) -> str:
 
 
 def _covered_days(start: date, end: date, customer: Customer) -> dict[Any, list[tuple[date, date]]]:
-    """Each covered lift's covered day ranges inside the month."""
+    """Each lift's covered day ranges, for lifts covered on some day of the month.
+
+    The ranges are not cut at the month: a fault or inspection from before it
+    still carries over when the lift was covered that day.
+    """
     lines = (
         ContractElevator.objects.filter(
             contract__customer=customer,
@@ -204,8 +208,8 @@ def _covered_days(start: date, end: date, customer: Customer) -> dict[Any, list[
     )
     covered: dict[Any, list[tuple[date, date]]] = defaultdict(list)
     for line in lines:
-        first = max(line.added_at, line.contract.start_date, start)
-        last = min(line.removed_at or end, line.contract.end_date, end)
+        first = max(line.added_at, line.contract.start_date)
+        last = min(line.removed_at or line.contract.end_date, line.contract.end_date)
         if first <= last:
             covered[line.elevator_id].append((first, last))
     return covered
@@ -331,12 +335,9 @@ def build_report(customer: Customer, period: str, *, today: date) -> ReportData:
         )
         .order_by("reported_at", "id")
     )
-    opened = [
-        f
-        for f in faults
-        if f.reported_at >= start_at
-        and _is_covered(covered[f.elevator_id], _local_date(f.reported_at))
-    ]
+    # A fault counts only if its lift was covered the day it was reported.
+    faults = [f for f in faults if _is_covered(covered[f.elevator_id], _local_date(f.reported_at))]
+    opened = [f for f in faults if f.reported_at >= start_at]
     resolved = [f for f in faults if f.resolved_at and start <= _local_date(f.resolved_at) <= end]
     open_at_end = [f for f in faults if not (f.resolved_at and _local_date(f.resolved_at) <= end)]
     fault_lines: dict[Any, list[FaultLine]] = defaultdict(list)
@@ -375,11 +376,10 @@ def build_report(customer: Customer, period: str, *, today: date) -> ReportData:
         is_open = inspection.correction_deadline is not None and any(
             _nonconformity_open_at(item, end) for item in items
         )
-        if is_open and inspection.correction_deadline is not None:
+        on_cover = _is_covered(covered[inspection.elevator_id], inspection.inspected_on)
+        if is_open and on_cover and inspection.correction_deadline is not None:
             open_corrections.append((inspection, inspection.correction_deadline))
-        if start <= inspection.inspected_on and _is_covered(
-            covered[inspection.elevator_id], inspection.inspected_on
-        ):
+        if start <= inspection.inspected_on and on_cover:
             inspection_lines[inspection.elevator_id].append(
                 InspectionLine(
                     date=inspection.inspected_on,
@@ -454,7 +454,7 @@ def build_report(customer: Customer, period: str, *, today: date) -> ReportData:
         open_corrections=len(open_corrections),
     )
 
-    passed = {i.elevator_id for i, deadline in open_corrections if deadline < today}
+    passed = {i.elevator_id for i, deadline in open_corrections if deadline < end}
     missed_count = sum(1 for section in sections if section.was_missed)
     if passed:
         lead = Lead("correction_passed", len(passed))
@@ -479,5 +479,5 @@ def build_report(customer: Customer, period: str, *, today: date) -> ReportData:
         coming=coming,
         firm_phone=company.phone,
         firm_email=company.email,
-        portal_url=f"{settings.FRONTEND_URL}/portal" if has_portal else None,
+        portal_url=f"{settings.FRONTEND_URL.rstrip('/')}/portal" if has_portal else None,
     )

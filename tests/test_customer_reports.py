@@ -628,7 +628,9 @@ class TestContent:
             month.cover(leaving, month.contract_a, date(2026, 1, 1), date(2026, 10, 15))
             month.visit(leaving, date(2026, 10, 10))
             month.visit(leaving, date(2026, 10, 20))
-            month.fault(leaving, "LEAVE1", at(date(2026, 10, 20), 8))
+            month.fault(
+                leaving, "LEAVE1", at(date(2026, 10, 20), 8), priority=FaultPriority.EMERGENCY
+            )
             month.planned(leaving, OCT, PlannedVisitStatus.CANCELLED)
         report = month.report()
         section = next(s for s in report.lifts if s.name == "LEAVING")
@@ -638,6 +640,54 @@ class TestContent:
         assert section.was_missed is False
         assert report.lead.key == "all_done"
         assert report.summary.visits_planned == 0
+        assert report.summary.faults_opened == 0
+        assert report.summary.faults_open_at_end == 0
+
+    def test_an_inspection_outside_a_lifts_cover_leaves_the_summary_alone(self, month):
+        with company_context(month.company.id):
+            leaving = month.lift(month.zeytin, "LEAVING")
+            month.cover(leaving, month.contract_a, date(2026, 1, 1), date(2026, 10, 15))
+            late = month.inspection(
+                leaving, date(2026, 10, 20), label=Label.RED, correction_deadline=date(2026, 10, 5)
+            )
+            NonConformity.objects.create(
+                company=month.company, inspection=late, description="x", severity=Label.RED
+            )
+        report = month.report()
+        assert report.summary.open_corrections == 0
+        assert [c for c in report.coming if c.kind == "correction"] == []
+        assert report.lead.key == "all_done"
+
+    def test_a_customer_without_covered_lifts_gets_an_empty_report(self, month):
+        with company_context(month.company.id):
+            lonely = Customer.objects.create(
+                company=month.company,
+                type=CustomerType.CORPORATE,
+                legal_name="Lonely",
+                tax_number=tax_number(13),
+            )
+        report = month.report(lonely)
+        assert report.lifts == []
+        assert report.summary.lifts == 0
+
+    def test_a_correction_is_passed_only_before_the_months_last_day(self, month):
+        def lead_for(deadline: date) -> str:
+            with company_context(month.company.id):
+                Inspection.objects.all().delete()
+                inspection = month.inspection(
+                    month.l1, date(2026, 9, 1), label=Label.RED, correction_deadline=deadline
+                )
+                NonConformity.objects.create(
+                    company=month.company,
+                    inspection=inspection,
+                    description="x",
+                    severity=Label.RED,
+                )
+            # Built months later: the lead belongs to the month, not to today.
+            return month.report(today=date(2027, 3, 1)).lead.key
+
+        assert lead_for(date(2026, 10, 31)) == "all_done"
+        assert lead_for(date(2026, 10, 30)) == "correction_passed"
 
     def test_a_customer_with_portal_access_gets_the_portal_address(self, month):
         from apps.customers.models import CustomerContact
