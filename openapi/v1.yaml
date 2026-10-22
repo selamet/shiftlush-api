@@ -607,6 +607,12 @@ paths:
           type: string
           format: uuid
       - in: query
+        name: has_location
+        schema:
+          type: boolean
+        description: 'true: buildings with both coordinates; false: those missing
+          either.'
+      - in: query
         name: is_active
         schema:
           type: boolean
@@ -4247,6 +4253,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkAssignResult'
           description: ''
+  /api/v1/planned-visits/route/:
+    get:
+      operationId: planned_visits_route_retrieve
+      description: |-
+        One technician's day, in the order that drives least.
+
+        The day's stops are their rows planned for that date and, for today
+        only, their rows with no day that are already due — what the "today" list
+        shows. Cancelled rows are not on the road. Ordered by straight-line
+        distance from the firm's starting point when it has one
+        (`apps.maintenance.routing`); stops with no position follow, in
+        address order. A technician sees the rows they can see, so another
+        technician's day reads as empty to them.
+      parameters:
+      - in: query
+        name: date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: technician
+        schema:
+          type: string
+        description: A user id, or "me" for the signed-in user.
+        required: true
+      tags:
+      - planned-visits
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+          description: ''
   /api/v1/planned-visits/summary/:
     get:
       operationId: planned_visits_summary_retrieve
@@ -5591,6 +5634,16 @@ components:
         website:
           type: string
           maxLength: 150
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
         logo:
           type: string
           format: uuid
@@ -9300,6 +9353,16 @@ components:
         website:
           type: string
           maxLength: 150
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
         logo:
           type: string
           format: uuid
@@ -10636,6 +10699,192 @@ components:
       - neighborhood
       - province
       - unmatched
+    Route:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        technician:
+          type: string
+          format: uuid
+        total_km:
+          type: number
+          format: double
+          description: Straight-line km over the stops with a position, from the firm's
+            starting point when it has one.
+        stops:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteStop'
+          description: In the suggested order; unplaced last.
+        unplaced:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Stops with no known position.
+      required:
+      - date
+      - stops
+      - technician
+      - total_km
+      - unplaced
+    RouteStop:
+      type: object
+      description: |-
+        A plan row on the day's road: where it is, and how far from the stop before.
+
+        The position is the building's, or its estate's when the building has
+        none; null when neither is known, and the stop is then one of `unplaced`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator:
+          type: string
+          format: uuid
+          readOnly: true
+        elevator_name:
+          type: string
+          readOnly: true
+        building:
+          type: string
+          format: uuid
+          readOnly: true
+        building_name:
+          type: string
+          readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+          nullable: true
+        district:
+          type: integer
+          readOnly: true
+          nullable: true
+        district_name:
+          type: string
+          readOnly: true
+          nullable: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+        planned_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        technician:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        technician_name:
+          type: string
+          nullable: true
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PlannedVisitStatus'
+          readOnly: true
+        visit:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        latest_visit_status:
+          readOnly: true
+          nullable: true
+          description: |-
+            Status of the visit linked to this row: the one that closed it when `done`, the latest attempt while `planned`. Null when nobody has been yet. `planned` with a status here means tried, not done.
+
+            * `completed` - Completed
+            * `incomplete` - Incomplete
+            * `access_denied` - Access denied
+          oneOf:
+          - $ref: '#/components/schemas/MaintenanceVisitStatus'
+          - $ref: '#/components/schemas/NullEnum'
+        is_overdue:
+          type: boolean
+          description: Still planned and past its due date, by the Istanbul calendar.
+          readOnly: true
+        days_overdue:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: 'Days since `due_date` while the row is still planned and past
+            it; null otherwise. The due date can fall before the row''s own month:
+            that is how long the lift has been overdue.'
+        manually_edited:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+          readOnly: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+          readOnly: true
+        leg_km:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+          description: Straight-line km from the previous stop (from the firm's starting
+            point for the first); null when either end has no position.
+      required:
+      - building
+      - building_name
+      - created_at
+      - customer
+      - customer_name
+      - days_overdue
+      - district
+      - district_name
+      - due_date
+      - elevator
+      - elevator_name
+      - id
+      - is_overdue
+      - latest_visit_status
+      - latitude
+      - leg_km
+      - longitude
+      - manually_edited
+      - neighborhood_name
+      - period
+      - planned_date
+      - status
+      - technician
+      - technician_name
+      - updated_at
+      - visit
     Session:
       type: object
       description: |-

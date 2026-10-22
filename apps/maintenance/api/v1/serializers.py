@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from drf_spectacular.utils import extend_schema_serializer
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
 
 from apps.maintenance import services
@@ -405,3 +405,60 @@ class PlanSummarySerializer(serializers.Serializer[Any]):
     #: Planned rows past their due date.
     overdue = serializers.IntegerField()
     technicians = TechnicianPlanSummarySerializer(many=True)
+
+
+# Route order (calendar spec, part B) ----------------------------------------------
+
+
+class RouteQuerySerializer(serializers.Serializer[Any]):
+    technician = serializers.CharField(help_text='A user id, or "me" for the signed-in user.')
+    date = serializers.DateField(help_text="The day, as YYYY-MM-DD.")
+
+
+class RouteStopSerializer(PlannedVisitReadSerializer):
+    """A plan row on the day's road: where it is, and how far from the stop before.
+
+    The position is the building's, or its estate's when the building has
+    none; null when neither is known, and the stop is then one of `unplaced`.
+    """
+
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    leg_km = serializers.SerializerMethodField(
+        help_text="Straight-line km from the previous stop (from the firm's starting point "
+        "for the first); null when either end has no position."
+    )
+
+    class Meta(PlannedVisitReadSerializer.Meta):
+        fields = [*PlannedVisitReadSerializer.Meta.fields, "latitude", "longitude", "leg_km"]
+
+    def _position(self, row: PlannedVisit) -> tuple[str | None, str | None]:
+        return cast(
+            tuple[str | None, str | None], self.context["positions"].get(str(row.pk), (None, None))
+        )
+
+    @extend_schema_field(serializers.DecimalField(max_digits=9, decimal_places=6, allow_null=True))
+    def get_latitude(self, row: PlannedVisit) -> str | None:
+        return self._position(row)[0]
+
+    @extend_schema_field(serializers.DecimalField(max_digits=9, decimal_places=6, allow_null=True))
+    def get_longitude(self, row: PlannedVisit) -> str | None:
+        return self._position(row)[1]
+
+    @extend_schema_field(serializers.FloatField(allow_null=True))
+    def get_leg_km(self, row: PlannedVisit) -> float | None:
+        leg = self.context["legs"].get(str(row.pk))
+        return None if leg is None else round(leg, 2)
+
+
+class RouteSerializer(serializers.Serializer[Any]):
+    date = serializers.DateField()
+    technician = serializers.UUIDField()
+    total_km = serializers.FloatField(
+        help_text="Straight-line km over the stops with a position, from the firm's "
+        "starting point when it has one."
+    )
+    stops = RouteStopSerializer(many=True, help_text="In the suggested order; unplaced last.")
+    unplaced = serializers.ListField(
+        child=serializers.UUIDField(), help_text="Stops with no known position."
+    )

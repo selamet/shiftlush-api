@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework.viewsets import GenericViewSet
 
+from apps.companies.models import Company
 from apps.maintenance import services
 from apps.maintenance.api.v1.serializers import (
     BulkAssignResultSerializer,
@@ -27,11 +28,16 @@ from apps.maintenance.api.v1.serializers import (
     PlannedVisitReadSerializer,
     PlannedVisitWriteSerializer,
     PlanSummarySerializer,
+    RouteQuerySerializer,
+    RouteSerializer,
     SetChecklistSerializer,
     TechnicianOptionSerializer,
 )
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
+from apps.maintenance.routing import Stop, plan_route
+from apps.properties.services import position_of
 from apps.users.models import Role, User
+from core.context import require_current_company_id
 from core.filters import TenantFilterSet
 from core.permissions import RolePermission
 from core.requests import authenticated_user
@@ -386,6 +392,90 @@ class PlannedVisitViewSet(
             editor=authenticated_user(request),
         )
         return Response(BulkAssignResultSerializer({"count": count}).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "technician",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=True,
+                description='A user id, or "me" for the signed-in user.',
+            ),
+            OpenApiParameter("date", OpenApiTypes.DATE, OpenApiParameter.QUERY, required=True),
+        ],
+        responses={200: RouteSerializer},
+    )
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def route(self, request: Request) -> Response:
+        """One technician's day, in the order that drives least.
+
+        The day's stops are their rows planned for that date and, for today
+        only, their rows with no day that are already due — what the "today" list
+        shows. Cancelled rows are not on the road. Ordered by straight-line
+        distance from the firm's starting point when it has one
+        (`apps.maintenance.routing`); stops with no position follow, in
+        address order. A technician sees the rows they can see, so another
+        technician's day reads as empty to them.
+        """
+        query = RouteQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        day = query.validated_data["date"]
+        who = query.validated_data["technician"]
+        if who == "me":
+            technician_id = authenticated_user(request).pk
+        else:
+            try:
+                technician_id = uuid.UUID(who)
+            except ValueError:
+                # The same answer as the list's technician filter gives.
+                raise serializers.ValidationError(
+                    {"technician": serializers.ErrorDetail("Must be a user id or 'me'.", "invalid")}
+                ) from None
+
+        on_the_day = Q(planned_date=day)
+        if day == local_today():
+            on_the_day |= Q(
+                planned_date__isnull=True, status=PlannedVisitStatus.PLANNED, due_date__lte=day
+            )
+        rows = list(
+            self.get_queryset()
+            .select_related("elevator__building__complex")
+            .filter(technician_id=technician_id)
+            .exclude(status=PlannedVisitStatus.CANCELLED)
+            .filter(on_the_day)
+            .order_by(*ROUTE_ORDER)
+        )
+
+        positions: dict[str, tuple[str | None, str | None]] = {}
+        stops = []
+        for row in rows:
+            latitude, longitude = position_of(row.elevator.building)
+            positions[str(row.pk)] = (latitude, longitude)
+            stops.append(
+                Stop(
+                    str(row.pk),
+                    None if latitude is None else float(latitude),
+                    None if longitude is None else float(longitude),
+                )
+            )
+        company = Company.objects.get(pk=require_current_company_id())
+        start = (
+            (float(company.latitude), float(company.longitude))
+            if company.latitude is not None and company.longitude is not None
+            else None
+        )
+        planned = plan_route(stops, start=start)
+        by_id = {str(row.pk): row for row in rows}
+        context = {**self.get_serializer_context(), "positions": positions, "legs": planned.legs}
+        body = {
+            "date": day,
+            "technician": technician_id,
+            "total_km": round(planned.total_km, 2),
+            "stops": [by_id[stop_id] for stop_id in planned.order],
+            "unplaced": planned.unplaced,
+        }
+        return Response(RouteSerializer(body, context=context).data)
 
     @extend_schema(
         parameters=[

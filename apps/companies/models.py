@@ -40,6 +40,11 @@ class Company(SoftDeleteModel):
     email = models.EmailField(max_length=150, blank=True)
     website = models.CharField(max_length=150, blank=True)
 
+    # Where a technician's day starts, for the suggested route order. Optional:
+    # without it the route starts from whichever stop gives the shortest path.
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
     # Nullable, and it has to be: this points at attachments.Attachment, which
     # points back here, so one side of the cycle must be optional for the
     # initial migration to be creatable at all.
