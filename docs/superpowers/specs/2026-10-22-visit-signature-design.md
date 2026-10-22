@@ -75,10 +75,11 @@ the office, the portal and, later, the monthly customer report.
   visit whose `signature_status` is not `signed`, with
   `409 SIGNATURE_NOT_EXPECTED`.
 - A signature image can't be deleted through the attachments API, by any
-  role. A wrongly attached one is fixed by an owner or admin editing the
-  visit, which sets `amended_after_signature`.
-- The read side carries `has_signature` and, for those who may see it, a
-  signed URL to the image, under the same rules as the visit's photos.
+  role: `409 SIGNATURE_CANNOT_BE_DELETED`.
+- The read side carries `signature_state` (`signed`, `pending`, `not_present`,
+  `declined`, or `none` for older visits). The office reads the image through
+  the attachments list, as it reads the visit's photos. The portal's visit
+  carries the image file beside its photos.
 
 ## Rules
 
@@ -148,8 +149,8 @@ person's signature) and a demo name. A few are `not_present`, and one is
 
 1. **API.** The migration, rules and filter; the attachment category and its
    one-per-visit and no-delete rules; the read fields; the demo data; new
-   error codes `SIGNATURE_EXISTS` and `SIGNATURE_NOT_EXPECTED`. OpenAPI is
-   updated.
+   error codes `SIGNATURE_EXISTS`, `SIGNATURE_NOT_EXPECTED` and
+   `SIGNATURE_CANNOT_BE_DELETED`. OpenAPI is updated.
 2. **Web.** The signature pad component and the visit form step; the outbox
    carrying the Blob; the office detail, list chips and filter; the portal
    block; the error code translations.
