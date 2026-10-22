@@ -30,10 +30,21 @@ class BuildingFilter(TenantFilterSet):
     # produce the same empty list rather than different answers.
     customer = django_filters.UUIDFilter(field_name="customer_id")
     complex = django_filters.UUIDFilter(field_name="complex_id")
+    # Which buildings a route cannot place: the calendar links here with false.
+    has_location = django_filters.BooleanFilter(
+        method="filter_has_location",
+        help_text="true: buildings with both coordinates; false: those missing either.",
+    )
 
     class Meta:
         model = Building
-        fields = ["customer", "complex", "type", "is_active"]
+        fields = ["customer", "complex", "type", "is_active", "has_location"]
+
+    def filter_has_location(
+        self, queryset: QuerySet[Building], name: str, value: bool
+    ) -> QuerySet[Building]:
+        located = Q(latitude__isnull=False, longitude__isnull=False)
+        return queryset.filter(located) if value else queryset.exclude(located)
 
     def filter_search(
         self, queryset: QuerySet[Building], name: str, value: str
