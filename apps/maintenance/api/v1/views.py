@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework.viewsets import GenericViewSet
 
+from apps.companies.models import Company
 from apps.maintenance import services
 from apps.maintenance.api.v1.serializers import (
     BulkAssignResultSerializer,
@@ -29,11 +30,9 @@ from apps.maintenance.api.v1.serializers import (
     PlanSummarySerializer,
     RouteQuerySerializer,
     RouteSerializer,
-    RouteStopSerializer,
     SetChecklistSerializer,
     TechnicianOptionSerializer,
 )
-from apps.companies.models import Company
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
 from apps.maintenance.routing import Stop, plan_route
 from apps.users.models import Role, User
@@ -402,9 +401,7 @@ class PlannedVisitViewSet(
                 required=True,
                 description='A user id, or "me" for the signed-in user.',
             ),
-            OpenApiParameter(
-                "date", OpenApiTypes.DATE, OpenApiParameter.QUERY, required=True
-            ),
+            OpenApiParameter("date", OpenApiTypes.DATE, OpenApiParameter.QUERY, required=True),
         ],
         responses={200: RouteSerializer},
     )
@@ -413,7 +410,7 @@ class PlannedVisitViewSet(
         """One technician's day, in the order that drives least.
 
         The day's stops are their rows planned for that date and, for today
-        only, their rows with no day that are already due — what "Bugün"
+        only, their rows with no day that are already due — what the "today" list
         shows. Cancelled rows are not on the road. Ordered by straight-line
         distance from the firm's starting point when it has one
         (`apps.maintenance.routing`); stops with no position follow, in

@@ -10,9 +10,9 @@ from django.urls import reverse
 
 from apps.companies.models import Company
 from apps.maintenance.models import PlannedVisit, PlannedVisitStatus
+from apps.maintenance.tasks import plan_maintenance
 from apps.properties.models import Building
 from tests.test_planned_visits import TODAY, Plan, api_for, today  # noqa: F401 - autouse fixture
-from apps.maintenance.tasks import plan_maintenance
 
 
 @pytest.fixture
@@ -28,9 +28,7 @@ def day(db) -> Plan:
 
 
 def place(elevator: Any, latitude: str | None, longitude: str | None) -> None:
-    Building.unscoped.filter(pk=elevator.building_id).update(
-        latitude=latitude, longitude=longitude
-    )
+    Building.unscoped.filter(pk=elevator.building_id).update(latitude=latitude, longitude=longitude)
 
 
 def route(client: Any, **params: str) -> Any:
@@ -45,7 +43,9 @@ class TestRoute:
     def test_the_day_starts_at_the_firm_and_drives_least(self, day):
         place(day.a1, "39.900000", "41.200000")
         place(day.b1, "39.900000", "41.260000")
-        Company.objects.filter(pk=day.company.pk).update(latitude="39.900000", longitude="41.270000")
+        Company.objects.filter(pk=day.company.pk).update(
+            latitude="39.900000", longitude="41.270000"
+        )
         response = route(api_for(day.ops), technician=str(day.tech_a.id), date="2026-10-20")
         assert response.status_code == 200, response.data
         assert names(response) == ["B1", "A1", "A2"]
@@ -67,7 +67,9 @@ class TestRoute:
         PlannedVisit.unscoped.filter(elevator=day.b1, period="2026-10").update(
             planned_date=None, due_date=TODAY - timedelta(days=3)
         )
-        assert "B1" in names(route(api_for(day.ops), technician=str(day.tech_a.id), date="2026-10-20"))
+        assert "B1" in names(
+            route(api_for(day.ops), technician=str(day.tech_a.id), date="2026-10-20")
+        )
         tomorrow = route(api_for(day.ops), technician=str(day.tech_a.id), date="2026-10-21")
         assert "B1" not in names(tomorrow)
 
@@ -108,7 +110,6 @@ class TestRoute:
 
     def test_an_accountant_has_no_route(self, day):
         from apps.users.models import Role
-
         from tests.test_planned_visits import make_user
 
         accountant = make_user(day.company, Role.ACCOUNTANT, "route-accountant@example.com")

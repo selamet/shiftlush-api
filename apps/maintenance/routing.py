@@ -17,6 +17,7 @@ order given, so nobody's visit silently drops out of the day.
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -65,7 +66,7 @@ def haversine_km(a: Point, b: Point) -> float:
 def path_km(points: Sequence[Point], *, start: Point | None) -> float:
     """The length of driving `points` in order, from `start` when there is one."""
     route = [start, *points] if start is not None else list(points)
-    return sum(haversine_km(a, b) for a, b in zip(route, route[1:], strict=False))
+    return sum(haversine_km(a, b) for a, b in itertools.pairwise(route))
 
 
 def _nearest_neighbour(points: list[Point], first: int | None, start: Point | None) -> list[int]:
@@ -76,10 +77,11 @@ def _nearest_neighbour(points: list[Point], first: int | None, start: Point | No
         order.append(remaining.pop(first))
         here = points[order[0]]
     while remaining:
-        assert here is not None
+        origin = here
+        assert origin is not None
         # min() keeps the first of equals, and `remaining` is in the given
         # order, so a tie goes to the stop the address order puts first.
-        nearest = min(remaining, key=lambda i: haversine_km(here, points[i]))
+        nearest = min(remaining, key=lambda i: haversine_km(origin, points[i]))
         remaining.remove(nearest)
         order.append(nearest)
         here = points[nearest]

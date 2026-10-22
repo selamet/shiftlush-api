@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('companies', '0003_alter_company_options'),
+        ("companies", "0003_alter_company_options"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='company',
-            name='latitude',
+            model_name="company",
+            name="latitude",
             field=models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True),
         ),
         migrations.AddField(
-            model_name='company',
-            name='longitude',
+            model_name="company",
+            name="longitude",
             field=models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True),
         ),
     ]

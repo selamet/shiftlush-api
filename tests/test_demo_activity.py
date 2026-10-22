@@ -148,6 +148,21 @@ class TestVisitsAndThePlan:
                 assert period_of(row.planned_date) == row.period
                 assert row.technician_id is not None
 
+    def test_every_building_and_the_firm_have_a_position(self, seeded):
+        # The route order needs somewhere to start and somewhere to go.
+        from apps.properties.models import Building
+
+        centre = demo_activity.DEMO_CENTRE
+        with company_context(seeded.id):
+            buildings = list(Building.objects.all())
+            assert buildings
+            for building in buildings:
+                assert building.latitude is not None and building.longitude is not None
+                assert abs(float(building.latitude) - centre[0]) < 0.1
+                assert abs(float(building.longitude) - centre[1]) < 0.1
+        seeded.refresh_from_db()
+        assert seeded.latitude is not None and seeded.longitude is not None
+
 
 class TestFaults:
     def test_one_in_every_state(self, seeded):
@@ -361,6 +376,19 @@ class TestRefresh:
         call_command("refresh_demo_data", stdout=out)
         assert days() == first
         assert "planned days +0" in out.getvalue()
+
+    def test_positions_are_given_once(self, phase_one_demo):
+        from apps.properties.models import Building
+
+        def positions() -> dict[Any, Any]:
+            with company_context(phase_one_demo.id):
+                return {b.pk: (b.latitude, b.longitude) for b in Building.objects.all()}
+
+        call_command("refresh_demo_data", stdout=StringIO())
+        first = positions()
+        assert all(lat is not None for lat, _ in first.values())
+        call_command("refresh_demo_data", stdout=StringIO())
+        assert positions() == first
 
     def test_a_second_run_changes_nothing(self, phase_one_demo):
         call_command("refresh_demo_data", stdout=StringIO())

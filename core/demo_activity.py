@@ -70,6 +70,7 @@ from apps.maintenance.models import (
 from apps.notifications.models import Notification
 from apps.portal import services as portal
 from apps.portal.models import PortalAccount
+from apps.properties.models import Building
 from apps.users.models import Role, User, UserCustomer
 from core import mail
 from core.context import company_context
@@ -81,6 +82,10 @@ from core.scheduling import LOCAL_TZ, local_today
 PORTAL_PASSWORD = "demo-portal-2026"
 
 ACTIVITY = DEMO["activity"]
+
+#: The middle of Erzurum, the demo firm's home province (demo.json "home"):
+#: where its office is, and what its buildings are placed around.
+DEMO_CENTRE = (39.9043, 41.2679)
 
 #: How many lifts are left without a recent visit, so the overdue warnings, the
 #: overdue rows of the plan and the M2 overdue notice all have subjects.
@@ -100,6 +105,7 @@ class Activity:
     drafts: int = 0
     issued: int = 0
     notifications: int = 0
+    positions: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -129,6 +135,7 @@ def populate_activity(
     started = timezone.now()
     with mail.suppressed(), company_context(company.id), transaction.atomic():
         before = Notification.objects.count()
+        activity.positions += _positions(company)
         firm = _firm(company)
         _contract_lifecycle(firm, generator, day, activity)
         firm = _firm(company)  # an auto-renewal may have put more lifts under contract
@@ -462,6 +469,47 @@ def _planned_days(today: date) -> int:
                 PlannedVisit.objects.filter(pk=row.pk).update(planned_date=day)
                 given += 1
     return given
+
+
+# Positions -----------------------------------------------------------------------------
+
+
+def _offset(seed: Any, spread: float) -> tuple[float, float]:
+    """A fixed nudge for one place, the same on every run."""
+    rng = random.Random(str(seed))
+    return (rng.uniform(-spread, spread), rng.uniform(-spread, spread) * 1.3)
+
+
+def _positions(company: Company) -> int:
+    """Put the firm and its buildings on the map, where the route order can read them.
+
+    Not real addresses — the demo's are generated — but placed the way a city
+    is: each district a few kilometres from the centre, each neighbourhood a
+    cluster inside it, and each building a short walk from its neighbours, so
+    a day's stops in one quarter are near each other and the suggested order
+    has something to improve. Every offset is seeded by the place itself, so a
+    rerun puts nothing anywhere new. Only what has no position is touched.
+    """
+    placed = 0
+    if company.latitude is None or company.longitude is None:
+        Company.objects.filter(pk=company.pk).update(
+            latitude=round(DEMO_CENTRE[0], 6), longitude=round(DEMO_CENTRE[1], 6)
+        )
+        company.refresh_from_db(fields=["latitude", "longitude"])
+    missing = Building.objects.filter(Q(latitude__isnull=True) | Q(longitude__isnull=True))
+    for building in missing.select_related("neighborhood"):
+        latitude, longitude = DEMO_CENTRE
+        if building.neighborhood is not None:
+            district = _offset(f"district:{building.neighborhood.district_id}", 0.03)
+            quarter = _offset(f"neighborhood:{building.neighborhood_id}", 0.008)
+            latitude += district[0] + quarter[0]
+            longitude += district[1] + quarter[1]
+        here = _offset(f"building:{building.pk}", 0.0015)
+        Building.objects.filter(pk=building.pk).update(
+            latitude=round(latitude + here[0], 6), longitude=round(longitude + here[1], 6)
+        )
+        placed += 1
+    return placed
 
 
 # Faults -------------------------------------------------------------------------------

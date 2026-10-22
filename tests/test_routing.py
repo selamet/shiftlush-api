@@ -47,7 +47,7 @@ def test_never_longer_than_the_address_order():
     ]
     for given in itertools.permutations(stops):
         route = plan_route(list(given), start=None)
-        address = path_km([(s.latitude, s.longitude) for s in given], start=None)
+        address = path_km([s.point for s in given if s.point is not None], start=None)
         assert route.total_km <= address + 1e-9
 
 
@@ -57,9 +57,7 @@ def test_the_same_input_gives_the_same_order():
 
 
 def test_stops_without_a_position_come_last_in_the_order_given():
-    route = plan_route(
-        [Stop("x", None, None), EAST, Stop("y", None, 41.2), WEST], start=None
-    )
+    route = plan_route([Stop("x", None, None), EAST, Stop("y", None, 41.2), WEST], start=None)
     assert route.order[2:] == ["x", "y"]
     assert route.unplaced == ["x", "y"]
     assert route.legs["x"] is None
