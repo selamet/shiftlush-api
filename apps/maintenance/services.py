@@ -295,7 +295,9 @@ def edit_planned_visit(
 ASSIGNMENT_COALESCE_WINDOW = timedelta(minutes=15)
 
 
-def coalesce_assignment(technician_id: uuid.UUID, period: str, *, now: datetime | None = None) -> bool:
+def coalesce_assignment(
+    technician_id: uuid.UUID, period: str, *, now: datetime | None = None
+) -> bool:
     """Fold one more assigned row into the technician's recent unread notice.
 
     The calendar assigns one drop at a time, and ten drops are not ten pieces
