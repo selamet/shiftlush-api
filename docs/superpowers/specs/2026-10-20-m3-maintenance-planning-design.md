@@ -88,6 +88,11 @@ with `due_date < today`) on its own.
 
 ## API
 
+The calendar (`2026-10-22-calendar-planning-and-route-order-design.md`,
+SL-166) adds `planned_date` rules to the PATCH, the `planned_from`,
+`planned_to` and `unscheduled` filters, and folds one-at-a-time assignments
+into one unread notification.
+
 | | |
 |---|---|
 | `GET /planned-visits/` | Filters: `period` (required), `technician` (an id, or `me`), `unassigned=true`, `status`, `due_before`, `district`, `customer`. Each row carries the elevator name, building, neighbourhood and district names, customer name, and the latest attempt's status, so the screen needs no second request per row. Ordered by district, neighbourhood, building, then elevator (route order) by default, with `?ordering=due_date` available. |

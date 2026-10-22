@@ -39,6 +39,11 @@ class ErrorCode(models.TextChoices):
         "INSTALLATION_DATE_IN_FUTURE",
         "Installation date cannot be in the future",
     )
+    PLANNED_DATE_OUTSIDE_PERIOD = (
+        "PLANNED_DATE_OUTSIDE_PERIOD",
+        "A planned visit's day must fall inside its month",
+    )
+    PLANNED_DATE_IN_PAST = "PLANNED_DATE_IN_PAST", "A visit cannot be planned for a past day"
 
     # Conflict --------------------------------------------------------------
     RECORD_IN_USE = "RECORD_IN_USE", "Record is referenced by other records"
@@ -112,6 +117,10 @@ class ErrorCode(models.TextChoices):
     FAULT_TRANSITION_NOT_ALLOWED = (
         "FAULT_TRANSITION_NOT_ALLOWED",
         "The fault is not in a state this action can be taken from",
+    )
+    PLAN_ROW_CLOSED = (
+        "PLAN_ROW_CLOSED",
+        "The planned visit is done or cancelled; its day can no longer change",
     )
     NOTIFICATION_EMAIL_LOCKED = (
         "NOTIFICATION_EMAIL_LOCKED",

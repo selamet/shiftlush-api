@@ -215,6 +215,23 @@ class PlannedVisitFilter(TenantFilterSet):
     due_before = django_filters.DateFilter(field_name="due_date", lookup_expr="lte")
     district = django_filters.NumberFilter(field_name="elevator__building__neighborhood__district")
     customer = django_filters.UUIDFilter(field_name="elevator__building__customer_id")
+    # The calendar's week: the rows planned for a range of days (inclusive), and
+    # the tray of rows with no day yet. A range never matches a row with no day.
+    planned_from = django_filters.DateFilter(
+        field_name="planned_date",
+        lookup_expr="gte",
+        help_text="Rows planned on or after this day. Rows with no planned day are left out.",
+    )
+    planned_to = django_filters.DateFilter(
+        field_name="planned_date",
+        lookup_expr="lte",
+        help_text="Rows planned on or before this day. Rows with no planned day are left out.",
+    )
+    unscheduled = django_filters.BooleanFilter(
+        field_name="planned_date",
+        lookup_expr="isnull",
+        help_text="true: only rows with no planned day; false: only rows with one.",
+    )
 
     class Meta:
         model = PlannedVisit
@@ -227,6 +244,9 @@ class PlannedVisitFilter(TenantFilterSet):
             "due_before",
             "district",
             "customer",
+            "planned_from",
+            "planned_to",
+            "unscheduled",
         ]
 
     def filter_technician(

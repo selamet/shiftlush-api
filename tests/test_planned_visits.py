@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from django.core import mail as django_mail
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.address.models import District, Neighborhood, Province
@@ -205,6 +206,11 @@ class Plan:
 @pytest.fixture
 def plan(db) -> Plan:
     return Plan()
+
+
+def counted(notifications: list[Notification]) -> list[dict[str, Any]]:
+    """What a notice says — month and count — without the rows it tracks."""
+    return [{"period": n.data["period"], "count": n.data["count"]} for n in notifications]
 
 
 def assigned_notifications(user: User) -> list[Notification]:
@@ -555,6 +561,28 @@ class TestList:
         assert response.data["elevator_name"] == "A1"
 
 
+class TestDayFilters:
+    """What the calendar's week view reads with: a range of days, or no day yet."""
+
+    @pytest.fixture
+    def days(self, planned: Plan) -> Plan:
+        for elevator, day in ((planned.a1, date(2026, 10, 21)), (planned.b1, date(2026, 10, 27))):
+            PlannedVisit.unscoped.filter(pk=planned.row(elevator).pk).update(planned_date=day)
+        return planned
+
+    def test_a_date_range_is_inclusive(self, days):
+        rows = listed(api_for(days.owner), planned_from="2026-10-21", planned_to="2026-10-27")
+        assert sorted(names(rows)) == ["A1", "B1"]
+
+    def test_a_range_leaves_out_unscheduled_rows(self, days):
+        rows = listed(api_for(days.owner), planned_from="2026-10-01")
+        assert "A2" not in names(rows)
+
+    def test_unscheduled_lists_only_rows_without_a_day(self, days):
+        rows = listed(api_for(days.owner), unscheduled="true")
+        assert names(rows) == ["A2"]
+
+
 class TestTechnicianNarrowing:
     def test_own_rows_and_unassigned_rows_of_their_customers(self, planned):
         a2 = planned.row(planned.a2)
@@ -604,9 +632,7 @@ class TestEditing:
         assert response.data["technician_name"] == "Banu X"
         assert response.data["planned_date"] == "2026-10-22"
         assert response.data["manually_edited"] is True
-        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
-            {"period": OCT, "count": 1}
-        ]
+        assert counted(assigned_notifications(planned.tech_b1)) == [{"period": OCT, "count": 1}]
 
     def test_a_date_only_edit_tells_nobody(self, planned):
         row = planned.row(planned.a1)
@@ -649,6 +675,132 @@ class TestEditing:
         assert client.post(reverse("planned-visit-list"), {}, format="json").status_code == 405
         detail = reverse("planned-visit-detail", args=[row.pk])
         assert client.delete(detail).status_code == 405
+
+
+class TestEditingRules:
+    """What a calendar drop may do: a day inside the row's month, not in the past,
+    and never the day of a row that is already closed."""
+
+    def patch(self, planned: Plan, row: PlannedVisit, body: dict[str, Any]) -> Any:
+        return api_for(planned.ops).patch(
+            reverse("planned-visit-detail", args=[row.pk]), body, format="json"
+        )
+
+    def test_a_day_outside_the_month_is_refused(self, planned):
+        row = planned.row(planned.a1)
+        response = self.patch(planned, row, {"planned_date": "2026-11-02"})
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "planned_date", "code": "PLANNED_DATE_OUTSIDE_PERIOD"}
+        ]
+        assert planned.row(planned.a1).planned_date is None
+
+    def test_a_past_day_is_refused(self, planned):
+        response = self.patch(planned, planned.row(planned.a1), {"planned_date": "2026-10-19"})
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "planned_date", "code": "PLANNED_DATE_IN_PAST"}
+        ]
+
+    def test_today_is_allowed(self, planned):
+        response = self.patch(planned, planned.row(planned.a1), {"planned_date": "2026-10-20"})
+        assert response.status_code == 200, response.data
+
+    def test_an_unchanged_past_date_is_not_refused(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(planned_date=date(2026, 10, 10))
+        response = self.patch(
+            planned,
+            row,
+            {"planned_date": "2026-10-10", "technician": str(planned.tech_b1.id)},
+        )
+        assert response.status_code == 200, response.data
+
+    def test_clearing_the_date_is_allowed(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(planned_date=date(2026, 10, 22))
+        response = self.patch(planned, row, {"planned_date": None})
+        assert response.status_code == 200, response.data
+        assert planned.row(planned.a1).planned_date is None
+
+    def test_a_closed_rows_day_cannot_move(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(status=PlannedVisitStatus.DONE)
+        response = self.patch(planned, row, {"planned_date": "2026-10-22"})
+        assert response.status_code == 409
+        assert response.data["error"]["code"] == "PLAN_ROW_CLOSED"
+
+    def test_a_closed_rows_technician_can_be_corrected(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(status=PlannedVisitStatus.DONE)
+        response = self.patch(planned, row, {"technician": str(planned.tech_b1.id)})
+        assert response.status_code == 200, response.data
+
+
+class TestAssignmentsCoalesce:
+    """A calendar assigns one drop at a time; the technician hears about it once."""
+
+    def assign(self, planned: Plan, row: PlannedVisit, technician: User) -> None:
+        response = api_for(planned.ops).patch(
+            reverse("planned-visit-detail", args=[row.pk]),
+            {"technician": str(technician.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.data
+
+    def test_one_at_a_time_is_one_notification(self, planned, django_capture_on_commit_callbacks):
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=True):
+            self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        with django_capture_on_commit_callbacks(execute=True):
+            self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert counted(assigned_notifications(planned.tech_b1)) == [{"period": OCT, "count": 2}]
+        assert len([m for m in django_mail.outbox if m.to == [planned.tech_b1.email]]) <= 1
+
+    def test_away_and_back_counts_the_row_once(self, planned):
+        row = planned.row(planned.b1)
+        self.assign(planned, row, planned.tech_b1)
+        self.assign(planned, row, planned.tech_b2)
+        self.assign(planned, row, planned.tech_b1)
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b1)] == [1]
+
+    def test_another_technician_is_not_folded_in(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        self.assign(planned, planned.row(planned.a2), planned.tech_b2)
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b1)] == [1]
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b2)] == [1]
+
+    def test_a_read_one_is_not_reused(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        Notification.unscoped.filter(recipient=planned.tech_b1).update(read_at=timezone.now())
+        self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert len(assigned_notifications(planned.tech_b1)) == 2
+
+    def test_an_old_one_is_not_reused(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        Notification.unscoped.filter(recipient=planned.tech_b1).update(
+            created_at=timezone.now() - timedelta(minutes=16)
+        )
+        self.assign(planned, planned.row(planned.a2), planned.tech_b1)
+        assert len(assigned_notifications(planned.tech_b1)) == 2
+
+    def test_another_period_is_its_own_notification(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        self.assign(planned, planned.row(planned.b1, NOV), planned.tech_b1)
+        assert counted(assigned_notifications(planned.tech_b1)) == [
+            {"period": OCT, "count": 1},
+            {"period": NOV, "count": 1},
+        ]
+
+    def test_bulk_assign_still_raises_its_own(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        response = api_for(planned.ops).post(
+            reverse("planned-visit-bulk-assign"),
+            {"ids": [str(planned.row(planned.a2).pk)], "technician": str(planned.tech_b1.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.data
+        assert len(assigned_notifications(planned.tech_b1)) == 2
 
 
 class TestBulkAssign:
