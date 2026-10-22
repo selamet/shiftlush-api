@@ -22,6 +22,7 @@ paths:
           - declaration_of_conformity
           - inspection_report
           - logo
+          - monthly_report
           - other
           - permit
           - photo
@@ -36,6 +37,7 @@ paths:
           * `inspection_report` - Inspection report
           * `logo` - Logo
           * `signature` - Signature
+          * `monthly_report` - Monthly report
           * `other` - Other
       - in: query
         name: object_id
@@ -5253,6 +5255,7 @@ components:
       - inspection_report
       - logo
       - signature
+      - monthly_report
       - other
       type: string
       description: |-
@@ -5264,6 +5267,7 @@ components:
         * `inspection_report` - Inspection report
         * `logo` - Logo
         * `signature` - Signature
+        * `monthly_report` - Monthly report
         * `other` - Other
     AttachmentConfirmRequest:
       type: object
@@ -5691,6 +5695,8 @@ components:
         logo_url:
           type: string
           readOnly: true
+        monthly_reports_enabled:
+          type: boolean
         is_active:
           type: boolean
           readOnly: true
@@ -6276,6 +6282,8 @@ components:
             maxLength: 0
         is_primary:
           type: boolean
+        receives_monthly_report:
+          type: boolean
         notes:
           type: string
       required:
@@ -6308,6 +6316,9 @@ components:
         is_primary:
           type: boolean
           readOnly: true
+        receives_monthly_report:
+          type: boolean
+          readOnly: true
         notes:
           type: string
           readOnly: true
@@ -6328,6 +6339,7 @@ components:
       - is_primary
       - notes
       - phone
+      - receives_monthly_report
       - role
       - updated_at
     CustomerContactWriteRequest:
@@ -6360,6 +6372,8 @@ components:
           - type: string
             maxLength: 0
         is_primary:
+          type: boolean
+        receives_monthly_report:
           type: boolean
         notes:
           type: string
@@ -9453,6 +9467,8 @@ components:
           type: string
           format: uuid
           nullable: true
+        monthly_reports_enabled:
+          type: boolean
     PatchedComplexWriteRequest:
       type: object
       properties:
@@ -9563,6 +9579,8 @@ components:
           - type: string
             maxLength: 0
         is_primary:
+          type: boolean
+        receives_monthly_report:
           type: boolean
         notes:
           type: string
@@ -11465,6 +11483,8 @@ components:
       - SIGNATURE_NOT_EXPECTED
       - SIGNATURE_CANNOT_BE_DELETED
       - INVOICE_LINES_NEED_PRICE
+      - MONTHLY_REPORT_NEEDS_EMAIL
+      - REPORT_NO_RECIPIENT
       - DUPLICATE_INVOICE_NUMBER
       - FAULT_TRANSITION_NOT_ALLOWED
       - PLAN_ROW_CLOSED
@@ -11526,6 +11546,8 @@ components:
         * `SIGNATURE_NOT_EXPECTED` - The visit was not recorded as signed, so it takes no signature
         * `SIGNATURE_CANNOT_BE_DELETED` - A visit's signature is kept for good and cannot be deleted
         * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
+        * `MONTHLY_REPORT_NEEDS_EMAIL` - A contact without an e-mail address cannot receive the monthly report
+        * `REPORT_NO_RECIPIENT` - Nobody on this customer is set to receive the monthly report
         * `DUPLICATE_INVOICE_NUMBER` - Another issued invoice of this company already has this number
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
         * `PLAN_ROW_CLOSED` - The planned visit is done or cancelled; its day can no longer change

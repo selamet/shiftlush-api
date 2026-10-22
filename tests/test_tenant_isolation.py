@@ -1007,6 +1007,9 @@ class TestEveryModelIsScoped:
             "portal.PortalAccount",
             "properties.Building",
             "properties.Complex",
+            # Not routed yet; its tenant boundary is tested in
+            # tests/test_customer_reports.py and the endpoints come with it.
+            "reports.CustomerReport",
             "users.Invitation",
             "users.User",
             "users.UserCustomer",

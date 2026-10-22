@@ -9,7 +9,7 @@ from apps.customers.models import ContactRole, Customer, CustomerContact, Custom
 from apps.customers.services import demote_other_primaries
 from core.crypto import fingerprint
 from core.error_codes import ErrorCode
-from core.exceptions import DuplicateRecord
+from core.exceptions import DuplicateRecord, field_error
 from core.serializers import AddressReadMixin
 from core.validators import (
     normalize_email,
@@ -54,6 +54,7 @@ class CustomerContactReadSerializer(serializers.ModelSerializer[CustomerContact]
             "phone",
             "email",
             "is_primary",
+            "receives_monthly_report",
             "notes",
             "created_at",
             "updated_at",
@@ -68,13 +69,38 @@ class CustomerContactWriteSerializer(StrictMixin, serializers.ModelSerializer[Cu
         model = CustomerContact
         # Listed one by one. `__all__` would put `company`, `is_deleted` and
         # every future column on the write surface.
-        fields = ["customer", "full_name", "role", "phone", "email", "is_primary", "notes"]
+        fields = [
+            "customer",
+            "full_name",
+            "role",
+            "phone",
+            "email",
+            "is_primary",
+            "receives_monthly_report",
+            "notes",
+        ]
 
     def validate_phone(self, value: str) -> str:
         return normalize_phone(value) if value else value
 
     def validate_email(self, value: str) -> str:
         return normalize_email(value) if value else value
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        email = attrs.get("email", self.instance.email if self.instance else "")
+        if "email" in attrs and not email:
+            # Clearing the address of a ticked contact unticks it in the same
+            # write, rather than refusing: the office asked for the address to
+            # go, and a ticked contact with none is the state this prevents.
+            attrs["receives_monthly_report"] = False
+        wants = attrs.get(
+            "receives_monthly_report",
+            self.instance.receives_monthly_report if self.instance else False,
+        )
+        if wants and not email:
+            raise field_error("receives_monthly_report", ErrorCode.MONTHLY_REPORT_NEEDS_EMAIL)
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data: dict[str, Any]) -> CustomerContact:
@@ -100,7 +126,15 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
     """
 
     class Meta(CustomerContactWriteSerializer.Meta):
-        fields = ["full_name", "role", "phone", "email", "is_primary", "notes"]
+        fields = [
+            "full_name",
+            "role",
+            "phone",
+            "email",
+            "is_primary",
+            "receives_monthly_report",
+            "notes",
+        ]
 
 
 class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Customer]):

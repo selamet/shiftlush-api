@@ -158,6 +158,17 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
         WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
     },
+    # Monthly customer reports. The accountant reads them (they are what the
+    # customer was told); only the office makes them, and regenerating replaces
+    # a file that was already sent, so it is narrower.
+    "customer_report": {
+        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.ACCOUNTANT},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    },
+    "customer_report_regenerate": {
+        READ: set(),
+        WRITE: {Role.OWNER, Role.ADMIN},
+    },
     "planned_visit": {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
