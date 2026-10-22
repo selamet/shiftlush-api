@@ -69,16 +69,27 @@ def test_one_stop_and_none():
     assert plan_route([], start=None).order == []
 
 
-def test_a_long_day_still_answers_quickly_and_never_worse():
+def test_a_long_day_tries_only_a_few_first_stops_and_is_never_worse(monkeypatch):
+    # Counted, not timed: a wall-clock bound passes on a laptop and fails under
+    # CI's coverage tracing. What keeps a long day quick is how many first stops
+    # are tried, so that is what is held.
     import random
-    import time
 
+    from apps.maintenance import routing
+
+    tried: list[int | None] = []
+    original = routing._nearest_neighbour
+
+    def counting(points, first, start):
+        tried.append(first)
+        return original(points, first, start)
+
+    monkeypatch.setattr(routing, "_nearest_neighbour", counting)
     rng = random.Random(7)  # noqa: S311
     stops = [
         Stop(str(i), 39.85 + rng.random() * 0.1, 41.2 + rng.random() * 0.15) for i in range(150)
     ]
-    began = time.perf_counter()
     route = plan_route(stops, start=None)
-    assert time.perf_counter() - began < 2.0
+    assert len(tried) == routing.MAX_FIRST_STOPS
     assert sorted(route.order) == sorted(s.id for s in stops)
     assert route.total_km <= path_km([s.point for s in stops if s.point], start=None) + 1e-9
