@@ -651,6 +651,66 @@ class TestEditing:
         assert client.delete(detail).status_code == 405
 
 
+class TestEditingRules:
+    """What a calendar drop may do: a day inside the row's month, not in the past,
+    and never the day of a row that is already closed."""
+
+    def patch(self, planned: Plan, row: PlannedVisit, body: dict[str, Any]) -> Any:
+        return api_for(planned.ops).patch(
+            reverse("planned-visit-detail", args=[row.pk]), body, format="json"
+        )
+
+    def test_a_day_outside_the_month_is_refused(self, planned):
+        row = planned.row(planned.a1)
+        response = self.patch(planned, row, {"planned_date": "2026-11-02"})
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "planned_date", "code": "PLANNED_DATE_OUTSIDE_PERIOD"}
+        ]
+        assert planned.row(planned.a1).planned_date is None
+
+    def test_a_past_day_is_refused(self, planned):
+        response = self.patch(planned, planned.row(planned.a1), {"planned_date": "2026-10-19"})
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "planned_date", "code": "PLANNED_DATE_IN_PAST"}
+        ]
+
+    def test_today_is_allowed(self, planned):
+        response = self.patch(planned, planned.row(planned.a1), {"planned_date": "2026-10-20"})
+        assert response.status_code == 200, response.data
+
+    def test_an_unchanged_past_date_is_not_refused(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(planned_date=date(2026, 10, 10))
+        response = self.patch(
+            planned,
+            row,
+            {"planned_date": "2026-10-10", "technician": str(planned.tech_b1.id)},
+        )
+        assert response.status_code == 200, response.data
+
+    def test_clearing_the_date_is_allowed(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(planned_date=date(2026, 10, 22))
+        response = self.patch(planned, row, {"planned_date": None})
+        assert response.status_code == 200, response.data
+        assert planned.row(planned.a1).planned_date is None
+
+    def test_a_closed_rows_day_cannot_move(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(status=PlannedVisitStatus.DONE)
+        response = self.patch(planned, row, {"planned_date": "2026-10-22"})
+        assert response.status_code == 409
+        assert response.data["error"]["code"] == "PLAN_ROW_CLOSED"
+
+    def test_a_closed_rows_technician_can_be_corrected(self, planned):
+        row = planned.row(planned.a1)
+        PlannedVisit.unscoped.filter(pk=row.pk).update(status=PlannedVisitStatus.DONE)
+        response = self.patch(planned, row, {"technician": str(planned.tech_b1.id)})
+        assert response.status_code == 200, response.data
+
+
 class TestBulkAssign:
     def test_assigns_every_row_and_tells_the_technician_once(self, planned):
         rows = [planned.row(e, period) for e in (planned.a1, planned.b1) for period in (OCT, NOV)]

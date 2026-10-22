@@ -17,6 +17,7 @@ from apps.maintenance.models import (
 )
 from apps.users.models import Role, User
 from core.error_codes import ErrorCode
+from core.exceptions import Conflict, field_error
 from core.requests import authenticated_user
 from core.scheduling import local_today
 
@@ -305,6 +306,30 @@ class PlannedVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[Plann
     class Meta:
         model = PlannedVisit
         fields = ["technician", "planned_date"]
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """The rules a calendar drop has to keep, checked only when the day changes.
+
+        A row resent with the day it already has passes, past or not: the
+        office is changing something else. Clearing the day sends the row back
+        to "day not decided", which is always allowed while it is planned. A
+        closed row keeps its day; its technician can still be corrected, as
+        bulk assignment allows.
+        """
+        attrs = super().validate(attrs)
+        row = self.instance
+        if row is None or "planned_date" not in attrs or attrs["planned_date"] == row.planned_date:
+            return attrs
+        if row.status != PlannedVisitStatus.PLANNED:
+            raise Conflict(ErrorCode.PLAN_ROW_CLOSED)
+        day = attrs["planned_date"]
+        if day is None:
+            return attrs
+        if services.period_of(day) != row.period:
+            raise field_error("planned_date", ErrorCode.PLANNED_DATE_OUTSIDE_PERIOD)
+        if day < local_today():
+            raise field_error("planned_date", ErrorCode.PLANNED_DATE_IN_PAST)
+        return attrs
 
     def get_fields(self) -> dict[str, Any]:
         fields = super().get_fields()
