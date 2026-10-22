@@ -36,7 +36,19 @@ from apps.maintenance.models import (
     VisitStatus,
 )
 from apps.properties.models import Building, BuildingType
-from apps.reports.content import build_report, month_bounds
+from apps.reports.content import (
+    ComingItem,
+    FaultLine,
+    InspectionLine,
+    Lead,
+    LiftSection,
+    ReportData,
+    ReportSummary,
+    VisitLine,
+    build_report,
+    month_bounds,
+)
+from apps.reports.documents import PdfRenderingUnavailable, build_html, render_pdf
 from apps.reports.models import CustomerReport, ReportDelivery
 from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
@@ -732,3 +744,153 @@ class TestContent:
                     company=month.company, inspection=red, description="x", severity=Label.RED
                 )
         assert count(month.a) == count(month.b)
+
+
+SIGNATURE_ID = "00000000-0000-0000-0000-0000000000a1"
+PIXEL = "data:image/png;base64,iVBORw0KGgo="
+
+
+def make_data(**changes: Any) -> ReportData:
+    visit = VisitLine(
+        date=date(2026, 10, 9),
+        technician_first_name="Ali",
+        status="completed",
+        attention=[("brake_system", "Pad worn")],
+        parts="Belt",
+        signature_state="signed",
+        signer_name="Ayşe Kaya",
+        signer_role="manager",
+        signed_at=at(date(2026, 10, 9), 11),
+        amended=False,
+        signature_attachment_id=SIGNATURE_ID,
+    )
+    nobody = VisitLine(
+        date=date(2026, 10, 12),
+        technician_first_name="Ali",
+        status="completed",
+        attention=[],
+        parts="",
+        signature_state="not_present",
+        signer_name="",
+        signer_role="",
+        signed_at=None,
+        amended=False,
+        signature_attachment_id=None,
+    )
+    fault = FaultLine(
+        reference="F-42",
+        reported_at=at(date(2026, 10, 5), 10),
+        trapped=False,
+        description="Door stuck",
+        status="resolved",
+        response_minutes=42,
+    )
+    inspection = InspectionLine(
+        date=date(2026, 10, 3),
+        label="red",
+        body="TSE",
+        nonconformities=[("Rope frayed", "open")],
+        correction_deadline=date(2026, 11, 20),
+        correction_open=True,
+    )
+    lift = LiftSection(
+        name="Lift A",
+        building="Zeytin Apt",
+        registration="REG-1",
+        visits=[visit, nobody],
+        missed=date(2026, 9, 8),
+        was_missed=True,
+        faults=[fault],
+        inspections=[inspection],
+    )
+    summary = ReportSummary(
+        lifts=1,
+        visits_planned=1,
+        visits_completed=0,
+        visits_by_status={"completed": 2, "incomplete": 0, "access_denied": 0},
+        signatures={"signed": 1, "not_present": 1, "declined": 0},
+        faults_opened=1,
+        faults_resolved=1,
+        faults_open_at_end=0,
+        emergencies=0,
+        emergency_response_minutes=None,
+        open_corrections=1,
+    )
+    values: dict[str, Any] = {
+        "company_name": "Acme Asansör",
+        "logo_attachment_id": None,
+        "customer_name": "A Sitesi",
+        "period": "2026-10",
+        "period_label": "Ekim 2026",
+        "generated_on": date(2026, 11, 1),
+        "summary": summary,
+        "lead": Lead("missed", 2),
+        "lifts": [lift],
+        "coming": [ComingItem("maintenance", "Lift A", date(2026, 11, 9), None)],
+        "firm_phone": "0212 000 00 00",
+        "firm_email": "info@acme.test",
+        "portal_url": None,
+    }
+    values.update(changes)
+    return ReportData(**values)
+
+
+class TestDocument:
+    def test_every_section_is_there(self):
+        html = build_html(make_data(), images={SIGNATURE_ID: PIXEL})
+        for text in (
+            "Ekim 2026",
+            "A Sitesi",
+            "2 asansörün bakımı bu ay yapılamadı.",
+            "Bu ay bakım yapılmadı — son bakım 08.09.2026",
+            "Ayşe Kaya",
+            "Yönetici",
+            "Binada kimse yoktu",
+            "F-42",
+            "42 dk",
+            "Düzeltme son tarihi",
+            "Bu rapor ShiftLush kayıtlarından otomatik olarak hazırlanmıştır.",
+        ):
+            assert text in html, text
+        assert PIXEL in html
+
+    def test_empty_sections_are_left_out_but_summary_and_coming_stay(self):
+        quiet = LiftSection(name="Lift A", building="B", registration="R")
+        html = build_html(make_data(lifts=[quiet], coming=[]), images={})
+        assert "Arızalar</span>" not in html
+        assert "Muayeneler" not in html
+        assert "Özet" in html
+        assert "Sırada" in html
+
+    def test_a_never_visited_lift_still_says_it_was_missed(self):
+        lift = LiftSection(name="Lift A", building="B", registration="R", was_missed=True)
+        html = build_html(make_data(lifts=[lift]), images={})
+        assert "Bu ay bakım yapılmadı" in html
+        assert "son bakım" not in html
+
+    def test_a_missing_thumbnail_does_not_fail_the_report(self):
+        html = build_html(make_data(), images={})
+        assert "Ayşe Kaya" in html
+        assert "<img" not in html
+
+    def test_html_escapes_record_text(self):
+        fault = FaultLine(
+            reference="F-1",
+            reported_at=at(date(2026, 10, 5), 10),
+            trapped=False,
+            description="<script>alert(1)</script>",
+            status="open",
+            response_minutes=None,
+        )
+        lift = LiftSection(name="Lift A", building="B", registration="R", faults=[fault])
+        html = build_html(make_data(lifts=[lift]), images={})
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_render_pdf_makes_a_pdf(self):
+        pytest.importorskip("weasyprint")
+        try:
+            pdf = render_pdf(make_data(lifts=[]))
+        except (PdfRenderingUnavailable, OSError):
+            pytest.skip("WeasyPrint cannot load its system libraries here")
+        assert pdf.startswith(b"%PDF")

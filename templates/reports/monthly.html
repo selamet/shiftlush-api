@@ -1,0 +1,129 @@
+{% load email_format report_labels %}{% comment %}
+The monthly customer report, A4. Light on ink: black text, thin rules, one
+accent colour for headings. A section with nothing to say is left out, except
+the summary and "Sırada".
+{% endcomment %}<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ report.period_label }} Bakım Raporu</title>
+    <style>
+      @page { size: A4; margin: 16mm 15mm; }
+      body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #16171c; }
+      h1 { font-size: 16pt; margin: 0 0 1mm 0; }
+      h2 { font-size: 11pt; color: #1d4e89; border-bottom: 0.75pt solid #1d4e89; padding-bottom: 1mm; margin: 7mm 0 3mm 0; }
+      h3 { font-size: 10pt; margin: 0; }
+      .muted { color: #5a5f6b; }
+      .head { width: 100%; border-collapse: collapse; }
+      .head td { vertical-align: top; padding: 0; }
+      .head .right { text-align: right; }
+      .logo { max-height: 14mm; max-width: 40mm; }
+      .lead { font-size: 11pt; font-weight: bold; margin: 0 0 3mm 0; }
+      table.summary { width: 100%; border-collapse: collapse; }
+      table.summary td { padding: 1mm 0; border-bottom: 0.5pt solid #e4e6eb; }
+      table.summary td.num { text-align: right; white-space: nowrap; }
+      .lift { margin-top: 5mm; page-break-inside: avoid; }
+      .lift ul { margin: 1mm 0 0 0; padding-left: 5mm; }
+      .block { margin-top: 2mm; }
+      .block-title { font-weight: bold; }
+      .signature { max-height: 10mm; max-width: 30mm; vertical-align: middle; }
+      .warn { font-weight: bold; }
+      table.coming { width: 100%; border-collapse: collapse; }
+      table.coming td { padding: 1mm 0; border-bottom: 0.5pt solid #e4e6eb; }
+      .footer { margin-top: 8mm; border-top: 0.75pt solid #16171c; padding-top: 2mm; font-size: 8.5pt; }
+    </style>
+  </head>
+  <body>
+    <table class="head">
+      <tr>
+        <td>
+          {% with logo=images|image:report.logo_attachment_id %}{% if logo %}<img class="logo" src="{{ logo }}" alt=""><br>{% endif %}{% endwith %}
+          <strong>{{ report.company_name }}</strong>
+        </td>
+        <td class="right">
+          <strong>{{ report.customer_name }}</strong><br>
+          <span class="muted">{{ report.generated_on|tr_date }}</span>
+        </td>
+      </tr>
+    </table>
+    <h1>{{ report.period_label }} Bakım Raporu</h1>
+
+    <h2>Özet</h2>
+    <p class="lead">{% if report.lead.key == "correction_passed" %}{{ report.lead.count }} asansörde düzeltme süresi geçti.{% elif report.lead.key == "missed" %}{{ report.lead.count }} asansörün bakımı bu ay yapılamadı.{% elif report.lead.key == "emergencies" %}Bu ay {{ report.lead.count }} acil arıza oldu{% if report.lead.minutes is not None %}; ortalama müdahale süresi {{ report.lead.minutes }} dakika{% endif %}.{% else %}Tüm asansörlerin bakımı yapıldı.{% endif %}</p>
+    <table class="summary">
+      <tr><td>Kapsanan asansör</td><td class="num">{{ report.summary.lifts }}</td></tr>
+      <tr><td>Bakım: planlanan / tamamlanan</td><td class="num">{{ report.summary.visits_completed }} / {{ report.summary.visits_planned }}</td></tr>
+      <tr><td>Ziyaretler</td><td class="num">{% for status, count in report.summary.visits_by_status.items %}{{ status|label:"visit_status" }}: {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}</td></tr>
+      <tr><td>İmzalar</td><td class="num">İmzalandı: {{ report.summary.signatures.signed }} · Binada kimse yoktu: {{ report.summary.signatures.not_present }} · İmzalamayı reddetti: {{ report.summary.signatures.declined }}</td></tr>
+      <tr><td>Arızalar: açılan / çözülen / ay sonunda açık</td><td class="num">{{ report.summary.faults_opened }} / {{ report.summary.faults_resolved }} / {{ report.summary.faults_open_at_end }}</td></tr>
+      <tr><td>Acil arıza (kabinde mahsur kalan)</td><td class="num">{{ report.summary.emergencies }}{% if report.summary.emergency_response_minutes is not None %} · ortalama müdahale {{ report.summary.emergency_response_minutes }} dk{% endif %}</td></tr>
+      <tr><td>Ay sonunda açık düzeltme süreleri</td><td class="num">{{ report.summary.open_corrections }}</td></tr>
+    </table>
+
+    {% for lift in report.lifts %}
+      <div class="lift">
+        <h3>{{ lift.name }}</h3>
+        <div class="muted">{{ lift.building }}{% if lift.registration %} · {{ lift.registration }}{% endif %}</div>
+
+        {% for visit in lift.visits %}
+          <div class="block">
+            <span class="block-title">{{ visit.date|tr_date }}</span> · {{ visit.technician_first_name }} · {{ visit.status|label:"visit_status" }}
+            {% if visit.attention %}
+              <ul>{% for item, note in visit.attention %}<li>{{ item|label:"items" }}: Dikkat gerekiyor{% if note %} — {{ note }}{% endif %}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if visit.parts %}<div>Değişen parçalar: {{ visit.parts }}</div>{% endif %}
+            <div>
+              {% if visit.signature_state == "signed" %}
+                {% with thumbnail=images|image:visit.signature_attachment_id %}{% if thumbnail %}<img class="signature" src="{{ thumbnail }}" alt=""> {% endif %}{% endwith %}{{ visit.signer_name }}{% if visit.signer_role %} ({{ visit.signer_role|label:"roles" }}){% endif %}{% if visit.signed_at %}, {{ visit.signed_at|tr_date }}{% endif %}
+              {% elif visit.signature_state == "not_present" %}Binada kimse yoktu
+              {% elif visit.signature_state == "declined" %}İmzalamayı reddetti
+              {% endif %}
+              {% if visit.amended %}<span class="warn"> · İmzadan sonra düzenlendi</span>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+        {% if lift.was_missed %}
+          <div class="block warn">Bu ay bakım yapılmadı{% if lift.missed %} — son bakım {{ lift.missed|tr_date }}{% endif %}</div>
+        {% endif %}
+
+        {% if lift.faults %}
+          <div class="block"><span class="block-title">Arızalar</span>
+            <ul>{% for fault in lift.faults %}<li>{{ fault.reference }} · {{ fault.reported_at|tr_date }} · {% if fault.trapped %}Kabinde mahsur kalan{% else %}{{ fault.description }}{% endif %} · {{ fault.status|label:"fault_status" }}{% if fault.response_minutes is not None %} · müdahale {{ fault.response_minutes }} dk{% endif %}</li>{% endfor %}</ul>
+          </div>
+        {% endif %}
+
+        {% if lift.inspections %}
+          <div class="block"><span class="block-title">Muayeneler</span>
+            <ul>{% for inspection in lift.inspections %}
+              <li>{{ inspection.date|tr_date }} · {{ inspection.label }} · {{ inspection.body }}
+                {% if inspection.nonconformities %}<ul>{% for description, status in inspection.nonconformities %}<li>{{ description }} · {{ status|label:"nonconformity_status" }}</li>{% endfor %}</ul>{% endif %}
+                {% if inspection.correction_open and inspection.correction_deadline %}<div>Düzeltme son tarihi: {{ inspection.correction_deadline|tr_date }}</div>{% endif %}
+              </li>{% endfor %}</ul>
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <h2>Sırada</h2>
+    {% if report.coming %}
+      <table class="coming">
+        {% for item in report.coming %}
+          <tr>
+            <td>{{ item.date|tr_date }}</td>
+            <td>{{ item.lift }}</td>
+            <td>{% if item.kind == "maintenance" %}Sonraki bakım{% elif item.kind == "inspection" %}Periyodik muayene{% else %}Düzeltme son tarihi{% endif %}{% if item.days_left is not None %} · {% if item.days_left < 0 %}{{ item.days_left|cut:"-" }} gün geçti{% else %}{{ item.days_left }} gün kaldı{% endif %}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">Yaklaşan bir iş yok.</p>
+    {% endif %}
+
+    <div class="footer">
+      {% if report.firm_phone or report.firm_email %}<div>{{ report.firm_phone }}{% if report.firm_phone and report.firm_email %} · {% endif %}{{ report.firm_email }}</div>{% endif %}
+      {% if report.portal_url %}<div>{{ report.portal_url }}</div>{% endif %}
+      <div class="muted">Bu rapor ShiftLush kayıtlarından otomatik olarak hazırlanmıştır.</div>
+    </div>
+  </body>
+</html>
