@@ -67,3 +67,18 @@ def test_one_stop_and_none():
     assert plan_route([WEST], start=None).order == ["w"]
     assert plan_route([WEST], start=None).total_km == 0
     assert plan_route([], start=None).order == []
+
+
+def test_a_long_day_still_answers_quickly_and_never_worse():
+    import random
+    import time
+
+    rng = random.Random(7)  # noqa: S311
+    stops = [
+        Stop(str(i), 39.85 + rng.random() * 0.1, 41.2 + rng.random() * 0.15) for i in range(150)
+    ]
+    began = time.perf_counter()
+    route = plan_route(stops, start=None)
+    assert time.perf_counter() - began < 2.0
+    assert sorted(route.order) == sorted(s.id for s in stops)
+    assert route.total_km <= path_km([s.point for s in stops if s.point], start=None) + 1e-9

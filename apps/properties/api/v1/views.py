@@ -43,7 +43,11 @@ class BuildingFilter(TenantFilterSet):
     def filter_has_location(
         self, queryset: QuerySet[Building], name: str, value: bool
     ) -> QuerySet[Building]:
-        located = Q(latitude__isnull=False, longitude__isnull=False)
+        # Placed the same way the route places it: its own position, or its
+        # estate's when its own is not whole.
+        located = Q(latitude__isnull=False, longitude__isnull=False) | Q(
+            complex__latitude__isnull=False, complex__longitude__isnull=False
+        )
         return queryset.filter(located) if value else queryset.exclude(located)
 
     def filter_search(

@@ -35,6 +35,7 @@ from apps.maintenance.api.v1.serializers import (
 )
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, PlannedVisitStatus
 from apps.maintenance.routing import Stop, plan_route
+from apps.properties.services import position_of
 from apps.users.models import Role, User
 from core.context import require_current_company_id
 from core.filters import TenantFilterSet
@@ -449,16 +450,8 @@ class PlannedVisitViewSet(
         positions: dict[str, tuple[str | None, str | None]] = {}
         stops = []
         for row in rows:
-            building = row.elevator.building
-            place = building if building.latitude is not None else building.complex
-            latitude = place.latitude if place is not None else None
-            longitude = place.longitude if place is not None else None
-            if latitude is None or longitude is None:
-                latitude = longitude = None
-            positions[str(row.pk)] = (
-                None if latitude is None else str(latitude),
-                None if longitude is None else str(longitude),
-            )
+            latitude, longitude = position_of(row.elevator.building)
+            positions[str(row.pk)] = (latitude, longitude)
             stops.append(
                 Stop(
                     str(row.pk),

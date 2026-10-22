@@ -11,7 +11,8 @@ from django.urls import reverse
 from apps.companies.models import Company
 from apps.maintenance.models import PlannedVisit, PlannedVisitStatus
 from apps.maintenance.tasks import plan_maintenance
-from apps.properties.models import Building
+from apps.properties.models import Building, Complex
+from core.context import company_context
 from tests.test_planned_visits import TODAY, Plan, api_for, today  # noqa: F401 - autouse fixture
 
 
@@ -114,6 +115,35 @@ class TestRoute:
 
         accountant = make_user(day.company, Role.ACCOUNTANT, "route-accountant@example.com")
         assert route(api_for(accountant), technician="me", date="2026-10-20").status_code == 403
+
+
+class TestEstateFallback:
+    def give_b_blok_an_estate(self, day: Plan, building_latitude: str | None) -> None:
+        with company_context(day.company.id):
+            estate = Complex.objects.create(
+                company=day.company,
+                customer=day.customer_b,
+                name="B Sitesi",
+                latitude="39.900000",
+                longitude="41.260000",
+            )
+        Building.unscoped.filter(pk=day.b1.building_id).update(
+            complex=estate, latitude=building_latitude, longitude=None
+        )
+
+    def test_a_half_set_building_falls_back_to_its_estate(self, day):
+        self.give_b_blok_an_estate(day, building_latitude="39.950000")
+        response = route(api_for(day.ops), technician=str(day.tech_a.id), date="2026-10-20")
+        b1 = next(stop for stop in response.data["stops"] if stop["elevator_name"] == "B1")
+        assert (b1["latitude"], b1["longitude"]) == ("39.900000", "41.260000")
+
+    def test_has_location_counts_the_estates_position(self, day):
+        self.give_b_blok_an_estate(day, building_latitude=None)
+        client = api_for(day.owner)
+        missing = client.get(reverse("building-list"), {"has_location": "false"})
+        located = client.get(reverse("building-list"), {"has_location": "true"})
+        assert [b["name"] for b in missing.data["results"]] == ["A Blok"]
+        assert [b["name"] for b in located.data["results"]] == ["B Blok"]
 
 
 class TestHasLocation:

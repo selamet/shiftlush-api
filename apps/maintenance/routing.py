@@ -25,6 +25,9 @@ from dataclasses import dataclass, field
 EARTH_RADIUS_KM = 6371.0088
 #: A guard, not a tuning knob: 2-opt on a day's stops settles in a few passes.
 MAX_IMPROVEMENT_PASSES = 200
+#: Without a start point, how many stops are tried as the first. Every one of
+#: a normal day; a backlog of a hundred undated stops stays quick.
+MAX_FIRST_STOPS = 12
 
 Point = tuple[float, float]
 
@@ -137,7 +140,9 @@ def plan_route(stops: Sequence[Stop], *, start: Point | None) -> Route:
     if len(placed) > 1:
         # With a start point the path is anchored there; without one, every
         # stop is tried as the first and the shortest result kept.
-        firsts: list[int | None] = [None] if start is not None else list(range(len(placed)))
+        firsts: list[int | None] = (
+            [None] if start is not None else list(range(min(len(placed), MAX_FIRST_STOPS)))
+        )
         for first in firsts:
             order = _two_opt(_nearest_neighbour(points, first, start), points, start)
             km = path_km([points[i] for i in order], start=start)
