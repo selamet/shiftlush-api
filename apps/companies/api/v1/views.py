@@ -43,6 +43,8 @@ class CompanySerializer(serializers.ModelSerializer[Company]):
             "phone",
             "email",
             "website",
+            "latitude",
+            "longitude",
             "logo",
             "logo_url",
             "is_active",

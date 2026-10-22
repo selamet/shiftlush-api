@@ -124,6 +124,17 @@ class TestCompany:
             api_for(admin).patch(reverse("company"), {"phone": "+905321112233"}).status_code == 403
         )
 
+    def test_the_owner_sets_where_the_day_starts(self, firm):
+        # Optional: a route starts here when it is set (calendar spec, part B).
+        company, owner = firm
+        assert api_for(owner).get(reverse("company")).data["latitude"] is None
+        response = api_for(owner).patch(
+            reverse("company"), {"latitude": "39.904300", "longitude": "41.267900"}, format="json"
+        )
+        assert response.status_code == 200, response.data
+        assert response.data["latitude"] == "39.904300"
+        assert response.data["longitude"] == "41.267900"
+
     def test_an_invalid_tax_number_is_refused(self, firm):
         _, owner = firm
         response = api_for(owner).patch(reverse("company"), {"tax_number": "1111111111"})
