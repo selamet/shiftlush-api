@@ -122,12 +122,15 @@ markup on the design system.
 
 1. **Server-side rules on `PATCH /planned-visits/{id}/`.** Today only the web
    date picker enforces them.
-   - `planned_date` must fall inside the row's `period`. Otherwise `400` with
-     a new error code `planned_date_outside_period`.
-   - A `planned_date` before today (Istanbul) is refused with
-     `planned_date_in_past`, unless it is unchanged.
-   - A row that is `done` or `cancelled` can't be edited: `409`,
-     `plan_row_closed`. If this is already enforced, keep it and add the test.
+   - `planned_date` must fall inside the row's `period`. Otherwise `400`,
+     reported against the field, with a new error code
+     `PLANNED_DATE_OUTSIDE_PERIOD`.
+   - A `planned_date` before today (Istanbul) is refused the same way with
+     `PLANNED_DATE_IN_PAST`, unless it is unchanged.
+   - Changing the `planned_date` of a row that is `done` or `cancelled` is
+     refused: `409`, `PLAN_ROW_CLOSED`. Its technician can still change,
+     because bulk assignment already treats that as bookkeeping, and the two
+     paths should agree.
    - Every new code is translated in the web's error-code table, which the
      `lint:errors` check enforces.
 2. **Filters on `GET /planned-visits/`:** `planned_from` and `planned_to`
@@ -249,7 +252,8 @@ section when part A ships.
 - One PATCH per drop. No multi-drag.
 - Sunday allowed but shaded. Holidays are ignored.
 - More than 8 visits a day is a hint, not a limit.
-- Planning onto a past day is refused.
+- Planning onto a past day is refused. A closed row keeps its day, but its
+  technician can still be corrected.
 - `@dnd-kit/core` for drag and drop.
 - Straight-line distance, nearest neighbour plus 2-opt, an open path, and a
   firm starting point that is optional.
