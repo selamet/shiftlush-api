@@ -41,6 +41,7 @@ class FakeS3:
 
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], tuple[int, str]] = {}
+        self.bodies: dict[tuple[str, str], bytes] = {}
         self.signed: list[dict] = []
         self.deleted: list[tuple[str, str]] = []
 
@@ -51,7 +52,16 @@ class FakeS3:
     def put_object(self, Bucket: str, Key: str, Body: bytes, ContentType: str) -> dict:
         """What core.storage.put does: bytes written by the server itself."""
         self.objects[(Bucket, Key)] = (len(Body), ContentType)
+        self.bodies[(Bucket, Key)] = Body
         return {}
+
+    def get_object(self, Bucket: str, Key: str) -> dict:
+        import io
+
+        return {
+            "Body": io.BytesIO(self.bodies[(Bucket, Key)]),
+            "ContentType": self.objects[(Bucket, Key)][1],
+        }
 
     def generate_presigned_url(self, operation: str, Params: dict, ExpiresIn: int) -> str:
         self.signed.append({"operation": operation, **Params, "expires_in": ExpiresIn})

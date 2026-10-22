@@ -67,6 +67,7 @@ def get_schedules() -> list[DailySchedule]:
     from apps.faults.tasks import purge_public_reporter_data
     from apps.inspections.tasks import correction_deadline_notice, inspection_due_notice
     from apps.maintenance.tasks import maintenance_overdue, plan_maintenance
+    from apps.reports.tasks import monthly_customer_reports
     from core.tasks import prune_task_results, purge_idempotency_keys
 
     return [
@@ -88,6 +89,9 @@ def get_schedules() -> list[DailySchedule]:
         DailySchedule("inspection_due_notice", inspection_due_notice, time(6, 15)),
         DailySchedule("correction_deadline_notice", correction_deadline_notice, time(6, 30)),
         DailySchedule("maintenance_overdue", maintenance_overdue, time(7, 0)),
+        # After the night's work, so the month's visits are all recorded, and
+        # before the office opens.
+        DailySchedule("monthly_customer_reports", monthly_customer_reports, time(8, 0)),
     ]
 
 

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import importlib
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pytest
 from django.apps import apps as django_apps
+from django.core import mail as django_mail
 from django.db import IntegrityError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -15,6 +16,7 @@ from rest_framework.test import APIClient
 
 from apps.address.models import District, Neighborhood, Province
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
+from apps.companies.models import Company
 from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType, Scope
 from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
@@ -35,6 +37,7 @@ from apps.maintenance.models import (
     PlannedVisitStatus,
     VisitStatus,
 )
+from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType
 from apps.reports.content import (
     ComingItem,
@@ -50,11 +53,16 @@ from apps.reports.content import (
 )
 from apps.reports.documents import PdfRenderingUnavailable, build_html, render_pdf
 from apps.reports.models import CustomerReport, ReportDelivery
+from apps.reports.services import generate_one, regenerate, send_report
+from apps.reports.tasks import monthly_customer_reports
 from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
+from core import storage
 from core.context import company_context, system_context
-from core.scheduling import LOCAL_TZ
+from core.exceptions import Conflict
+from core.scheduling import LOCAL_TZ, get_schedules
 from tests.identifiers import tax_number
+from tests.test_attachments import FakeS3
 
 PASSWORD = "correct-horse-battery"
 
@@ -900,3 +908,224 @@ class TestDocument:
         except PdfRenderingUnavailable:  # raised only when weasyprint cannot be imported
             pytest.skip("WeasyPrint cannot load its system libraries here")
         assert pdf.startswith(b"%PDF")
+
+
+# Generating, storing, sending ------------------------------------------------
+
+NEXT_MONTH = date(2026, 11, 1)
+PDF = b"%PDF-fake"
+
+
+@pytest.fixture
+def pdf(monkeypatch):
+    monkeypatch.setattr("apps.reports.documents.render_pdf", lambda data: PDF)
+
+
+@pytest.fixture
+def bucket(monkeypatch) -> FakeS3:
+    fake = FakeS3()
+    monkeypatch.setattr(storage, "_client", lambda backend: fake)
+    return fake
+
+
+def report_mails() -> list[Any]:
+    """The reports e-mailed. The office's own notice goes out too, and is not one."""
+    return [m for m in django_mail.outbox if m.attachments]
+
+
+def run_job(today: date, monkeypatch) -> dict[str, int]:
+    monkeypatch.setattr("apps.reports.tasks.local_today", lambda: today)
+    return monthly_customer_reports.func()
+
+
+def tick(month: Month, customer: Customer, email: str = "c@example.com", **fields: Any):
+    with company_context(month.company.id):
+        return CustomerContact.objects.create(
+            company=month.company,
+            customer=customer,
+            full_name="Contact",
+            email=email,
+            receives_monthly_report=True,
+            **fields,
+        )
+
+
+def switch(month: Month, on: bool) -> None:
+    Company.objects.filter(pk=month.company.pk).update(monthly_reports_enabled=on)
+
+
+def reports(month: Month) -> list[CustomerReport]:
+    found = CustomerReport.unscoped.filter(company=month.company, is_deleted=False)
+    return list(found.order_by("customer__legal_name"))
+
+
+@pytest.mark.usefixtures("pdf", "bucket")
+class TestGeneration:
+    def test_the_first_makes_last_months_reports(self, month, monkeypatch):
+        result = run_job(NEXT_MONTH, monkeypatch)
+        made = reports(month)
+        assert [(r.customer_id, r.period) for r in made] == [(month.a.pk, OCT), (month.b.pk, OCT)]
+        assert result["created"] == 2
+        for report in made:
+            file = Attachment.unscoped.get(pk=str(report.file_id))
+            assert file.category == AttachmentCategory.MONTHLY_REPORT
+            assert file.object_id == report.customer_id
+            assert report.summary["lifts"] >= 1
+            assert report.summary["lead"]["key"]
+            assert report.generated_at is not None
+
+    def test_a_customer_without_a_covered_lift_gets_none(self, month, monkeypatch):
+        with company_context(month.company.id):
+            Customer.objects.create(
+                company=month.company,
+                type=CustomerType.CORPORATE,
+                legal_name="C Empty",
+                tax_number=tax_number(13),
+            )
+        run_job(NEXT_MONTH, monkeypatch)
+        assert len(reports(month)) == 2
+
+    def test_switch_off_sends_nothing(self, month, monkeypatch, django_capture_on_commit_callbacks):
+        tick(month, month.a)
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(NEXT_MONTH, monkeypatch)
+        assert {r.delivery for r in reports(month)} == {ReportDelivery.NOT_ENABLED}
+        assert report_mails() == []
+
+    def test_switch_on_sends_one_mail_per_ticked_contact_with_the_pdf(
+        self, month, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a, "one@example.com")
+        tick(month, month.a, "two@example.com")
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(NEXT_MONTH, monkeypatch)
+        assert len(report_mails()) == 2
+        for message in report_mails():
+            assert message.subject == "Month — Ekim 2026 bakım raporu (A Sitesi)"
+            assert len(message.attachments) == 1
+            _, content, mime_type = message.attachments[0]
+            assert (content, mime_type) == (PDF, "application/pdf")
+        assert sorted(m.to[0] for m in report_mails()) == ["one@example.com", "two@example.com"]
+        report = CustomerReport.unscoped.get(customer=month.a)
+        assert report.delivery == ReportDelivery.SENT
+        assert report.recipients == ["one@example.com", "two@example.com"]
+        assert report.sent_at is not None
+
+    def test_a_blank_address_is_skipped_even_when_ticked(self, month, monkeypatch):
+        switch(month, True)
+        tick(month, month.a, "")
+        run_job(NEXT_MONTH, monkeypatch)
+        assert CustomerReport.unscoped.get(customer=month.a).delivery == ReportDelivery.NO_RECIPIENT
+
+    def test_nobody_ticked_is_no_recipient(self, month, monkeypatch):
+        switch(month, True)
+        result = run_job(NEXT_MONTH, monkeypatch)
+        assert {r.delivery for r in reports(month)} == {ReportDelivery.NO_RECIPIENT}
+        assert result["no_recipient"] == 2
+        assert report_mails() == []
+
+    def test_a_second_run_sends_nothing(
+        self, month, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a)
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(NEXT_MONTH, monkeypatch)
+            second = run_job(NEXT_MONTH, monkeypatch)
+        assert second["created"] == 0
+        assert len(reports(month)) == 2
+        assert len(report_mails()) == 1
+
+    def test_a_late_run_catches_up_but_stops_mailing_after_seven_days(
+        self, month, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a)
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(date(2026, 11, 5), monkeypatch)
+        assert len(reports(month)) == 2
+        assert len(report_mails()) == 1
+
+        CustomerReport.unscoped.all().delete()
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(date(2026, 11, 9), monkeypatch)
+        assert {r.delivery for r in reports(month)} == {ReportDelivery.NOT_ENABLED}
+        assert report_mails() == []
+
+    def test_one_failure_does_not_stop_the_rest(self, month, monkeypatch, caplog):
+        def render(data):
+            if data.customer_name == "A Sitesi":
+                raise RuntimeError("boom")
+            return PDF
+
+        monkeypatch.setattr("apps.reports.documents.render_pdf", render)
+        result = run_job(NEXT_MONTH, monkeypatch)
+        assert [r.customer_id for r in reports(month)] == [month.b.pk]
+        assert result["failed"] == 1
+        assert result["created"] == 1
+        assert "failed" in caplog.text
+
+    def test_a_failed_send_marks_the_report_failed(
+        self, month, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a)
+
+        def broken(self, fail_silently=False):
+            raise OSError("smtp down")
+
+        monkeypatch.setattr("django.core.mail.EmailMessage.send", broken)
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(NEXT_MONTH, monkeypatch)
+        report = CustomerReport.unscoped.get(customer=month.a)
+        assert report.delivery == ReportDelivery.FAILED
+        assert report.error
+
+    def test_the_office_is_told_once(self, month, monkeypatch):
+        with system_context():
+            admin = User.objects.create_user(
+                email="admin-month@example.com",
+                password=PASSWORD,
+                company=month.company,
+                first_name="A",
+                last_name="Min",
+                role=Role.ADMIN,
+            )
+        switch(month, True)
+        tick(month, month.a)
+        run_job(NEXT_MONTH, monkeypatch)
+        run_job(NEXT_MONTH, monkeypatch)
+        told = Notification.unscoped.filter(kind=NotificationKind.MONTHLY_REPORTS_READY)
+        assert {n.recipient_id for n in told} == {month.owner.pk, admin.pk}
+        data = told[0].data
+        assert (data["period"], data["count"], data["sent"], data["no_recipient"]) == (
+            OCT,
+            2,
+            1,
+            1,
+        )
+
+    def test_regenerate_replaces_the_file_and_keeps_the_old(self, month):
+        with system_context():
+            report = generate_one(month.a, OCT, today=NEXT_MONTH)
+            assert report is not None
+            old = report.file
+            assert old is not None
+            again = regenerate(report, today=NEXT_MONTH)
+        assert again.file_id != old.pk
+        assert Attachment.unscoped.get(pk=old.pk).is_deleted
+        assert not Attachment.unscoped.get(pk=str(again.file_id)).is_deleted
+
+    def test_send_report_refuses_when_nobody_is_ticked(self, month):
+        with system_context():
+            report = generate_one(month.a, OCT, today=NEXT_MONTH)
+            assert report is not None
+            with pytest.raises(Conflict) as caught:
+                send_report(report, by=month.owner)
+        assert caught.value.get_codes() == "REPORT_NO_RECIPIENT"
+
+    def test_the_schedule_runs_the_job_at_eight(self):
+        names = {s.name: s for s in get_schedules()}
+        assert names["monthly_customer_reports"].at == time(8, 0)

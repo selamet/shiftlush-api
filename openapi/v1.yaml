@@ -3896,6 +3896,7 @@ paths:
           - inspection_red_label
           - invoice_drafts_ready
           - maintenance_overdue
+          - monthly_reports_ready
           - visit_assigned
         description: |-
           * `contract_renewal_due` - Contract renewal due
@@ -3914,6 +3915,7 @@ paths:
           * `inspection_red_label` - Red inspection label
           * `billing_vat_missing` - Contract not drafted: VAT rate missing
           * `invoice_drafts_ready` - Invoice drafts ready
+          * `monthly_reports_ready` - Monthly reports ready
       - name: ordering
         required: false
         in: query
@@ -8612,6 +8614,7 @@ components:
       - inspection_red_label
       - billing_vat_missing
       - invoice_drafts_ready
+      - monthly_reports_ready
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -8630,6 +8633,7 @@ components:
         * `inspection_red_label` - Red inspection label
         * `billing_vat_missing` - Contract not drafted: VAT rate missing
         * `invoice_drafts_ready` - Invoice drafts ready
+        * `monthly_reports_ready` - Monthly reports ready
     NotificationPreference:
       type: object
       properties:
