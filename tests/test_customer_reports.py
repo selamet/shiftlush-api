@@ -670,7 +670,7 @@ class TestContent:
         assert report.lifts == []
         assert report.summary.lifts == 0
 
-    def test_a_correction_is_passed_only_before_the_months_last_day(self, month):
+    def test_a_correction_is_passed_when_due_by_the_months_last_day(self, month):
         def lead_for(deadline: date) -> str:
             with company_context(month.company.id):
                 Inspection.objects.all().delete()
@@ -686,8 +686,8 @@ class TestContent:
             # Built months later: the lead belongs to the month, not to today.
             return month.report(today=date(2027, 3, 1)).lead.key
 
-        assert lead_for(date(2026, 10, 31)) == "all_done"
-        assert lead_for(date(2026, 10, 30)) == "correction_passed"
+        assert lead_for(date(2026, 11, 1)) == "all_done"
+        assert lead_for(date(2026, 10, 31)) == "correction_passed"
 
     def test_a_customer_with_portal_access_gets_the_portal_address(self, month):
         from apps.customers.models import CustomerContact

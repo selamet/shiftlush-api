@@ -454,7 +454,7 @@ def build_report(customer: Customer, period: str, *, today: date) -> ReportData:
         open_corrections=len(open_corrections),
     )
 
-    passed = {i.elevator_id for i, deadline in open_corrections if deadline < end}
+    passed = {i.elevator_id for i, deadline in open_corrections if deadline <= end}
     missed_count = sum(1 for section in sections if section.was_missed)
     if passed:
         lead = Lead("correction_passed", len(passed))
