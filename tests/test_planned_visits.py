@@ -208,6 +208,11 @@ def plan(db) -> Plan:
     return Plan()
 
 
+def counted(notifications: list[Notification]) -> list[dict[str, Any]]:
+    """What a notice says — month and count — without the rows it tracks."""
+    return [{"period": n.data["period"], "count": n.data["count"]} for n in notifications]
+
+
 def assigned_notifications(user: User) -> list[Notification]:
     return list(
         Notification.unscoped.filter(recipient=user, kind=NotificationKind.VISIT_ASSIGNED).order_by(
@@ -627,9 +632,7 @@ class TestEditing:
         assert response.data["technician_name"] == "Banu X"
         assert response.data["planned_date"] == "2026-10-22"
         assert response.data["manually_edited"] is True
-        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
-            {"period": OCT, "count": 1}
-        ]
+        assert counted(assigned_notifications(planned.tech_b1)) == [{"period": OCT, "count": 1}]
 
     def test_a_date_only_edit_tells_nobody(self, planned):
         row = planned.row(planned.a1)
@@ -751,10 +754,21 @@ class TestAssignmentsCoalesce:
             self.assign(planned, planned.row(planned.b1), planned.tech_b1)
         with django_capture_on_commit_callbacks(execute=True):
             self.assign(planned, planned.row(planned.a2), planned.tech_b1)
-        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
-            {"period": OCT, "count": 2}
-        ]
+        assert counted(assigned_notifications(planned.tech_b1)) == [{"period": OCT, "count": 2}]
         assert len([m for m in django_mail.outbox if m.to == [planned.tech_b1.email]]) <= 1
+
+    def test_away_and_back_counts_the_row_once(self, planned):
+        row = planned.row(planned.b1)
+        self.assign(planned, row, planned.tech_b1)
+        self.assign(planned, row, planned.tech_b2)
+        self.assign(planned, row, planned.tech_b1)
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b1)] == [1]
+
+    def test_another_technician_is_not_folded_in(self, planned):
+        self.assign(planned, planned.row(planned.b1), planned.tech_b1)
+        self.assign(planned, planned.row(planned.a2), planned.tech_b2)
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b1)] == [1]
+        assert [n.data["count"] for n in assigned_notifications(planned.tech_b2)] == [1]
 
     def test_a_read_one_is_not_reused(self, planned):
         self.assign(planned, planned.row(planned.b1), planned.tech_b1)
@@ -773,7 +787,7 @@ class TestAssignmentsCoalesce:
     def test_another_period_is_its_own_notification(self, planned):
         self.assign(planned, planned.row(planned.b1), planned.tech_b1)
         self.assign(planned, planned.row(planned.b1, NOV), planned.tech_b1)
-        assert [n.data for n in assigned_notifications(planned.tech_b1)] == [
+        assert counted(assigned_notifications(planned.tech_b1)) == [
             {"period": OCT, "count": 1},
             {"period": NOV, "count": 1},
         ]
