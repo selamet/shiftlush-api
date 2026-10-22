@@ -359,6 +359,8 @@ class TestMaintenanceVisitSerializers:
                     "technician": str(owner.id),
                     "visit_date": str(date.today()),
                     "status": VisitStatus.COMPLETED,
+                "signature_status": "not_present",
+                    "signature_status": "not_present",
                     "not_a_real_field": "x",
                 },
             )
@@ -388,6 +390,7 @@ class TestMaintenanceVisitAPI:
                 "technician": str(owner.id),
                 "visit_date": str(date.today()),
                 "status": VisitStatus.COMPLETED,
+                "signature_status": "not_present",
             },
         )
         assert response.status_code == 201, response.data
@@ -418,6 +421,7 @@ class TestMaintenanceVisitAPI:
                 "technician": str(owner.id),
                 "visit_date": str(date.today()),
                 "status": VisitStatus.COMPLETED,
+                "signature_status": "not_present",
             },
         )
         assert response.status_code == 422
@@ -495,6 +499,7 @@ class TestMaintenanceVisitAPI:
                 "technician": str(technician.id),
                 "visit_date": str(date.today()),
                 "status": VisitStatus.COMPLETED,
+                "signature_status": "not_present",
             },
         )
         assert response.status_code == 201, response.data

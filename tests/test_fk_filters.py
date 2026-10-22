@@ -45,6 +45,7 @@ class TestTheFiltersWork:
                 "technician": str(owner.id),
                 "visit_date": str(date.today()),
                 "status": "completed",
+                "signature_status": "not_present",
             },
             format="json",
         )

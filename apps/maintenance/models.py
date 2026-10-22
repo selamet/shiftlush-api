@@ -44,6 +44,21 @@ class ChecklistResult(models.TextChoices):
     NOT_APPLICABLE = "not_applicable", "Not applicable"
 
 
+class SignatureStatus(models.TextChoices):
+    """Whether the building signed for the visit, or why not (visit signature)."""
+
+    SIGNED = "signed", "Signed"
+    NOT_PRESENT = "not_present", "Nobody from the building was there"
+    DECLINED = "declined", "Declined to sign"
+
+
+class SignerRole(models.TextChoices):
+    MANAGER = "manager", "Manager"
+    CARETAKER = "caretaker", "Caretaker"
+    STAFF = "staff", "Building staff"
+    OTHER = "other", "Other"
+
+
 class MaintenanceVisit(CompanyOwnedModel):
     elevator = models.ForeignKey(
         "elevators.Elevator", on_delete=models.PROTECT, related_name="maintenance_visits"
@@ -63,6 +78,17 @@ class MaintenanceVisit(CompanyOwnedModel):
     # does (YAGNI) - see the design doc.
     parts_replaced = models.TextField(blank=True)
 
+    # The building's acknowledgement (spec 2026-10-22-visit-signature-design):
+    # who signed and when, or why nobody did. Blank on visits recorded before
+    # it existed. The image is an Attachment of category "signature".
+    signature_status = models.CharField(max_length=20, choices=SignatureStatus.choices, blank=True)
+    signer_name = models.CharField(max_length=100, blank=True)
+    signer_role = models.CharField(max_length=20, choices=SignerRole.choices, blank=True)
+    signed_at = models.DateTimeField(null=True, blank=True)
+    # Set when an owner or admin edits a signed visit, and never cleared: the
+    # building signed for what the visit said then.
+    amended_after_signature = models.BooleanField(default=False)
+
     class Meta:
         db_table = "maintenance_visit"
         ordering = ["-visit_date", "id"]
@@ -70,6 +96,14 @@ class MaintenanceVisit(CompanyOwnedModel):
             models.CheckConstraint(
                 condition=models.Q(status__in=VisitStatus.values),
                 name="maintenance_visit_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(signature_status__in=[*SignatureStatus.values, ""]),
+                name="maintenance_visit_signature_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(signer_role__in=[*SignerRole.values, ""]),
+                name="maintenance_visit_signer_role_valid",
             ),
         ]
         indexes = [

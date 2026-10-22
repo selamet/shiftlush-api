@@ -45,6 +45,8 @@ def body(elevator: Any, contract: Any, owner: User, **extra: Any) -> dict[str, A
         "technician": str(owner.id),
         "visit_date": str(date.today()),
         "status": VisitStatus.COMPLETED,
+        # A completed visit says whether the building signed (visit signature).
+        "signature_status": "not_present",
         **extra,
     }
 

@@ -71,6 +71,7 @@ def visit_body(elevator: Any, contract: Any, **extra: Any) -> dict[str, Any]:
         "contract": str(contract.id),
         "visit_date": str(date.today()),
         "status": VisitStatus.COMPLETED,
+        "signature_status": "not_present",
         **extra,
     }
 
