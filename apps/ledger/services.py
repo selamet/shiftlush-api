@@ -531,8 +531,15 @@ def sync_invoice_status(draft: InvoiceDraft) -> InvoiceDraft:
 
 
 def default_cash_account(company_id: UUID) -> CashAccount:
-    """The firm's default till, where a payment with no till named goes."""
-    return create_default_cash_account(Company.objects.get(pk=company_id))
+    """The firm's default till, where a payment with no till named goes.
+
+    Never an inactive one: the API refuses to deactivate it, and should one be
+    inactive all the same, the payment is refused rather than sent there.
+    """
+    till = create_default_cash_account(Company.objects.get(pk=company_id))
+    if not till.is_active:
+        raise _invalid("cash_account", "The default till is inactive; name a cash account.")
+    return till
 
 
 def collect_invoice(

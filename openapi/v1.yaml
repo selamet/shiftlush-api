@@ -9796,6 +9796,15 @@ components:
           type: string
         kind:
           $ref: '#/components/schemas/CashAccountKind'
+        role:
+          description: |-
+            `default` for the firm's main till, `carried_over` for a till holding the payments M7 recorded before the ledger, blank for one the firm made.
+
+            * `default` - Default till
+            * `carried_over` - Carried over from M7
+          oneOf:
+          - $ref: '#/components/schemas/CashAccountRole'
+          - $ref: '#/components/schemas/BlankEnum'
         is_active:
           type: boolean
           description: An inactive cash account is listed while it holds money or
@@ -9821,6 +9830,7 @@ components:
       - money_in
       - money_out
       - name
+      - role
     FinanceCurrency:
       type: object
       properties:

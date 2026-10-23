@@ -16,6 +16,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
@@ -69,6 +70,20 @@ class InvoiceDraftFilter(TenantFilterSet):
     ) -> QuerySet[InvoiceDraft]:
         unpriced = Exists(InvoiceLine.objects.filter(draft_id=OuterRef("pk"), needs_price=True))
         return queryset.filter(unpriced) if value else queryset.exclude(unpriced)
+
+
+def _ledger_date_as(field: str, error: ValidationError) -> ValidationError:
+    """The ledger's date error, named as the request named the date.
+
+    Issuing and marking paid post a movement dated `invoice_date` or `paid_on`;
+    a date the ledger refuses (after today, in a closed period) comes back on
+    the movement's `date`, which this request never sent.
+    """
+    detail = error.detail
+    if not isinstance(detail, dict) or "date" not in detail:
+        return error
+    renamed = {(field if key == "date" else key): value for key, value in detail.items()}
+    return ValidationError(renamed)
 
 
 class InvoiceDraftViewSet(
@@ -128,9 +143,12 @@ class InvoiceDraftViewSet(
         """Record the e-invoice's number and date, and freeze the draft."""
         form = InvoiceIssueSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        draft = services.issue(
-            self.get_object(), by=authenticated_user(request), **form.validated_data
-        )
+        try:
+            draft = services.issue(
+                self.get_object(), by=authenticated_user(request), **form.validated_data
+            )
+        except ValidationError as error:
+            raise _ledger_date_as("invoice_date", error) from error
         return self._read(draft)
 
     @extend_schema(
@@ -147,9 +165,12 @@ class InvoiceDraftViewSet(
         """
         form = InvoiceMarkPaidSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        draft = services.mark_paid(
-            self.get_object(), by=authenticated_user(request), **form.validated_data
-        )
+        try:
+            draft = services.mark_paid(
+                self.get_object(), by=authenticated_user(request), **form.validated_data
+            )
+        except ValidationError as error:
+            raise _ledger_date_as("paid_on", error) from error
         return self._read(draft)
 
     @extend_schema(request=InvoiceCancelSerializer, responses={200: InvoiceDraftReadSerializer})

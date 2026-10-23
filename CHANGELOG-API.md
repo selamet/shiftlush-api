@@ -401,7 +401,15 @@ carried as compatibility shims nobody will ever remove.
     `is_active`, its `balance` today and its `money_in` and `money_out` in the
     period), and `money_in`/`money_out`, which are those lines added up.
     Transfers between cash accounts and opening balances are neither in nor
-    out, and a document cancelled within the period contributes nothing.
+    out, and a document cancelled within the period contributes nothing. Each
+    cash line carries `role`: `default` for the main till, `carried_over` for
+    a "Devir" till, blank otherwise. A Devir till holds the invoices M7 marked
+    paid before the ledger existed, carried over as collections because
+    nobody recorded which till they went to: on the first day its balance is
+    historical money, not cash on hand, and the web labels it so. The
+    accountant empties it into the real tills with transfers.
+  - The default till and the Devir tills cannot be made inactive
+    (`PATCH … {is_active: false}` is `400 invalid` on `is_active`).
   - `GET /ledger/accounts/{id}/statement/?start=&end=` — the account's
     statement: `opening` (the balance before `start`, 0 without one), `rows`
     (`movement_id`, `date`, `description`, `debit`, `credit`, the running
@@ -464,7 +472,9 @@ carried as compatibility shims nobody will ever remove.
     job. Until then it reads `collected` 0, and its customer's balance leaves
     it out.
   - An `invoice_date` or `paid_on` after today, or inside the firm's closed
-    period, is now refused with a `400` on `date`: no movement is dated in the
+    period, is now refused with a `400` on the field the request sent:
+    `invoice_date` for `issue` (`invalid` after today, `PERIOD_CLOSED` in a
+    closed month), `paid_on` for `mark-paid`. No movement is dated in the
     future or in a closed month.
 
 - **The customer portal has its own rate limit:** `PORTAL_RATE_LIMIT`,

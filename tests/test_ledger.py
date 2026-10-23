@@ -3684,3 +3684,95 @@ class TestSettlingAnAdvance:
         assert Collection.objects.get(pk=advance.pk).cancelled_at is not None
         assert fresh(draft).status == InvoiceStatus.ISSUED
         assert invoice_remaining(fresh(draft)) == Decimal("100.00")
+
+
+class TestSystemTills:
+    """M3: the default till and a carried-over till stay active; a payment with
+    no till named never lands in an inactive one. M4: the summary says which
+    cash line is which."""
+
+    def test_a_system_till_cannot_be_made_inactive(self, books):
+        make_invoice(books, "60.00", status=InvoiceStatus.PAID)
+        with system_context():
+            carry_over_invoices()
+        devir = CashAccount.objects.get(role=CashAccountRole.CARRIED_OVER)
+        bank = bank_of(books)
+        client = api_for(books.owner)
+
+        for till in (books.till, devir):
+            url = reverse("ledger-cash-account-detail", args=[till.pk])
+            response = client.patch(url, {"is_active": False}, format="json")
+            assert response.status_code == 400, response.data
+            assert error_of(response)[1] == [("is_active", "invalid")]
+            assert CashAccount.objects.get(pk=till.pk).is_active
+            # Renaming it is fine.
+            renamed = client.patch(url, {"name": "Renamed"}, format="json")
+            assert renamed.status_code == 200, renamed.data
+        bank_url = reverse("ledger-cash-account-detail", args=[bank.pk])
+        assert client.patch(bank_url, {"is_active": False}, format="json").status_code == 200
+
+    def test_an_inactive_default_till_takes_no_payment(self, books):
+        draft = issued_through_m7(books)
+        CashAccount.objects.filter(pk=books.till.pk).update(is_active=False)
+
+        with pytest.raises(ValidationError) as error:
+            billing.mark_paid(draft, paid_on=local_today(), by=books.owner)
+
+        assert codes(error) == {"cash_account": "invalid"}
+        assert not Collection.objects.exists()
+
+    def test_the_summary_names_each_cash_lines_role(self, books):
+        make_invoice(books, "60.00", status=InvoiceStatus.PAID)
+        with system_context():
+            carry_over_invoices()
+        bank_of(books)
+
+        view = api_for(books.owner).get(reverse("ledger-finance-summary")).json()
+
+        (lira,) = view["currencies"]
+        assert sorted((row["name"], row["role"]) for row in lira["cash_accounts"]) == sorted(
+            [
+                ("Merkez kasa", "default"),
+                ("Devir (taşınan ödemeler)", "carried_over"),
+                ("Bank", ""),
+            ]
+        )
+
+
+class TestBillingErrorFields:
+    """M5: a ledger date error on issue or mark-paid names the field the request
+    sent, not the movement's `date`."""
+
+    def test_issue_in_a_closed_period_is_an_error_on_invoice_date(self, books):
+        draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+        billing.add_line(
+            draft,
+            description="Bakim",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+            by=books.owner,
+        )
+        ledger_services.set_closed_through(
+            books.company.pk, local_today() - timedelta(days=1), by=books.owner
+        )
+
+        response = api_for(books.owner).post(
+            reverse("invoice-draft-issue", args=[draft.pk]),
+            {"invoice_number": "GIB-9", "invoice_date": str(local_today() - timedelta(days=3))},
+        )
+
+        assert response.status_code == 400, response.data
+        assert error_of(response)[1] == [("invoice_date", "PERIOD_CLOSED")]
+        assert fresh(draft).status == InvoiceStatus.DRAFT
+
+    def test_mark_paid_after_today_is_an_error_on_paid_on(self, books):
+        draft = issued_through_m7(books)
+
+        response = api_for(books.owner).post(
+            reverse("invoice-draft-mark-paid", args=[draft.pk]),
+            {"paid_on": str(local_today() + timedelta(days=1))},
+        )
+
+        assert response.status_code == 400, response.data
+        assert error_of(response)[1] == [("paid_on", "invalid")]
+        assert fresh(draft).status == InvoiceStatus.ISSUED

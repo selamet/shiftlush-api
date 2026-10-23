@@ -27,6 +27,7 @@ from apps.ledger.models import (
     Account,
     AccountKind,
     CashAccount,
+    CashAccountRole,
     CashKind,
     Collection,
     CollectionApplication,
@@ -376,6 +377,18 @@ class CashAccountWriteSerializer(StrictMixin, serializers.ModelSerializer[CashAc
             )
         return value
 
+    def validate_is_active(self, value: bool) -> bool:
+        # The default till takes every payment with no till named, and a
+        # carried-over till holds M7's historical payments: both are the
+        # system's, found by role, and stay in the pickers and the summary.
+        cash = self.instance
+        if not value and isinstance(cash, CashAccount) and cash.role:
+            raise serializers.ValidationError(
+                "The firm's default till and its carried-over tills stay active.",
+                code="invalid",
+            )
+        return value
+
 
 class SupplierWriteSerializer(StrictMixin, serializers.ModelSerializer[Supplier]):
     class Meta:
@@ -526,6 +539,15 @@ class FinanceCashLineSerializer(serializers.Serializer[Any]):
     id = serializers.UUIDField(source="cash_account.pk")
     name = serializers.CharField(source="cash_account.name")
     kind = serializers.ChoiceField(choices=CashKind.choices, source="cash_account.kind")
+    role = serializers.ChoiceField(
+        choices=CashAccountRole.choices,
+        allow_blank=True,
+        source="cash_account.role",
+        help_text=(
+            "`default` for the firm's main till, `carried_over` for a till holding "
+            "the payments M7 recorded before the ledger, blank for one the firm made."
+        ),
+    )
     is_active = serializers.BooleanField(
         source="cash_account.is_active",
         help_text="An inactive cash account is listed while it holds money or moved.",
