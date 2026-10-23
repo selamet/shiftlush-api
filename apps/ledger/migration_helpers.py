@@ -106,6 +106,18 @@ def _carry_over_firm(company_id: UUID, result: CarriedOver) -> None:
         result.collected += 1
 
 
+def carry_over_firm(company_id: UUID) -> CarriedOver:
+    """One firm's drafts, as carry_over_invoices does for every firm.
+
+    The demo refresh (core.demo_activity) calls it for the demo firm alone, so
+    a draft issued or marked paid there is posted the way the migration posts.
+    """
+    result = CarriedOver()
+    with transaction.atomic(), company_context(company_id):
+        _carry_over_firm(company_id, result)
+    return result
+
+
 def carry_over_invoices() -> CarriedOver:
     """Post every firm's issued and paid drafts, once. See the module docstring."""
     result = CarriedOver()

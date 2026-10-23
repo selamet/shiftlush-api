@@ -3065,3 +3065,36 @@ class TestConcurrency(TransactionTestCase):
             invoice = InvoiceDraft.objects.get(pk=self.invoice.pk)
             assert invoice_remaining(invoice) == Decimal("600.00")
             assert invoice.status == InvoiceStatus.ISSUED
+
+    def test_a_concurrent_retried_collection_posts_once(self) -> None:
+        # A device that retries before its first request has answered: the
+        # same key, the same body, both in flight together. The key is
+        # reserved before the work, so the second either finds it in flight
+        # (409) or, if the first has already committed, gets its answer
+        # replayed (201, the same body). Either way one collection.
+        url = reverse("ledger-collection-list")
+        body = {
+            "account": str(self.books.account.pk),
+            "cash_account": str(self.books.till.pk),
+            "amount": "100.00",
+            "method": "cash",
+        }
+        clients = [api_for(self.owner), api_for(self.owner)]
+
+        def send(client: APIClient) -> Callable[[], Any]:
+            return lambda: keyed(client, url, body, key="race-retry-1")
+
+        results = _race(*(send(client) for client in clients))
+
+        assert not [r for r in results if isinstance(r, BaseException)], results
+        statuses = sorted(r.status_code for r in results)
+        assert statuses in ([201, 409], [201, 201]), [r.data for r in results]
+        if statuses == [201, 409]:
+            refused = next(r for r in results if r.status_code == 409)
+            assert error_of(refused)[0] == "IDEMPOTENCY_KEY_IN_FLIGHT"
+        else:
+            assert results[0].data == results[1].data
+        with company_context(self.company.id):
+            assert Collection.objects.count() == 1
+            assert Movement.objects.filter(source=MovementSource.COLLECTION).count() == 1
+            assert account_balance(self.books.account) == Decimal("900.00")

@@ -250,7 +250,9 @@ class TestPortalAndBilling:
             assert drafts.exists()
             assert InvoiceLine.objects.filter(fault__isnull=False, needs_price=True).exists()
             assert drafts.filter(status=InvoiceStatus.ISSUED).exists()
-            assert drafts.filter(status=InvoiceStatus.PAID).count() == 1
+            # One marked paid by the billing step; the ledger step's collections
+            # pay more (TestLedger).
+            assert drafts.filter(status=InvoiceStatus.PAID).exists()
             for draft in drafts:
                 assert draft.total == draft.subtotal + draft.vat_amount
 
@@ -618,3 +620,146 @@ class TestReports:
         again = demo_activity.populate_activity(seeded, staff_domain=demo.STAFF_DOMAIN)
         assert again.reports == 0
         assert any("report" in note for note in again.notes)
+
+
+class TestLedger:
+    """The demo keeps its books: balances that add up, a finance screen with
+    something on it, partial payments, one overdue customer, and a refresh
+    that posts nothing twice."""
+
+    def test_every_balance_is_the_sum_of_its_movements(self, seeded):
+        from decimal import Decimal
+
+        from apps.ledger.balances import (
+            account_balance,
+            cash_balance,
+            with_balance,
+            with_cash_balance,
+        )
+        from apps.ledger.models import Account, CashAccount, CashDirection, Direction, Movement
+
+        def signed(movements: Any, positive: Any) -> Decimal:
+            return sum((m.amount if positive(m) else -m.amount for m in movements), Decimal("0.00"))
+
+        with company_context(seeded.id):
+            assert Movement.objects.exists()
+            for account in with_balance(Account.objects.all()):
+                expected = signed(
+                    Movement.objects.filter(account=account),
+                    lambda m: m.direction == Direction.DEBIT,
+                )
+                assert account.balance == account_balance(account) == expected, account  # type: ignore[attr-defined]
+            for cash in with_cash_balance(CashAccount.objects.all()):
+                expected = signed(
+                    Movement.objects.filter(cash_account=cash),
+                    lambda m: m.cash_direction == CashDirection.IN,
+                )
+                assert cash.balance == cash_balance(cash) == expected, cash  # type: ignore[attr-defined]
+
+    def test_it_has_what_the_screens_need(self, seeded):
+        from apps.ledger import services as ledger
+        from apps.ledger.balances import cash_balance
+        from apps.ledger.models import (
+            AccountKind,
+            CashAccount,
+            CashKind,
+            Collection,
+            PaymentOut,
+            Supplier,
+            Transfer,
+        )
+
+        with company_context(seeded.id):
+            assert Supplier.objects.count() == 2
+            for supplier in Supplier.objects.all():
+                assert PaymentOut.objects.filter(
+                    account__supplier=supplier, account__kind=AccountKind.SUPPLIER
+                ).exists()
+            bank = CashAccount.objects.get(kind=CashKind.BANK)
+            assert bank.role == ""
+            till = ledger.default_cash_account(seeded.id)
+            assert Transfer.objects.filter(from_cash=till, to_cash=bank).count() == 1
+            assert cash_balance(bank) > 0
+            assert cash_balance(till) > 0
+            partly_paid = {
+                draft.customer_id
+                for draft in InvoiceDraft.objects.filter(status=InvoiceStatus.ISSUED)
+                if 0 < ledger.invoice_collected(draft)
+            }
+            assert len(partly_paid) >= 2
+            today = local_today()
+            for movement_day in Collection.objects.values_list("date", flat=True):
+                assert movement_day <= today
+
+    def test_the_finance_summary_is_not_empty(self, seeded):
+        from apps.ledger.finance import summary
+
+        with company_context(seeded.id):
+            (lira,) = summary("month", local_today()).currencies
+        assert lira.receivables > 0
+        assert lira.payables > 0
+        assert lira.money_in > 0
+        assert lira.money_out > 0
+        assert any(line.balance > 0 for line in lira.cash_accounts)
+
+    def test_the_overdue_filter_finds_the_overdue_customer(self, seeded):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        from apps.ledger import services as ledger
+        from apps.ledger.models import Account
+        from apps.users.services import issue_tokens
+
+        cutoff = local_today() - timedelta(days=demo_activity.OVERDUE_AFTER_DAYS)
+        with company_context(seeded.id):
+            waiting = [
+                draft
+                for draft in InvoiceDraft.objects.filter(
+                    status=InvoiceStatus.ISSUED, invoice_date__lte=cutoff
+                )
+                if ledger.invoice_collected(draft) == 0
+            ]
+            assert waiting, "no invoice has waited 40 days unpaid"
+            overdue = {Account.objects.get(customer_id=d.customer_id).pk for d in waiting}
+            owner = User.objects.get(role=Role.OWNER)
+        assert len(overdue) == 1
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(owner).access}")
+        response = client.get(reverse("ledger-account-list"), {"overdue": "true"})
+        assert response.status_code == 200, response.data
+        found = {row["id"] for row in response.data["results"]}
+        assert {str(pk) for pk in overdue} == {str(pk) for pk in found}
+
+    def test_a_second_refresh_posts_nothing(self, phase_one_demo):
+        from apps.ledger.models import Movement
+
+        def movements() -> int:
+            return in_tenant(phase_one_demo, lambda: Movement.objects.count())
+
+        first = StringIO()
+        call_command("refresh_demo_data", stdout=first)
+        assert "ledger +0" not in first.getvalue()
+        assert "ledger +" in first.getvalue()
+        before = movements()
+        assert before > 0
+        again = StringIO()
+        call_command("refresh_demo_data", stdout=again)
+        assert "ledger +0" in again.getvalue()
+        assert movements() == before
+
+    def test_closed_books_are_left_alone(self, phase_one_demo):
+        from apps.ledger.models import Movement
+
+        with system_context():
+            Company.objects.filter(pk=phase_one_demo.pk).update(
+                ledger_closed_through=local_today() - timedelta(days=200)
+            )
+        added = demo_activity.populate_activity(phase_one_demo, staff_domain=demo.STAFF_DOMAIN)
+        assert added.ledger == 0
+        assert any("closed through" in note for note in added.notes)
+        # The billing step still issues (and posts) drafts; the demo step adds
+        # no collection, payment or transfer of its own.
+        assert (
+            in_tenant(phase_one_demo, lambda: Movement.objects.exclude(source="invoice").count())
+            <= 1
+        )
