@@ -289,3 +289,302 @@ class Movement(CompanyOwnedModel):
 
     def hard_delete(self, using: str | None = None) -> Any:
         raise MovementImmutableError(f"Movement {self.pk} cannot be deleted; reverse it.")
+
+
+# Documents ----------------------------------------------------------------------
+#
+# Each document below posts its movements through apps.ledger.posting and is
+# never edited. Cancelling one posts the reversal of its movements and stamps
+# `cancelled_at`; the row stays, so the movements keep naming their source.
+
+
+class PaymentMethod(models.TextChoices):
+    CASH = "cash", "Cash"
+    TRANSFER = "transfer", "Transfer"
+    CARD = "card", "Card"
+
+
+class TransferKind(models.TextChoices):
+    #: A balance moved from one party's account to another's.
+    ACCOUNT = "account", "Between accounts"
+    #: Money moved from one cash account to another, say the till to the bank.
+    CASH = "cash", "Between cash accounts"
+
+
+def _amount_positive(name: str) -> models.CheckConstraint:
+    return models.CheckConstraint(condition=models.Q(amount__gt=0), name=name)
+
+
+class DocumentCounter(CompanyOwnedModel):
+    """The last number a firm gave out under one prefix ("T-", "O-").
+
+    Incremented under a row lock by apps.ledger.services.next_number, so two
+    documents recorded at once never share a number.
+    """
+
+    prefix = models.CharField(max_length=10)
+    last = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "ledger_document_counter"
+        ordering = ["prefix", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "prefix"], name="uq_ledger_document_counter_prefix"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.prefix}{self.last}"
+
+
+class Collection(CompanyOwnedModel):
+    """Money received from a party (tahsilat): a credit on the account, cash in.
+
+    It may pay one or more invoices (`CollectionApplication`), or none: a
+    collection with nothing applied is an advance, shown as unallocated.
+    """
+
+    number = models.CharField(max_length=20)
+    account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="collections")
+    cash_account = models.ForeignKey(
+        CashAccount, on_delete=models.PROTECT, related_name="collections"
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    method = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    date = models.DateField()
+    note = models.TextField(blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_collection"
+        ordering = ["-date", "-number", "-id"]
+        constraints = [
+            _amount_positive("ledger_collection_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(method__in=PaymentMethod.values),
+                name="ledger_collection_method_valid",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "number"], name="uq_ledger_collection_number"
+            ),
+        ]
+        indexes = [models.Index(fields=["account", "date"])]
+
+    def __str__(self) -> str:
+        return self.number
+
+
+class CollectionApplication(CompanyOwnedModel):
+    """The part of a collection that pays one invoice."""
+
+    collection = models.ForeignKey(
+        Collection, on_delete=models.PROTECT, related_name="applications"
+    )
+    invoice = models.ForeignKey(
+        "billing.InvoiceDraft", on_delete=models.PROTECT, related_name="collection_applications"
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        db_table = "ledger_collection_application"
+        ordering = ["collection", "id"]
+        constraints = [
+            _amount_positive("ledger_collection_application_amount_positive"),
+            models.UniqueConstraint(
+                fields=["collection", "invoice"], name="uq_ledger_collection_application"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.collection_id} -> {self.invoice_id}: {self.amount}"
+
+
+class PaymentOut(CompanyOwnedModel):
+    """Money paid out to a party (tediye): a debit on the account, cash out."""
+
+    number = models.CharField(max_length=20)
+    account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="payments_out")
+    cash_account = models.ForeignKey(
+        CashAccount, on_delete=models.PROTECT, related_name="payments_out"
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    method = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    date = models.DateField()
+    note = models.TextField(blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_payment_out"
+        ordering = ["-date", "-number", "-id"]
+        constraints = [
+            _amount_positive("ledger_payment_out_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(method__in=PaymentMethod.values),
+                name="ledger_payment_out_method_valid",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "number"], name="uq_ledger_payment_out_number"
+            ),
+        ]
+        indexes = [models.Index(fields=["account", "date"])]
+
+    def __str__(self) -> str:
+        return self.number
+
+
+class ManualEntry(CompanyOwnedModel):
+    """A debit or credit on an account with no cash behind it, and a reason."""
+
+    account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="manual_entries")
+    direction = models.CharField(max_length=10, choices=Direction.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    date = models.DateField()
+    reason = models.TextField()
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_manual_entry"
+        ordering = ["-date", "-created_at", "-id"]
+        constraints = [
+            _amount_positive("ledger_manual_entry_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(direction__in=Direction.values),
+                name="ledger_manual_entry_direction_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.date} {self.direction} {self.amount}"
+
+
+class Transfer(CompanyOwnedModel):
+    """A transfer (virman): between two accounts, or between two cash accounts.
+
+    Between accounts, the `from_account` is credited and the `to_account`
+    debited. Between cash accounts, cash goes out of `from_cash` and in to
+    `to_cash`, and no party's account moves.
+    """
+
+    kind = models.CharField(max_length=10, choices=TransferKind.choices)
+    from_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="transfers_out",
+        null=True,
+        blank=True,
+    )
+    to_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="transfers_in",
+        null=True,
+        blank=True,
+    )
+    from_cash = models.ForeignKey(
+        CashAccount,
+        on_delete=models.PROTECT,
+        related_name="transfers_out",
+        null=True,
+        blank=True,
+    )
+    to_cash = models.ForeignKey(
+        CashAccount,
+        on_delete=models.PROTECT,
+        related_name="transfers_in",
+        null=True,
+        blank=True,
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    date = models.DateField()
+    note = models.TextField(blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_transfer"
+        ordering = ["-date", "-created_at", "-id"]
+        constraints = [
+            _amount_positive("ledger_transfer_amount_positive"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        kind=TransferKind.ACCOUNT,
+                        from_account__isnull=False,
+                        to_account__isnull=False,
+                        from_cash__isnull=True,
+                        to_cash__isnull=True,
+                    )
+                    | models.Q(
+                        kind=TransferKind.CASH,
+                        from_account__isnull=True,
+                        to_account__isnull=True,
+                        from_cash__isnull=False,
+                        to_cash__isnull=False,
+                    )
+                ),
+                name="ledger_transfer_sides_match_kind",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(from_account=models.F("to_account"))
+                & ~models.Q(from_cash=models.F("to_cash")),
+                name="ledger_transfer_two_different_sides",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.date} {self.kind} {self.amount}"
+
+
+class OpeningBalance(CompanyOwnedModel):
+    """A balance carried over at go-live (devir), on an account or a cash account.
+
+    One live opening per side, entered before any other movement on it. On a
+    cash account the direction reads as it does in bookkeeping: a debit is
+    money in the till, a credit an overdraft.
+    """
+
+    account = models.ForeignKey(
+        Account, on_delete=models.PROTECT, related_name="openings", null=True, blank=True
+    )
+    cash_account = models.ForeignKey(
+        CashAccount, on_delete=models.PROTECT, related_name="openings", null=True, blank=True
+    )
+    direction = models.CharField(max_length=10, choices=Direction.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    date = models.DateField()
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_opening_balance"
+        ordering = ["-date", "-created_at", "-id"]
+        constraints = [
+            _amount_positive("ledger_opening_balance_amount_positive"),
+            models.CheckConstraint(
+                condition=models.Q(direction__in=Direction.values),
+                name="ledger_opening_balance_direction_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(account__isnull=False, cash_account__isnull=True)
+                    | models.Q(account__isnull=True, cash_account__isnull=False)
+                ),
+                name="ledger_opening_balance_one_side",
+            ),
+            models.UniqueConstraint(
+                fields=["account"],
+                condition=models.Q(
+                    account__isnull=False, cancelled_at__isnull=True, is_deleted=False
+                ),
+                name="uq_ledger_opening_balance_account",
+            ),
+            models.UniqueConstraint(
+                fields=["cash_account"],
+                condition=models.Q(
+                    cash_account__isnull=False, cancelled_at__isnull=True, is_deleted=False
+                ),
+                name="uq_ledger_opening_balance_cash_account",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.date} opening {self.direction} {self.amount}"

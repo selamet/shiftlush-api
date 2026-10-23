@@ -999,8 +999,15 @@ class TestEveryModelIsScoped:
             # until the ledger's routes join the sweep above.
             "ledger.Account",
             "ledger.CashAccount",
+            "ledger.Collection",
+            "ledger.CollectionApplication",
+            "ledger.DocumentCounter",
+            "ledger.ManualEntry",
             "ledger.Movement",
+            "ledger.OpeningBalance",
+            "ledger.PaymentOut",
             "ledger.Supplier",
+            "ledger.Transfer",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
             # Over HTTP in the sweep above, and in tests/test_planned_visits.py.
