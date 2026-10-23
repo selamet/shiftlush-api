@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from apps.ledger.api.v1 import views
@@ -13,4 +14,8 @@ router.register("cash-accounts", views.CashAccountViewSet, basename="ledger-cash
 router.register("suppliers", views.SupplierViewSet, basename="ledger-supplier")
 router.register("finance", views.FinanceViewSet, basename="ledger-finance")
 
-urlpatterns = router.urls
+urlpatterns = [
+    # Singular, and no id: the firm's own ledger settings.
+    path("settings/", views.LedgerSettingsView.as_view(), name="ledger-settings"),
+    *router.urls,
+]

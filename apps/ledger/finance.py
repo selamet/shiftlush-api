@@ -66,15 +66,24 @@ class CashLine:
 
 
 @dataclass(frozen=True)
+class CurrencySummary:
+    """Everything in one currency: amounts in two currencies are never added."""
+
+    currency: str
+    receivables: Decimal
+    payables: Decimal
+    cash_accounts: list[CashLine]
+    #: The cash lines, added up: the same cash accounts, so they always agree.
+    money_in: Decimal
+    money_out: Decimal
+
+
+@dataclass(frozen=True)
 class Summary:
     period: str
     date_from: Date
     date_to: Date
-    receivables: Decimal
-    payables: Decimal
-    cash_accounts: list[CashLine]
-    money_in: Decimal
-    money_out: Decimal
+    currencies: list[CurrencySummary]
 
 
 def balance_totals(accounts: QuerySet[Account]) -> dict[str, Decimal]:
@@ -93,51 +102,80 @@ def balance_totals(accounts: QuerySet[Account]) -> dict[str, Decimal]:
     return {"receivables": receivables, "payables": payables, "net": receivables - payables}
 
 
-def summary(period: str, today: Date) -> Summary:
-    """Receivables, payables, each active cash account's balance today, and the
-    money that came in and went out in the period."""
-    start, end = period_range(period, today)
-    totals = balance_totals(with_balance(Account.objects.all()))
+def _flows(start: Date, end: Date) -> QuerySet[Movement]:
+    """The cash movements that are money in or out of the firm in the window.
 
-    flows = (
+    Left out:
+    - a transfer between cash accounts and an opening balance, and their
+      reversals: money that only moved inside the firm, or was there before;
+    - a movement reversed within the window, and that reversal: a document
+      made and cancelled in the period contributes nothing to it. A reversal
+      of something from before the window still counts, as the correction it
+      is.
+    """
+    return (
         Movement.objects.filter(cash_account__isnull=False, date__gte=start, date__lte=end)
         .exclude(source__in=_INTERNAL)
         .exclude(reverses__source__in=_INTERNAL)
+        .exclude(reversed_by__date__gte=start, reversed_by__date__lte=end)
+        .exclude(reverses__date__gte=start, reverses__date__lte=end)
     )
+
+
+def summary(period: str, today: Date) -> Summary:
+    """Per currency: receivables and payables today, every cash account that is
+    active, holds money or moved in the window, with its balance today and its
+    money in and out in the window, and those lines added up."""
+    start, end = period_range(period, today)
+
     per_cash: dict[Any, dict[str, Any]] = {
         row["cash_account"]: dict(row)
-        for row in flows.order_by()
+        for row in _flows(start, end)
+        .order_by()
         .values("cash_account")
         .annotate(
             money_in=_sum(Q(cash_direction=CashDirection.IN)),
             money_out=_sum(Q(cash_direction=CashDirection.OUT)),
         )
     }
+    moved = set(
+        Movement.objects.filter(cash_account__isnull=False, date__gte=start, date__lte=end)
+        .values_list("cash_account", flat=True)
+        .distinct()
+    )
 
-    lines = []
-    for cash in with_cash_balance(CashAccount.objects.filter(is_active=True)).order_by(
-        "name", "id"
-    ):
+    lines: dict[str, list[CashLine]] = {}
+    for cash in with_cash_balance(CashAccount.objects.all()).order_by("name", "id"):
+        balance = _money(getattr(cash, "balance", None))
+        if not (cash.is_active or balance != ZERO or cash.pk in moved or cash.pk in per_cash):
+            continue
         row = per_cash.get(cash.pk, {})
-        lines.append(
+        lines.setdefault(cash.currency, []).append(
             CashLine(
                 cash_account=cash,
-                balance=_money(getattr(cash, "balance", None)),
+                balance=balance,
                 money_in=_money(row.get("money_in")),
                 money_out=_money(row.get("money_out")),
             )
         )
-    overall = flows.aggregate(
-        money_in=_sum(Q(cash_direction=CashDirection.IN)),
-        money_out=_sum(Q(cash_direction=CashDirection.OUT)),
-    )
-    return Summary(
-        period=period,
-        date_from=start,
-        date_to=end,
-        receivables=totals["receivables"],
-        payables=totals["payables"],
-        cash_accounts=lines,
-        money_in=_money(overall["money_in"]),
-        money_out=_money(overall["money_out"]),
-    )
+
+    owed: dict[str, dict[str, Decimal]] = {}
+    accounts = with_balance(Account.objects.all())
+    for currency in accounts.order_by().values_list("currency", flat=True).distinct():
+        owed[currency] = balance_totals(accounts.filter(currency=currency))
+
+    currencies = []
+    for currency in sorted(set(lines) | set(owed)):
+        cash_lines = lines.get(currency, [])
+        totals = owed.get(currency, {"receivables": ZERO, "payables": ZERO})
+        currencies.append(
+            CurrencySummary(
+                currency=currency,
+                receivables=_money(totals["receivables"]),
+                payables=_money(totals["payables"]),
+                cash_accounts=cash_lines,
+                money_in=_money(sum((line.money_in for line in cash_lines), ZERO)),
+                money_out=_money(sum((line.money_out for line in cash_lines), ZERO)),
+            )
+        )
+    return Summary(period=period, date_from=start, date_to=end, currencies=currencies)

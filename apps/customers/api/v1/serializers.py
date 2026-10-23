@@ -3,13 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import transaction
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.customers.models import ContactRole, Customer, CustomerContact, CustomerType
 from apps.customers.services import demote_other_primaries
+from apps.ledger.balances import with_balance
+from apps.ledger.models import Account
 from core.crypto import fingerprint
 from core.error_codes import ErrorCode
 from core.exceptions import DuplicateRecord, field_error
+from core.permissions import may_see_balances
 from core.serializers import AddressReadMixin
 from core.validators import (
     normalize_email,
@@ -138,10 +142,60 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
         ]
 
 
+#: Where the viewset prefetches each customer's ledger account, balance
+#: annotated, for the roles that may see it.
+LEDGER_ACCOUNT_ROWS = "ledger_account_rows"
+
+
+class CustomerAccountSerializer(serializers.Serializer[Any]):
+    """The customer's ledger account, as the customer page shows it."""
+
+    id = serializers.UUIDField(read_only=True)
+    balance = serializers.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        read_only=True,
+        help_text="Debits less credits. Positive: the customer owes the firm.",
+    )
+    currency = serializers.CharField(read_only=True)
+
+
 class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Customer]):
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
+    account = serializers.SerializerMethodField(
+        help_text=(
+            "The customer's ledger account and balance. Absent for roles that may "
+            "not see balances (the technician)."
+        )
+    )
+
+    def get_fields(self) -> dict[str, Any]:
+        fields = super().get_fields()
+        # Dropped rather than nulled for a role that may not see money, as
+        # `unit_price` is on the elevator: `null` would say the customer has no
+        # account, absence says the reader is not entitled to ask. Outside a
+        # request (the schema generator) the field stays declared.
+        request = self.context.get("request")
+        if request is not None and not may_see_balances(getattr(request.user, "role", None)):
+            fields.pop("account", None)
+        return fields
+
+    @extend_schema_field(CustomerAccountSerializer(allow_null=True))
+    def get_account(self, customer: Customer) -> dict[str, Any] | None:
+        rows = getattr(customer, LEDGER_ACCOUNT_ROWS, None)
+        if rows is None:
+            # A record not read through the viewset's queryset: a create.
+            rows = list(with_balance(Account.objects.filter(customer=customer)))
+        if not rows:
+            return None
+        account = rows[0]
+        return dict(
+            CustomerAccountSerializer(
+                {"id": account.pk, "balance": account.balance, "currency": account.currency}
+            ).data
+        )
 
     class Meta:
         model = Customer
@@ -165,6 +219,7 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
             "contacts",
             "building_count",
             "elevator_count",
+            "account",
             "created_at",
             "updated_at",
         ]

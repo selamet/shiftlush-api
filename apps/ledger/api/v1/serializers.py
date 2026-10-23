@@ -399,7 +399,9 @@ class _DocumentWriteSerializer(StrictMixin, serializers.Serializer[Any]):
                 continue
             model = cast(Any, field).queryset.model
             if model is Account:
-                _scope(fields, name, Account.objects.all())
+                # Inactive accounts are hidden from pickers, and take no new
+                # documents either, as inactive cash accounts.
+                _scope(fields, name, Account.objects.filter(is_active=True))
             elif model is CashAccount:
                 # Inactive cash accounts are hidden from pickers, and take no
                 # new money either.
@@ -463,6 +465,16 @@ class OpeningBalanceCreateSerializer(_DocumentWriteSerializer):
     )
 
 
+class LedgerSettingsSerializer(StrictMixin, serializers.Serializer[Any]):
+    closed_through = serializers.DateField(
+        allow_null=True,
+        help_text=(
+            "The books are closed through this day, inclusive: nothing can be dated "
+            "on or before it. Null: nothing is closed. Not after today."
+        ),
+    )
+
+
 # The finance summary --------------------------------------------------------------
 
 
@@ -474,26 +486,46 @@ class FinanceCashLineSerializer(serializers.Serializer[Any]):
     id = serializers.UUIDField(source="cash_account.pk")
     name = serializers.CharField(source="cash_account.name")
     kind = serializers.ChoiceField(choices=CashKind.choices, source="cash_account.kind")
-    currency = serializers.CharField(source="cash_account.currency")
-    balance = serializers.DecimalField(max_digits=16, decimal_places=2)
+    is_active = serializers.BooleanField(
+        source="cash_account.is_active",
+        help_text="An inactive cash account is listed while it holds money or moved.",
+    )
+    balance = serializers.DecimalField(
+        max_digits=16, decimal_places=2, help_text="Its balance today."
+    )
     money_in = serializers.DecimalField(max_digits=16, decimal_places=2)
     money_out = serializers.DecimalField(max_digits=16, decimal_places=2)
 
 
-class FinanceSummarySerializer(serializers.Serializer[Any]):
-    period = serializers.ChoiceField(choices=PERIODS)
-    date_from = serializers.DateField()
-    date_to = serializers.DateField()
+class FinanceCurrencySerializer(serializers.Serializer[Any]):
+    currency = serializers.CharField()
     receivables = serializers.DecimalField(
         max_digits=16, decimal_places=2, help_text="What the firm is owed, today."
     )
     payables = serializers.DecimalField(
         max_digits=16, decimal_places=2, help_text="What the firm owes, today."
     )
-    cash_accounts = FinanceCashLineSerializer(many=True)
+    cash_accounts = FinanceCashLineSerializer(
+        many=True,
+        help_text="Every cash account that is active, holds money, or moved in the period.",
+    )
     money_in = serializers.DecimalField(
         max_digits=16,
         decimal_places=2,
-        help_text="Cash in during the period; transfers between tills and openings left out.",
+        help_text=(
+            "The cash lines' `money_in`, added up. Transfers between cash accounts, "
+            "openings, and documents cancelled within the period are left out."
+        ),
     )
-    money_out = serializers.DecimalField(max_digits=16, decimal_places=2)
+    money_out = serializers.DecimalField(
+        max_digits=16, decimal_places=2, help_text="The cash lines' `money_out`, added up."
+    )
+
+
+class FinanceSummarySerializer(serializers.Serializer[Any]):
+    period = serializers.ChoiceField(choices=PERIODS)
+    date_from = serializers.DateField()
+    date_to = serializers.DateField()
+    currencies = FinanceCurrencySerializer(
+        many=True, help_text="One entry per currency; amounts in two currencies are never added."
+    )

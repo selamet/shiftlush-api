@@ -63,6 +63,10 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("ledger_document", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
     ("ledger_admin", READ): {Role.OWNER, Role.ACCOUNTANT},
     ("ledger_admin", WRITE): {Role.OWNER, Role.ACCOUNTANT},
+    # The cash accounts and suppliers a collection or payment out is recorded
+    # against: operations picks from them, and reads nothing else of the ledger.
+    ("ledger_picker", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+    ("ledger_picker", WRITE): set(),
 }
 
 

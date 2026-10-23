@@ -320,9 +320,11 @@ carried as compatibility shims nobody will ever remove.
   cash accounts, suppliers, the documents that move money, and the finance
   summary. A balance is never stored or typed in: it is the sum of the
   movements. Reading is owner, admin and accountant; collections and payments
-  out are also recorded by operations; manual entries, transfers and opening
-  balances are the owner's and the accountant's alone. The technician has no
-  access (`403`).
+  out are also recorded by operations, which reads the cash-account and
+  supplier lists to pick from and a customer's balance on the customer page,
+  and nothing else of the ledger; manual entries, transfers, opening balances
+  and the closed-through date are the owner's and the accountant's alone. The
+  technician has no access (`403`).
   - `GET /ledger/accounts/` — each account with its `balance` (debits less
     credits; positive means the party owes the firm), and `totals`
     (`receivables`, `payables`, `net`) beside the usual envelope, summed over
@@ -335,7 +337,8 @@ carried as compatibility shims nobody will ever remove.
   - `GET/POST /ledger/collections/`, `POST /ledger/collections/{id}/cancel/`.
     The body is `account`, `cash_account`, `amount`, `method`, `date` (today
     when omitted), `note` and `applies: [{invoice, amount}]`; none applied is
-    an advance. Numbered `T-000001` per firm.
+    an advance. Numbered `T-000001` per firm. An inactive account or cash
+    account takes no new document (`400 does_not_exist`).
   - `GET/POST /ledger/payments-out/` (numbered `O-…`), `/manual-entries/`
     (with a required `reason`), `/transfers/` (`kind` `account` or `cash`)
     and `/opening-balances/` (on an account or a cash account), each with
@@ -346,14 +349,25 @@ carried as compatibility shims nobody will ever remove.
     answers the first response and records nothing more.
   - `GET/POST/PATCH /ledger/cash-accounts/` with `balance`, and
     `GET /ledger/cash-accounts/{id}/movements/`, newest first. A cash
-    account's `currency` cannot change once it has a movement.
+    account's `currency` cannot change once it has a movement. The list and
+    detail are readable by operations too; the movements are not.
   - `GET/POST/PATCH /ledger/suppliers/`. A supplier is created with its
     account, which follows a rename.
-  - `GET /ledger/finance/summary/?period=today|yesterday|week|month` —
-    `receivables` and `payables` today, each active cash account's `balance`
-    with its `money_in` and `money_out` in the period, and the period's
-    totals. Transfers between cash accounts and opening balances are neither
-    in nor out.
+  - `GET /ledger/finance/summary/?period=today|yesterday|week|month` — a
+    `currencies` list, one entry per currency (amounts in two currencies are
+    never added): `receivables` and `payables` today, `cash_accounts` (every
+    cash account that is active, holds money or moved in the period, with
+    `is_active`, its `balance` today and its `money_in` and `money_out` in the
+    period), and `money_in`/`money_out`, which are those lines added up.
+    Transfers between cash accounts and opening balances are neither in nor
+    out, and a document cancelled within the period contributes nothing.
+  - `GET/PATCH /ledger/settings/` (owner, accountant) —
+    `{closed_through: date|null}`. Nothing can be dated on or before it
+    (`400 PERIOD_CLOSED`); a date after today is `400 invalid`; moving it back
+    or clearing it reopens the books. Every change is on the audit trail.
+  - `GET /customers/` and `GET /customers/{id}/` gain `account`
+    (`{id, balance, currency}`) for the roles that may see balances (owner,
+    admin, accountant, operations). It is absent for the technician.
   - Every id in a request is looked up in the requesting firm only; another
     firm's is `400 does_not_exist` on that field, as an unknown id is.
   - Errors: `400 CURRENCY_MISMATCH`, `400 PERIOD_CLOSED`,

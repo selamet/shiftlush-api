@@ -762,20 +762,32 @@ def open_account(
     if party is None:
         raise _invalid(field, "Required for this kind.", code="required")
     _same_firm(company_id, **{field: party})
-    with transaction.atomic():
-        if Account.unscoped.filter(is_deleted=False, **{field: party}).exists():
-            raise _invalid(field, "This party already has an account.", code="unique")
-        return Account.objects.create(
-            company_id=company_id,
-            kind=kind,
-            customer=customer,
-            supplier=supplier,
-            user=user,
-            name=_party_name(party)[:200],
-            currency=currency,
-            created_by=by,
-            updated_by=by,
-        )
+    taken = _invalid(field, "This party already has an account.", code="unique")
+    if _has_account(field, party):
+        raise taken
+    try:
+        with transaction.atomic():
+            return Account.objects.create(
+                company_id=company_id,
+                kind=kind,
+                customer=customer,
+                supplier=supplier,
+                user=user,
+                name=_party_name(party)[:200],
+                currency=currency,
+                created_by=by,
+                updated_by=by,
+            )
+    except IntegrityError as exc:
+        # Another request opened it between the check above and this insert,
+        # and the unique constraint on the party refused this one. Every other
+        # constraint on the row is checked above, so this is that one: the
+        # same answer as the check gives.
+        raise taken from exc
+
+
+def _has_account(field: str, party: Customer | Supplier | User) -> bool:
+    return Account.unscoped.filter(is_deleted=False, **{field: party}).exists()
 
 
 def create_supplier(*, company_id: UUID, by: User, **fields: object) -> Supplier:
@@ -808,3 +820,24 @@ def update_supplier(supplier: Supplier, *, changes: dict[str, object], by: User)
             account.updated_by = by
             account.save(update_fields=["name", "updated_by", "updated_at"])
     return supplier
+
+
+# Settings -----------------------------------------------------------------------
+
+
+def set_closed_through(company_id: UUID, day: Date | None, *, by: User) -> Company:
+    """Freeze the books through `day`, inclusive, or reopen them (None).
+
+    Not after today: a period that has not happened cannot be closed. Moving
+    the date back reopens what lies after it, which is allowed. Saved through
+    the model, so the audit trail records who changed it, from what, to what.
+    """
+    if day is not None and day > local_today():
+        raise _invalid("closed_through", "A period after today cannot be closed.")
+    with transaction.atomic():
+        company = Company.objects.select_for_update().get(pk=company_id)
+        if company.ledger_closed_through != day:
+            company.ledger_closed_through = day
+            company.updated_by = by
+            company.save(update_fields=["ledger_closed_through", "updated_by", "updated_at"])
+    return company

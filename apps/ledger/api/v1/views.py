@@ -21,6 +21,7 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
+from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
 
 from apps.billing.models import InvoiceDraft, InvoiceStatus
@@ -36,6 +37,7 @@ from apps.ledger.api.v1.serializers import (
     CollectionReadSerializer,
     FinanceQuerySerializer,
     FinanceSummarySerializer,
+    LedgerSettingsSerializer,
     ManualEntryCreateSerializer,
     ManualEntryReadSerializer,
     MovementSerializer,
@@ -65,7 +67,7 @@ from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate
 from core.pagination import StandardPagination
 from core.permissions import RolePermission
-from core.requests import authenticated_company_id, authenticated_user
+from core.requests import authenticated_company, authenticated_company_id, authenticated_user
 from core.scheduling import local_today
 
 IDEMPOTENCY_KEY = OpenApiParameter(
@@ -230,7 +232,14 @@ class CashAccountViewSet(
     """Where the firm's money is: tills, bank accounts and card POS."""
 
     resource = "ledger"
-    resource_by_action = {"create": "ledger_admin", "partial_update": "ledger_admin"}
+    # Operations picks the cash account a collection goes into; the movements
+    # stay with whoever reads the ledger.
+    resource_by_action = {
+        "list": "ledger_picker",
+        "retrieve": "ledger_picker",
+        "create": "ledger_admin",
+        "partial_update": "ledger_admin",
+    }
     permission_classes = [RolePermission]
     http_method_names = ["get", "post", "patch", "head", "options"]
     queryset = CashAccount.objects.none()
@@ -282,7 +291,12 @@ class SupplierViewSet(
     """Whom the firm buys from. Each comes with its account."""
 
     resource = "ledger"
-    resource_by_action = {"create": "ledger_document", "partial_update": "ledger_document"}
+    resource_by_action = {
+        "list": "ledger_picker",
+        "retrieve": "ledger_picker",
+        "create": "ledger_document",
+        "partial_update": "ledger_document",
+    }
     permission_classes = [RolePermission]
     http_method_names = ["get", "post", "patch", "head", "options"]
     queryset = Supplier.objects.none()
@@ -520,6 +534,40 @@ class OpeningBalanceViewSet(_DocumentViewSet[OpeningBalance]):
         form.is_valid(raise_exception=True)
         opening = services.record_opening(by=authenticated_user(request), **form.validated_data)
         return self._created(opening)
+
+
+# Settings -------------------------------------------------------------------------
+
+
+class LedgerSettingsView(APIView):
+    """The ledger's settings for the firm: the closed-through date.
+
+    A singleton with no id, like `/company`: the only firm a request can
+    address is its own. Owner and accountant.
+    """
+
+    resource = "ledger_admin"
+    permission_classes = [RolePermission]
+
+    @extend_schema(responses={200: LedgerSettingsSerializer})
+    def get(self, request: Request) -> Response:
+        company = authenticated_company(request)
+        return Response(
+            LedgerSettingsSerializer({"closed_through": company.ledger_closed_through}).data
+        )
+
+    @extend_schema(request=LedgerSettingsSerializer, responses={200: LedgerSettingsSerializer})
+    def patch(self, request: Request) -> Response:
+        form = LedgerSettingsSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        company = services.set_closed_through(
+            authenticated_company_id(request),
+            form.validated_data["closed_through"],
+            by=authenticated_user(request),
+        )
+        return Response(
+            LedgerSettingsSerializer({"closed_through": company.ledger_closed_through}).data
+        )
 
 
 # The finance summary --------------------------------------------------------------

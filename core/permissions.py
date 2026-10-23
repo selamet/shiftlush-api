@@ -187,6 +187,14 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
         WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
     },
+    # What a collection or a payment out is recorded against: the cash
+    # accounts and suppliers to pick from. Operations records those documents,
+    # so it reads these lists, and nothing else of the ledger: not movements,
+    # statements, documents or the summary. Nothing is written through it.
+    "ledger_picker": {
+        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+        WRITE: set(),
+    },
     # Manual entries, transfers, opening balances and the closed-through date:
     # the books themselves, the owner's and the accountant's alone.
     "ledger_admin": {
@@ -200,6 +208,15 @@ def may(role: str | None, resource: str, action: str) -> bool:
     if role is None:
         return False
     return role in MATRIX.get(resource, {}).get(action, set())
+
+
+def may_see_balances(role: str | None) -> bool:
+    """Whether a customer's ledger balance is shown to this role.
+
+    Whoever reads the ledger, and whoever records money against a customer
+    (operations, "balances only, the customer page"); not the technician.
+    """
+    return may(role, "ledger", READ) or may(role, "ledger_document", WRITE)
 
 
 class RolePermission(permissions.BasePermission):

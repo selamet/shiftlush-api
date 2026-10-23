@@ -701,11 +701,18 @@ class TestRoutesWithoutADetailView:
         # was paid 40.
         totals = client.get(reverse("ledger-account-list")).data["totals"]
         assert totals == {"receivables": "40.00", "payables": "75.00", "net": "-35.00"}
-        summary = client.get(reverse("ledger-finance-summary")).data
+        (summary,) = client.get(reverse("ledger-finance-summary")).data["currencies"]
         assert {row["name"] for row in summary["cash_accounts"]} == {"Merkez kasa", "Bank"}
         their_bank = str(theirs.records["ledger-cash-account"].pk)
         assert their_bank not in {str(row["id"]) for row in summary["cash_accounts"]}
         assert (summary["money_in"], summary["money_out"]) == ("100.00", "40.00")
+        assert (summary["receivables"], summary["payables"]) == ("40.00", "75.00")
+
+        # The closed-through date is a singleton: it can only be our own.
+        client.patch(reverse("ledger-settings"), {"closed_through": str(TODAY)}, format="json")
+        with system_context():
+            assert Company.unscoped.get(pk=theirs.company.pk).ledger_closed_through is None
+            assert Company.unscoped.get(pk=ours.company.pk).ledger_closed_through == TODAY
 
     def test_the_company_endpoint_answers_only_for_your_own(self, two_firms):
         ours, theirs = two_firms

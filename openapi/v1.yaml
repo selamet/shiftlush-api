@@ -4500,6 +4500,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaymentOutRead'
           description: ''
+  /api/v1/ledger/settings/:
+    get:
+      operationId: ledger_settings_retrieve
+      description: |-
+        The ledger's settings for the firm: the closed-through date.
+
+        A singleton with no id, like `/company`: the only firm a request can
+        address is its own. Owner and accountant.
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerSettings'
+          description: ''
+    patch:
+      operationId: ledger_settings_partial_update
+      description: |-
+        The ledger's settings for the firm: the closed-through date.
+
+        A singleton with no id, like `/company`: the only firm a request can
+        address is its own. Owner and accountant.
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerSettingsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerSettingsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerSettingsRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerSettings'
+          description: ''
   /api/v1/ledger/suppliers/:
     get:
       operationId: ledger_suppliers_list
@@ -9385,12 +9433,15 @@ components:
           type: string
         kind:
           $ref: '#/components/schemas/CashAccountKind'
-        currency:
-          type: string
+        is_active:
+          type: boolean
+          description: An inactive cash account is listed while it holds money or
+            moved.
         balance:
           type: string
           format: decimal
           pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          description: Its balance today.
         money_in:
           type: string
           format: decimal
@@ -9401,23 +9452,17 @@ components:
           pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
       required:
       - balance
-      - currency
       - id
+      - is_active
       - kind
       - money_in
       - money_out
       - name
-    FinanceSummary:
+    FinanceCurrency:
       type: object
       properties:
-        period:
-          $ref: '#/components/schemas/PeriodEnum'
-        date_from:
+        currency:
           type: string
-          format: date
-        date_to:
-          type: string
-          format: date
         receivables:
           type: string
           format: decimal
@@ -9432,25 +9477,49 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FinanceCashLine'
+          description: Every cash account that is active, holds money, or moved in
+            the period.
         money_in:
           type: string
           format: decimal
           pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
-          description: Cash in during the period; transfers between tills and openings
-            left out.
+          description: The cash lines' `money_in`, added up. Transfers between cash
+            accounts, openings, and documents cancelled within the period are left
+            out.
         money_out:
           type: string
           format: decimal
           pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          description: The cash lines' `money_out`, added up.
       required:
       - cash_accounts
-      - date_from
-      - date_to
+      - currency
       - money_in
       - money_out
       - payables
-      - period
       - receivables
+    FinanceSummary:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/PeriodEnum'
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceCurrency'
+          description: One entry per currency; amounts in two currencies are never
+            added.
+      required:
+      - currencies
+      - date_from
+      - date_to
+      - period
     GeocodeMatch:
       type: object
       description: One level of the address, resolved to a row the client can select.
@@ -10116,6 +10185,21 @@ components:
       description: |-
         * `debit` - Debit
         * `credit` - Credit
+    LedgerSettings:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        closed_through:
+          type: string
+          format: date
+          nullable: true
+          description: 'The books are closed through this day, inclusive: nothing
+            can be dated on or before it. Null: nothing is closed. Not after today.'
+      required:
+      - closed_through
     LoginRequest:
       type: object
       description: |-
@@ -12413,6 +12497,19 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+    PatchedLedgerSettingsRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        closed_through:
+          type: string
+          format: date
+          nullable: true
+          description: 'The books are closed through this day, inclusive: nothing
+            can be dated on or before it. Null: nothing is closed. Not after today.'
     PatchedMaintenanceVisitWriteRequest:
       type: object
       description: |-

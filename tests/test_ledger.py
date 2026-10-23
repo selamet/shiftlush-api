@@ -28,6 +28,7 @@ from django.urls import reverse
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
+from apps.audit.models import AuditLog
 from apps.billing import services as billing
 from apps.billing.models import InvoiceDraft, InvoiceStatus
 from apps.companies.models import Company
@@ -74,7 +75,7 @@ from apps.ledger.services import (
     record_payment_out,
     record_transfer,
 )
-from apps.users.models import Role, User
+from apps.users.models import Role, User, UserCustomer
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
 from core.exceptions import Conflict
@@ -2097,10 +2098,33 @@ class TestApi:
             ).status_code
             == 403
         )
+        standing = receive(books, "5.00")
+        assert tech.post(reverse("ledger-collection-cancel", args=[standing.pk])).status_code == 403
+        assert Collection.objects.get(pk=standing.pk).cancelled_at is None
+        parts = Supplier.objects.create(company=books.company, name="Parts")
+        supplier_url = reverse("ledger-supplier-detail", args=[parts.pk])
+        till_url = reverse("ledger-cash-account-detail", args=[books.till.pk])
+        assert tech.post(reverse("ledger-supplier-list"), {"name": "Y"}).status_code == 403
+        assert tech.patch(supplier_url, {"name": "Y"}, format="json").status_code == 403
+        assert tech.patch(till_url, {"name": "Y"}, format="json").status_code == 403
 
         ops = api_for(roles[Role.OPERATIONS])
         made = keyed(ops, reverse("ledger-collection-list"), _collection_body(books))
         assert made.status_code == 201, made.data
+        # What it records against, and nothing more of the ledger.
+        assert ops.get(reverse("ledger-cash-account-list")).status_code == 200
+        assert ops.get(till_url).status_code == 200
+        assert ops.get(reverse("ledger-supplier-list")).status_code == 200
+        assert ops.get(reverse("ledger-collection-list")).status_code == 403
+        assert (
+            ops.get(reverse("ledger-cash-account-movements", args=[books.till.pk])).status_code
+            == 403
+        )
+        assert ops.get(reverse("ledger-finance-summary")).status_code == 403
+        assert ops.get(reverse("ledger-settings")).status_code == 403
+        assert ops.patch(till_url, {"name": "Kasa"}, format="json").status_code == 403
+        assert ops.post(reverse("ledger-supplier-list"), {"name": "Ops Parts"}).status_code == 201
+        assert ops.patch(supplier_url, {"name": "Parts AS"}, format="json").status_code == 200
         assert (
             keyed(ops, reverse("ledger-payment-out-list"), _payment_out_body(books)).status_code
             == 201
@@ -2122,6 +2146,8 @@ class TestApi:
             == 201
         )
         assert admin.get(reverse("ledger-finance-summary")).status_code == 200
+        assert admin.patch(till_url, {"name": "Kasa"}, format="json").status_code == 403
+        assert admin.get(reverse("ledger-settings")).status_code == 403
 
         accountant = api_for(roles[Role.ACCOUNTANT])
         for basename, body in DOCUMENTS.items():
@@ -2141,6 +2167,9 @@ class TestApi:
             format="json",
         )
         assert made_cash.status_code == 201, made_cash.data
+        assert accountant.patch(till_url, {"name": "Kasa"}, format="json").status_code == 200
+        assert accountant.patch(supplier_url, {"notes": "x"}, format="json").status_code == 200
+        assert accountant.get(reverse("ledger-settings")).status_code == 200
         assert (
             accountant.post(
                 reverse("ledger-account-list"),
@@ -2245,24 +2274,224 @@ class TestApi:
 
         today_view = by_period["today"]
         assert (today_view["date_from"], today_view["date_to"]) == ("2026-10-15", "2026-10-15")
+        (lira,) = today_view["currencies"]
+        assert lira["currency"] == "TRY"
         # 1000 - 300 - 200 owed by the customer; 700 - 50 owed to the supplier.
-        assert (today_view["receivables"], today_view["payables"]) == ("500.00", "650.00")
-        cash = {row["name"]: row for row in today_view["cash_accounts"]}
+        assert (lira["receivables"], lira["payables"]) == ("500.00", "650.00")
+        cash = {row["name"]: row for row in lira["cash_accounts"]}
         assert (cash["Merkez kasa"]["balance"], cash["Ziraat"]["balance"]) == ("150.00", "300.00")
-        assert (today_view["money_in"], today_view["money_out"]) == ("300.00", "0.00")
+        assert (lira["money_in"], lira["money_out"]) == ("300.00", "0.00")
         assert (cash["Merkez kasa"]["money_in"], cash["Ziraat"]["money_in"]) == ("300.00", "0.00")
 
-        assert (by_period["yesterday"]["money_in"], by_period["yesterday"]["money_out"]) == (
-            "0.00",
-            "50.00",
-        )
+        (yesterday,) = by_period["yesterday"]["currencies"]
+        assert (yesterday["money_in"], yesterday["money_out"]) == ("0.00", "50.00")
         month = by_period["month"]
-        assert (month["date_from"], month["money_in"], month["money_out"]) == (
+        (month_lira,) = month["currencies"]
+        assert (month["date_from"], month_lira["money_in"], month_lira["money_out"]) == (
             "2026-10-01",
             "500.00",
             "50.00",
         )
         assert api_for(books.owner).get(url, {"period": "decade"}).status_code == 400
+
+    def test_operations_records_a_collection_from_what_it_can_see(self, books):
+        ops = api_for(staff(books.company, Role.OPERATIONS))
+        draft = owed(books, books.customer, "800.00", days_ago=10)
+
+        # Only ids its own reads hand it: the customer page and the till picker.
+        customer = ops.get(reverse("customer-detail", args=[books.customer.pk])).json()
+        assert customer["account"] == {
+            "id": str(books.account.pk),
+            "balance": "800.00",
+            "currency": "TRY",
+        }
+        tills = ops.get(reverse("ledger-cash-account-list")).json()["results"]
+        till = next(row for row in tills if row["name"] == "Merkez kasa")
+        drafts = ops.get(reverse("invoice-draft-list"))
+        if drafts.status_code == 200:
+            invoice_id = drafts.json()["results"][0]["id"]
+        else:
+            invoice_id = None
+
+        body: dict[str, Any] = {
+            "account": customer["account"]["id"],
+            "cash_account": till["id"],
+            "amount": "300.00",
+            "method": "cash",
+        }
+        if invoice_id is not None:
+            body["applies"] = [{"invoice": invoice_id, "amount": "300.00"}]
+        response = keyed(ops, reverse("ledger-collection-list"), body)
+
+        assert response.status_code == 201, response.data
+        after = ops.get(reverse("customer-detail", args=[books.customer.pk])).json()
+        assert after["account"]["balance"] == "500.00"
+        if invoice_id is not None:
+            assert invoice_remaining(draft) == Decimal("500.00")
+
+    def test_the_customer_read_shows_the_account_to_who_may_see_it(
+        self, books, django_assert_max_num_queries
+    ):
+        owed(books, books.customer, "100.00", days_ago=1)
+        tech = staff(books.company, Role.TECHNICIAN)
+        UserCustomer.objects.create(
+            company=books.company, user=tech, customer=books.customer, assigned_by=books.owner
+        )
+        url = reverse("customer-detail", args=[books.customer.pk])
+
+        assert "account" not in api_for(tech).get(url).json()
+        for role in (Role.OPERATIONS, Role.ACCOUNTANT, Role.ADMIN):
+            account = api_for(staff(books.company, role)).get(url).json()["account"]
+            assert (account["id"], account["balance"]) == (str(books.account.pk), "100.00")
+
+        # One query for every row's account, not one per customer.
+        client = api_for(books.owner)
+        client.get(reverse("customer-list"))
+        with django_assert_max_num_queries(12) as few:
+            client.get(reverse("customer-list"))
+        for n in range(5):
+            owed(books, make_customer(books.company, f"More {n}"), "10.00", days_ago=1)
+        with django_assert_max_num_queries(len(few.captured_queries)):
+            rows = client.get(reverse("customer-list")).json()["results"]
+        assert {row["account"]["balance"] for row in rows} == {"100.00", "10.00"}
+
+    def test_inactive_accounts_take_no_documents(self, books):
+        books.account.is_active = False
+        books.account.save(update_fields=["is_active", "updated_at"])
+
+        response = keyed(
+            api_for(books.owner), reverse("ledger-collection-list"), _collection_body(books)
+        )
+
+        assert response.status_code == 400
+        assert error_of(response)[1] == [("account", "does_not_exist")]
+        assert Collection.objects.count() == 0
+
+    def test_open_account_race_is_a_unique_error(self, books):
+        tech = staff(books.company, Role.TECHNICIAN)
+        ledger_services.open_account(
+            company_id=books.company.id, kind=AccountKind.STAFF, user=tech, by=books.owner
+        )
+        # The other request passed the pre-check before this one committed.
+        with (
+            patch.object(ledger_services, "_has_account", return_value=False),
+            pytest.raises(ValidationError) as error,
+        ):
+            ledger_services.open_account(
+                company_id=books.company.id, kind=AccountKind.STAFF, user=tech, by=books.owner
+            )
+        assert codes(error) == {"user": "unique"}
+        assert Account.objects.filter(user=tech).count() == 1
+
+    def test_the_books_can_be_closed_and_reopened(self, books):
+        owner = api_for(books.owner)
+        bookkeeper = staff(books.company, Role.ACCOUNTANT)
+        accountant = api_for(bookkeeper)
+        url = reverse("ledger-settings")
+        closed = local_today() - timedelta(days=10)
+
+        assert owner.get(url).json() == {"closed_through": None}
+        future = owner.patch(url, {"closed_through": str(local_today() + timedelta(days=1))})
+        assert future.status_code == 400
+        assert error_of(future)[1] == [("closed_through", "invalid")]
+
+        response = accountant.patch(url, {"closed_through": str(closed)}, format="json")
+        assert response.status_code == 200, response.data
+        assert response.json() == {"closed_through": str(closed)}
+        # Who closed the books, and to what, is on the audit trail.
+        (entry,) = [
+            row
+            for row in AuditLog.objects.filter(table_name="company", record_id=books.company.pk)
+            if (row.new_values or {}).get("ledger_closed_through") == str(closed)
+        ]
+        assert entry.user_id == bookkeeper.pk
+
+        for day in (closed, closed - timedelta(days=3)):
+            refused = keyed(
+                owner,
+                reverse("ledger-collection-list"),
+                {**_collection_body(books), "date": str(day)},
+            )
+            assert refused.status_code == 400
+            assert error_of(refused)[1] == [("date", "PERIOD_CLOSED")]
+        allowed = keyed(
+            owner,
+            reverse("ledger-collection-list"),
+            {**_collection_body(books), "date": str(closed + timedelta(days=1))},
+        )
+        assert allowed.status_code == 201, allowed.data
+
+        # Reopening is allowed: moving the date back, or clearing it.
+        earlier = closed - timedelta(days=30)
+        assert owner.patch(url, {"closed_through": str(earlier)}, format="json").status_code == 200
+        assert (
+            keyed(
+                owner,
+                reverse("ledger-collection-list"),
+                {**_collection_body(books), "date": str(closed)},
+            ).status_code
+            == 201
+        )
+        assert owner.patch(url, {"closed_through": None}, format="json").json() == {
+            "closed_through": None
+        }
+
+    def test_the_summary_shows_an_inactive_bank_that_holds_money(self, books):
+        bank = bank_of(books, "Old bank")
+        receive(books, "120.00", cash_account=bank)
+        bank.is_active = False
+        bank.save(update_fields=["is_active", "updated_at"])
+        empty = bank_of(books, "Closed and empty")
+        empty.is_active = False
+        empty.save(update_fields=["is_active", "updated_at"])
+
+        view = api_for(books.owner).get(reverse("ledger-finance-summary")).json()
+
+        (lira,) = view["currencies"]
+        lines = {row["name"]: row for row in lira["cash_accounts"]}
+        assert "Closed and empty" not in lines
+        assert (lines["Old bank"]["is_active"], lines["Old bank"]["balance"]) == (False, "120.00")
+        assert lines["Old bank"]["money_in"] == "120.00"
+        # The totals are the lines, added up.
+        assert lira["money_in"] == f"{sum(Decimal(r['money_in']) for r in lines.values()):.2f}"
+        assert lira["money_out"] == f"{sum(Decimal(r['money_out']) for r in lines.values()):.2f}"
+
+    def test_a_collection_cancelled_the_same_day_nets_to_nothing(self, books):
+        cancel_collection(receive(books, "75.00"), by=books.owner)
+        kept = receive(books, "20.00")
+        assert kept
+
+        view = api_for(books.owner).get(reverse("ledger-finance-summary")).json()
+
+        (lira,) = view["currencies"]
+        assert (lira["money_in"], lira["money_out"]) == ("20.00", "0.00")
+        (till,) = lira["cash_accounts"]
+        assert (till["money_in"], till["money_out"], till["balance"]) == ("20.00", "0.00", "20.00")
+
+    def test_the_summary_keeps_currencies_apart(self, books):
+        dollars = CashAccount.objects.create(
+            company=books.company, kind=CashKind.BANK, name="USD", currency="USD"
+        )
+        euro_customer = make_customer(books.company, "Abroad")
+        abroad = Account.objects.get(customer=euro_customer)
+        abroad.currency = "USD"
+        abroad.save(update_fields=["currency", "updated_at"])
+        receive(books, "100.00")
+        receive(books, "40.00", account=abroad, cash_account=dollars)
+
+        view = api_for(books.owner).get(reverse("ledger-finance-summary")).json()
+
+        by_currency = {row["currency"]: row for row in view["currencies"]}
+        assert set(by_currency) == {"TRY", "USD"}
+        assert (by_currency["TRY"]["money_in"], by_currency["TRY"]["payables"]) == (
+            "100.00",
+            "100.00",
+        )
+        assert (by_currency["USD"]["money_in"], by_currency["USD"]["payables"]) == (
+            "40.00",
+            "40.00",
+        )
+        assert [row["name"] for row in by_currency["USD"]["cash_accounts"]] == ["USD"]
 
     @pytest.mark.parametrize(
         ("basename", "field"),
