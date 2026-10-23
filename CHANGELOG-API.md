@@ -315,6 +315,19 @@ carried as compatibility shims nobody will ever remove.
     (`409 REPORT_FILE_CANNOT_BE_DELETED`), and technicians do not see them.
   - New notification kind `monthly_reports_ready`; `AttachmentCategory` gains
     `monthly_report`.
+- **Error code `IDEMPOTENCY_KEY_IN_FLIGHT` (409)** on every replay-protected
+  `POST` (issue #155).
+  - The `Idempotency-Key` is now reserved before the work starts, not stored
+    after it. A request that arrives while an earlier one with the same key is
+    still running is refused with this code, and nothing is done.
+  - Before this, both requests ran: a timed-out report send that was retried
+    mailed every recipient twice.
+  - A request's work and its stored answer commit together. A failed request
+    (any non-2xx, or a crash) is rolled back and releases its key, so the retry
+    runs. A reservation left by a request that never finished is released after
+    60 seconds; if that request was in fact still working, its work is rolled
+    back and it answers `409 IDEMPOTENCY_KEY_IN_FLIGHT` too.
+  - Backwards compatible: a new code on a status the endpoints already return.
 
 ### Changed
 
@@ -668,3 +681,8 @@ carried as compatibility shims nobody will ever remove.
   `Retry-After` are both seconds, and both mean "when one more request is
   allowed" — at zero remaining they are the same number. All four are listed in
   `Access-Control-Expose-Headers`, so a browser client can actually read them.
+- `409 IDEMPOTENCY_KEY_IN_FLIGHT` means "your earlier request with this key is
+  still running", not "this failed". Retry later with the **same** key and the
+  same body: you then get the stored answer, or the request runs if the first
+  attempt failed. A few seconds of backoff is enough for every endpoint today.
+  Never retry it with a new key, which is how the same thing gets done twice.

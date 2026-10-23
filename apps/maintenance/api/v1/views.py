@@ -148,7 +148,10 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
                 required=True,
                 description=(
                     "Generated once per visit form and reused on every retry, so a "
-                    "visit sent again from a device outbox is recorded once."
+                    "visit sent again from a device outbox is recorded once. While "
+                    "the first request with this key is still running, a retry is "
+                    "refused with 409 IDEMPOTENCY_KEY_IN_FLIGHT and nothing is "
+                    "recorded; retry later with the same key to receive the answer."
                 ),
             )
         ],

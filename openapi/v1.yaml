@@ -3700,7 +3700,9 @@ paths:
         schema:
           type: string
         description: Generated once per visit form and reused on every retry, so a
-          visit sent again from a device outbox is recorded once.
+          visit sent again from a device outbox is recorded once. While the first
+          request with this key is still running, a retry is refused with 409 IDEMPOTENCY_KEY_IN_FLIGHT
+          and nothing is recorded; retry later with the same key to receive the answer.
         required: true
       tags:
       - maintenance-visits
@@ -11903,6 +11905,7 @@ components:
       - INVITATION_ALREADY_PENDING
       - IDEMPOTENCY_KEY_REUSED
       - IDEMPOTENCY_KEY_REQUIRED
+      - IDEMPOTENCY_KEY_IN_FLIGHT
       - ELEVATOR_ALREADY_CONTRACTED
       - NO_ACTIVE_CONTRACT_FOR_ELEVATOR
       - CONTACT_NOT_OF_CUSTOMER
@@ -11968,6 +11971,7 @@ components:
         * `INVITATION_ALREADY_PENDING` - This address already holds an invitation that has not been accepted
         * `IDEMPOTENCY_KEY_REUSED` - Idempotency key was reused with a different request body
         * `IDEMPOTENCY_KEY_REQUIRED` - This request must carry an Idempotency-Key header
+        * `IDEMPOTENCY_KEY_IN_FLIGHT` - A request with this Idempotency-Key is still being processed; retry later
         * `ELEVATOR_ALREADY_CONTRACTED` - Elevator is already covered by an open contract
         * `NO_ACTIVE_CONTRACT_FOR_ELEVATOR` - The named contract is not active or does not cover this elevator
         * `CONTACT_NOT_OF_CUSTOMER` - The contact does not belong to this customer
