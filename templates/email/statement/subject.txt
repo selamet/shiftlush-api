@@ -1,1 +1,1 @@
-{% load email_format %}{{ company_name }} — hesap ekstresi ({{ account_name }})
+{% load email_format %}{% autoescape off %}{{ company_name }} — hesap ekstresi ({{ account_name }}){% endautoescape %}

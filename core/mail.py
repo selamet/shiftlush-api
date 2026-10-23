@@ -79,7 +79,9 @@ def _send(
     # that reads the same in every locale. The override was a guard that could
     # not fail and could not have caught an English e-mail either. See the
     # deviations table for why the templates are written this way.
-    subject = render_to_string(f"email/{template}/subject.txt", context).strip()
+    # One line, whatever the names in it hold: a newline in a header raises
+    # BadHeaderError, which the send below would swallow, dropping the mail.
+    subject = " ".join(render_to_string(f"email/{template}/subject.txt", context).split())
     text_body = render_to_string(f"email/{template}/body.txt", context)
     html_body = render_to_string(f"email/{template}/body.html", context)
 

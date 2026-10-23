@@ -9,10 +9,13 @@ two exports.
 
 from __future__ import annotations
 
+import csv
+import io
 import random
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from django.db import IntegrityError, connection, transaction
@@ -1032,6 +1035,28 @@ class TestCsv:
         assert priced[2:4] == ["15.09.2026", "14.10.2026"]
         assert priced[4:6] == ["1750,50", "350,10"]
         assert priced[8] == "Taslak"
+
+    def test_free_text_never_runs_as_a_formula(self):
+        # Only attributes are read, so a stand-in draft is enough.
+        draft = SimpleNamespace(
+            status=InvoiceStatus.DRAFT,
+            customer=SimpleNamespace(legal_name='=HYPERLINK("http://x")'),
+            contract=SimpleNamespace(contract_number="+90"),
+            period_start=date(2026, 9, 1),
+            period_end=date(2026, 9, 30),
+            subtotal=Decimal("-10.50"),
+            vat_amount=Decimal("-2.10"),
+            total=Decimal("-12.60"),
+            currency="TRY",
+            invoice_number="@SUM(A1)",
+        )
+        text = documents.export_csv([cast(Any, draft)])
+        _, row = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+        assert row[0] == '\'=HYPERLINK("http://x")'
+        assert row[1] == "'+90"
+        assert row[9] == "'@SUM(A1)"
+        # Amounts the code formats stay numbers, negative ones included.
+        assert row[4:7] == ["-10,50", "-2,10", "-12,60"]
 
     def test_it_is_every_matching_draft_not_a_page(self, firm):
         for _ in range(30):

@@ -7,7 +7,9 @@ directly and ask the aggregate queries what they add up to.
 
 from __future__ import annotations
 
+import csv
 import importlib
+import io
 import random
 import threading
 import unittest
@@ -26,6 +28,7 @@ from django.db import IntegrityError, close_old_connections, connection, transac
 from django.db.models import QuerySet
 from django.test import TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
@@ -80,6 +83,7 @@ from apps.ledger.statement import (
     build_statement_html,
     render_statement_pdf,
     send_statement,
+    statement_csv,
     statement_rows,
 )
 from apps.users.models import Role, User, UserCustomer
@@ -2778,7 +2782,7 @@ class TestStatement:
         assert "attachment" in response["Content-Disposition"]
         text = response.content.decode("utf-8")
         assert text.startswith("\ufeff")
-        lines = [line.split(";") for line in text.lstrip("\ufeff").split("\r\n") if line]
+        lines = list(csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";"))
         header, opening, *rows, closing = lines
         assert header == ["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]
 
@@ -2882,6 +2886,64 @@ class TestStatement:
             again = keyed(client, url, body, key="send-1")
         assert again.status_code == 200
         assert django_mail.outbox == []
+
+    def test_csv_cells_never_run_as_formulas(self, statement_books):
+        books = statement_books
+        record_manual_entry(
+            account=books.account,
+            direction=Direction.CREDIT,
+            amount=Decimal("1000.00"),
+            date=local_today(),
+            reason='=HYPERLINK("http://x")',
+            by=books.owner,
+        )
+        found = statement_rows(books.account, start=None, end=None)
+        text = statement_csv(found)
+        *_, formula, closing = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+        assert formula[1] == '\'=HYPERLINK("http://x")'
+        # Numbers the code formats itself stay numbers, minus sign and all.
+        assert formula[2:] == ["0,00", "1000,00", "-475,00"]
+        assert closing[-1] == "-475,00"
+
+    def test_rows_on_the_same_day_keep_the_order_they_were_made_in(self, books):
+        day = local_today() - timedelta(days=1)
+        for amount, reason in (("10.00", "First"), ("3.00", "Second"), ("7.00", "Third")):
+            record_manual_entry(
+                account=books.account,
+                direction=Direction.DEBIT,
+                amount=Decimal(amount),
+                date=day,
+                reason=reason,
+                by=books.owner,
+            )
+        rows = statement_rows(books.account, start=day, end=day).rows
+        assert [(r.description, r.balance) for r in rows] == [
+            ("First", Decimal("10.00")),
+            ("Second", Decimal("13.00")),
+            ("Third", Decimal("20.00")),
+        ]
+        # Made in the same instant, the id breaks the tie (ids are time-ordered).
+        Movement.objects.filter(account=books.account).update(created_at=timezone.now())
+        ids = sorted(Movement.objects.filter(account=books.account).values_list("pk", flat=True))
+        rows = statement_rows(books.account, start=day, end=day).rows
+        assert [r.movement_id for r in rows] == ids
+        assert rows[-1].balance == Decimal("20.00")
+
+    def test_a_subject_reads_as_written_and_the_mail_is_sent(
+        self, statement_books, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        books = statement_books
+        monkeypatch.setattr(
+            "apps.ledger.statement.render_statement_pdf", lambda statement, *, company: b"%PDF-1"
+        )
+        contact(books, "one@example.com")
+        Account.objects.filter(pk=books.account.pk).update(name="Yılmaz & Oğlu\nX")
+        account = Account.objects.get(pk=books.account.pk)
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=True):
+            send_statement(account, start=None, end=None, by=books.owner)
+        (message,) = django_mail.outbox
+        assert message.subject == "Firm A — hesap ekstresi (Yılmaz & Oğlu X)"
 
     def test_send_without_a_recipient_is_refused(self, books, django_capture_on_commit_callbacks):
         contact(books, "not-ticked@example.com", ticked=False)

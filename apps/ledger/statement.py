@@ -37,6 +37,7 @@ from apps.ledger.models import Account, Direction, Movement
 from apps.reports.services import recipients_of
 from apps.users.models import User
 from core import mail
+from core.csv_cells import safe_cell
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict
 
@@ -169,7 +170,8 @@ def statement_csv(statement: Statement) -> str:
         writer.writerow(
             [
                 _date(row.date),
-                _description(row, reversal),
+                # Typed by a person: never a formula (core.csv_cells).
+                safe_cell(_description(row, reversal)),
                 _decimal(row.debit),
                 _decimal(row.credit),
                 _decimal(row.balance),

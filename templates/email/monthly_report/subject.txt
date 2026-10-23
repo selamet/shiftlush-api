@@ -1,1 +1,1 @@
-{% load email_format %}{{ company_name }} — {{ period|tr_month }} bakım raporu ({{ customer_name }})
+{% load email_format %}{% autoescape off %}{{ company_name }} — {{ period|tr_month }} bakım raporu ({{ customer_name }}){% endautoescape %}
