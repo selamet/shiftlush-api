@@ -31,6 +31,7 @@ from apps.users.models import Role, User
 from core import mail, storage
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict
+from core.scheduling import local_today
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,23 @@ def _discard(stored: list[Attachment]) -> None:
 
 def _summary(data: ReportData) -> dict[str, object]:
     return {**data.summary.as_json(), "lead": asdict(data.lead)}
+
+
+def live_file(report: CustomerReport) -> Attachment | None:
+    """The report's PDF, or None when it is missing, deleted or purged.
+
+    Read by id rather than through `report.file`, which raises on a deleted
+    attachment instead of saying there is none.
+    """
+    if report.file_id is None:
+        return None
+    return (
+        Attachment.unscoped.filter(
+            pk=report.file_id, company_id=report.company_id, is_deleted=False
+        )
+        .exclude(storage_key="")
+        .first()
+    )
 
 
 def recipients_of(customer: Customer) -> list[str]:
@@ -169,12 +187,19 @@ def send_report(report: CustomerReport, *, by: User | None) -> CustomerReport:
     One message per recipient with the PDF attached, after the transaction
     commits. A send that fails marks the report failed with its reason; it is
     not retried. `by` is the person who chose to send it, None for the job.
+
+    A report whose file has gone missing is rendered again first, from the
+    current record, so what is sent is always a PDF the report still holds.
     """
     emails = recipients_of(report.customer)
     if not emails:
         raise Conflict(ErrorCode.REPORT_NO_RECIPIENT)
-    assert report.file is not None
-    pdf, _ = _read_file(report.file)
+    file = live_file(report)
+    if file is None:
+        regenerate(report, today=local_today())
+        file = live_file(report)
+    assert file is not None
+    pdf, _ = _read_file(file)
     portal = set(
         PortalAccount.objects.filter(customer=report.customer, is_active=True).values_list(
             "email", flat=True
@@ -216,10 +241,11 @@ def regenerate(report: CustomerReport, *, today: date) -> CustomerReport:
     """Render the report again from the current record and replace its file.
 
     The old attachment is soft-deleted, not removed, so the audit trail still
-    reaches it. Nothing is sent.
+    reaches it. A report whose old file is already gone gets its new one all
+    the same. Nothing is sent.
     """
     data = build_report(report.customer, report.period, today=today)
-    old = report.file
+    old = live_file(report)
     stored: list[Attachment] = []
     try:
         report.file = _store_pdf(report.customer, data, stored)

@@ -1611,6 +1611,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerReportRead'
           description: ''
+  /api/v1/customer-reports/{id}/download-url/:
+    get:
+      operationId: customer_reports_download_url_retrieve
+      description: |-
+        A short-lived URL for the report's PDF, as the attachments endpoint gives.
+
+        Here so that whoever may read reports may read their file, without
+        needing to read every attachment in the firm.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+          description: ''
   /api/v1/customer-reports/{id}/regenerate/:
     post:
       operationId: customer_reports_regenerate_create
@@ -11889,6 +11916,8 @@ components:
       - INVOICE_LINES_NEED_PRICE
       - MONTHLY_REPORT_NEEDS_EMAIL
       - REPORT_NO_RECIPIENT
+      - REPORT_FILE_CANNOT_BE_DELETED
+      - CATEGORY_NOT_UPLOADABLE
       - DUPLICATE_INVOICE_NUMBER
       - FAULT_TRANSITION_NOT_ALLOWED
       - PLAN_ROW_CLOSED
@@ -11952,6 +11981,8 @@ components:
         * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
         * `MONTHLY_REPORT_NEEDS_EMAIL` - A contact without an e-mail address cannot receive the monthly report
         * `REPORT_NO_RECIPIENT` - Nobody on this customer is set to receive the monthly report
+        * `REPORT_FILE_CANNOT_BE_DELETED` - A monthly report's file belongs to the report and cannot be deleted
+        * `CATEGORY_NOT_UPLOADABLE` - Files of this category are made by the server and cannot be uploaded
         * `DUPLICATE_INVOICE_NUMBER` - Another issued invoice of this company already has this number
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
         * `PLAN_ROW_CLOSED` - The planned visit is done or cancelled; its day can no longer change

@@ -1393,3 +1393,109 @@ class TestApi:
         other = client.get(reverse("portal-file-download-url", args=[theirs.file_id]))
         assert other.status_code == 404
         assert client.get(reverse("portal-report-detail", args=[theirs.pk])).status_code == 404
+
+
+# Final review: the report file is the server's to make and keep ----------------
+
+
+def lose_file(report: CustomerReport) -> CustomerReport:
+    """Soft-delete the report's file behind its back, as the old DELETE could."""
+    Attachment.unscoped.filter(pk=str(report.file_id)).update(
+        is_deleted=True, deleted_at=at(NEXT_MONTH, 9)
+    )
+    return CustomerReport.unscoped.get(pk=report.pk)
+
+
+@pytest.mark.usefixtures("pdf", "bucket")
+class TestReportFiles:
+    def test_a_report_file_cannot_be_deleted_through_attachments(self, month):
+        report = made(month, month.a)
+        response = api_for(month.owner).delete(reverse("attachment-detail", args=[report.file_id]))
+        assert (response.status_code, response.data["error"]["code"]) == (
+            409,
+            "REPORT_FILE_CANNOT_BE_DELETED",
+        )
+        assert not Attachment.unscoped.get(pk=str(report.file_id)).is_deleted
+
+    def test_regenerate_renders_a_new_file_when_the_old_one_is_gone(self, month):
+        report = lose_file(made(month, month.a))
+        response = api_for(month.owner).post(
+            reverse("customer-report-regenerate", args=[report.pk])
+        )
+        assert response.status_code == 200, response.data
+        assert str(response.data["file"]) != str(report.file_id)
+        assert not Attachment.unscoped.get(pk=response.data["file"]).is_deleted
+        with system_context():
+            CustomerReport.unscoped.filter(pk=report.pk).update(file=None)
+            again = regenerate(CustomerReport.unscoped.get(pk=report.pk), today=NEXT_MONTH)
+        assert again.file_id is not None
+
+    def test_send_renders_the_file_again_when_it_is_gone(
+        self, month, django_capture_on_commit_callbacks
+    ):
+        report = lose_file(made(month, month.a))
+        tick(month, month.a)
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api_for(month.owner).post(
+                reverse("customer-report-send", args=[report.pk]), {}, format="json", headers=KEY
+            )
+        assert response.status_code == 200, response.data
+        assert response.data["delivery"] == "sent"
+        assert str(response.data["file"]) != str(report.file_id)
+        assert [m.attachments[0][1] for m in report_mails()] == [PDF]
+
+    def test_a_technician_cannot_reach_report_files(self, month):
+        report = made(month, month.a)
+        with system_context():
+            month.tech.customer_assignments.create(company=month.company, customer=month.a)
+        client = api_for(month.tech)
+        listed = client.get(reverse("attachment-list")).data["results"]
+        assert str(report.file_id) not in {row["id"] for row in listed}
+        download = client.get(reverse("attachment-download-url", args=[report.file_id]))
+        assert download.status_code == 404
+
+    def test_the_accountant_downloads_a_report_and_the_technician_does_not(self, month):
+        report = made(month, month.a)
+        url = reverse("customer-report-download-url", args=[report.pk])
+        response = api_for(staff(month, Role.ACCOUNTANT)).get(url)
+        assert response.status_code == 200, response.data
+        assert set(response.data) == {"download_url", "expires_in"}
+        assert (
+            Attachment.unscoped.get(pk=str(report.file_id)).storage_key
+            in response.data["download_url"]
+        )
+        assert api_for(month.tech).get(url).status_code == 403
+
+    def test_the_job_skips_a_deactivated_firm(self, month, monkeypatch):
+        Company.objects.filter(pk=month.company.pk).update(is_active=False)
+        result = run_job(NEXT_MONTH, monkeypatch)
+        assert reports(month) == []
+        assert result["created"] == 0
+
+    def test_nobody_uploads_a_monthly_report(self, month, bucket):
+        client = api_for(month.owner)
+        ticket = client.post(
+            reverse("attachment-upload-url"),
+            {
+                "object_type": ObjectType.CUSTOMER,
+                "object_id": str(month.a.pk),
+                "category": AttachmentCategory.MONTHLY_REPORT,
+                "mime_type": "application/pdf",
+                "size_bytes": 1000,
+            },
+            format="json",
+        )
+        refused = [{"field": "category", "code": "CATEGORY_NOT_UPLOADABLE"}]
+        assert ticket.status_code == 400
+        assert ticket.data["error"]["details"] == refused
+        key = f"{month.company.id}/customer/{month.a.pk}/monthly_report/forged.pdf"
+        bucket.put("shiftlush-dev", key, 1000, "application/pdf")
+        confirmed = client.post(
+            reverse("attachment-list"),
+            {"storage_key": key, "original_filename": "r.pdf"},
+            format="json",
+        )
+        assert confirmed.status_code == 400
+        assert confirmed.data["error"]["details"] == refused
+        assert not Attachment.unscoped.filter(storage_key=key).exists()
+        assert ("shiftlush-dev", key) not in bucket.objects

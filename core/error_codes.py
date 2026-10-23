@@ -127,6 +127,14 @@ class ErrorCode(models.TextChoices):
         "REPORT_NO_RECIPIENT",
         "Nobody on this customer is set to receive the monthly report",
     )
+    REPORT_FILE_CANNOT_BE_DELETED = (
+        "REPORT_FILE_CANNOT_BE_DELETED",
+        "A monthly report's file belongs to the report and cannot be deleted",
+    )
+    CATEGORY_NOT_UPLOADABLE = (
+        "CATEGORY_NOT_UPLOADABLE",
+        "Files of this category are made by the server and cannot be uploaded",
+    )
     DUPLICATE_INVOICE_NUMBER = (
         "DUPLICATE_INVOICE_NUMBER",
         "Another issued invoice of this company already has this number",

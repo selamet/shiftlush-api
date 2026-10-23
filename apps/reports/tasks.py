@@ -33,6 +33,6 @@ def monthly_customer_reports() -> dict[str, int]:
     send = today - month_end <= MAIL_WINDOW
     total = RunResult()
     with system_context():
-        for company in Company.objects.all():
+        for company in Company.objects.filter(is_active=True):
             total.add(generate(company, period, today=today, send=send))
     return total.as_dict()

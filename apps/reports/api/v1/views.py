@@ -14,10 +14,13 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
+from apps.attachments.api.v1.serializers import DownloadUrlSerializer
+from apps.attachments.api.v1.views import download_url_response
 from apps.reports import content, documents, services
 from apps.reports.api.v1.serializers import CustomerReportReadSerializer, ReportPreviewSerializer
 from apps.reports.models import CustomerReport
@@ -66,8 +69,25 @@ class CustomerReportViewSet(
         # go at once, and a failure recorded as FAILED would be overwritten by
         # the SENT written after it.
         with transaction.atomic():
-            services.send_report(report, by=authenticated_user(request))
+            try:
+                services.send_report(report, by=authenticated_user(request))
+            except documents.PdfRenderingUnavailable as exc:
+                # Only when the file was missing and had to be rendered again.
+                raise ServiceUnavailable() from exc
         return self._read(report)
+
+    @extend_schema(responses={200: DownloadUrlSerializer})
+    @action(detail=True, methods=["get"], url_path="download-url")
+    def download_url(self, request: Request, pk: str | None = None) -> Response:
+        """A short-lived URL for the report's PDF, as the attachments endpoint gives.
+
+        Here so that whoever may read reports may read their file, without
+        needing to read every attachment in the firm.
+        """
+        file = services.live_file(self.get_object())
+        if file is None:
+            raise NotFound()
+        return download_url_response(file)
 
     @extend_schema(
         request=ReportPreviewSerializer, responses={(200, "application/pdf"): OpenApiTypes.BINARY}
