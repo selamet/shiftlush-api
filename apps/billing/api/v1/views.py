@@ -16,6 +16,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
@@ -32,6 +33,7 @@ from apps.billing.api.v1.serializers import (
     InvoiceMarkPaidSerializer,
 )
 from apps.billing.models import InvoiceDraft, InvoiceLine
+from apps.ledger.balances import with_collected
 from core.dates import add_months
 from core.exceptions import ServiceUnavailable
 from core.filters import TenantFilterSet
@@ -70,6 +72,20 @@ class InvoiceDraftFilter(TenantFilterSet):
         return queryset.filter(unpriced) if value else queryset.exclude(unpriced)
 
 
+def _ledger_date_as(field: str, error: ValidationError) -> ValidationError:
+    """The ledger's date error, named as the request named the date.
+
+    Issuing and marking paid post a movement dated `invoice_date` or `paid_on`;
+    a date the ledger refuses (after today, in a closed period) comes back on
+    the movement's `date`, which this request never sent.
+    """
+    detail = error.detail
+    if not isinstance(detail, dict) or "date" not in detail:
+        return error
+    renamed = {(field if key == "date" else key): value for key, value in detail.items()}
+    return ValidationError(renamed)
+
+
 class InvoiceDraftViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -86,8 +102,10 @@ class InvoiceDraftViewSet(
     ordering_fields = ["period_start", "total", "invoice_date"]
 
     def get_queryset(self) -> QuerySet[InvoiceDraft]:
-        return InvoiceDraft.objects.select_related("contract", "customer").prefetch_related(
-            Prefetch("lines", queryset=InvoiceLine.objects.order_by("position", "id"))
+        return with_collected(
+            InvoiceDraft.objects.select_related("contract", "customer").prefetch_related(
+                Prefetch("lines", queryset=InvoiceLine.objects.order_by("position", "id"))
+            )
         )
 
     def _read(self, draft: InvoiceDraft) -> Response:
@@ -125,20 +143,34 @@ class InvoiceDraftViewSet(
         """Record the e-invoice's number and date, and freeze the draft."""
         form = InvoiceIssueSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        draft = services.issue(
-            self.get_object(), by=authenticated_user(request), **form.validated_data
-        )
+        try:
+            draft = services.issue(
+                self.get_object(), by=authenticated_user(request), **form.validated_data
+            )
+        except ValidationError as error:
+            raise _ledger_date_as("invoice_date", error) from error
         return self._read(draft)
 
-    @extend_schema(request=InvoiceMarkPaidSerializer, responses={200: InvoiceDraftReadSerializer})
+    @extend_schema(
+        request=InvoiceMarkPaidSerializer,
+        responses={200: InvoiceDraftReadSerializer},
+        deprecated=True,
+    )
     @action(detail=True, methods=["post"], url_path="mark-paid")
     def mark_paid(self, request: Request, pk: str | None = None) -> Response:
-        """Record the payment date. From `issued` only."""
+        """Deprecated: record a collection with `applies` instead (POST /collections/).
+
+        Collects everything the issued invoice still owes, dated `paid_on`, into
+        `cash_account` (the firm's main till when omitted). From `issued` only.
+        """
         form = InvoiceMarkPaidSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        draft = services.mark_paid(
-            self.get_object(), by=authenticated_user(request), **form.validated_data
-        )
+        try:
+            draft = services.mark_paid(
+                self.get_object(), by=authenticated_user(request), **form.validated_data
+            )
+        except ValidationError as error:
+            raise _ledger_date_as("paid_on", error) from error
         return self._read(draft)
 
     @extend_schema(request=InvoiceCancelSerializer, responses={200: InvoiceDraftReadSerializer})

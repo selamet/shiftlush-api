@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.portal",
     "apps.billing",
     "apps.reports",
+    "apps.ledger",
     "apps.notifications",
     # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
     "django_tasks_db",
@@ -477,6 +478,7 @@ SPECTACULAR_SETTINGS = {
         # The error vocabulary cannot be inferred from the views, so it is
         # added here from the enum rather than maintained by hand.
         "core.spectacular.add_error_codes",
+        "core.spectacular.optional_by_role",
         "core.spectacular.restore_language",
     ],
     "COMPONENT_SPLIT_REQUEST": True,
@@ -486,6 +488,7 @@ SPECTACULAR_SETTINGS = {
     # does. Naming them here keeps the generated client stable and readable.
     "ENUM_NAME_OVERRIDES": {
         "UserRole": "apps.users.models.Role.choices",
+        "PaymentMethod": "apps.ledger.models.PaymentMethod.choices",
         "ContactRole": "apps.customers.models.ContactRole.choices",
         "CustomerType": "apps.customers.models.CustomerType.choices",
         "BuildingType": "apps.properties.models.BuildingType.choices",
@@ -511,6 +514,13 @@ SPECTACULAR_SETTINGS = {
         "InvoiceStatus": "apps.billing.models.InvoiceStatus.choices",
         "InvoiceLineKind": "apps.billing.models.InvoiceLineKind.choices",
         "NotificationKind": "apps.notifications.models.NotificationKind.choices",
+        "LedgerAccountKind": "apps.ledger.models.AccountKind.choices",
+        "CashAccountKind": "apps.ledger.models.CashKind.choices",
+        "CashAccountRole": "apps.ledger.models.CashAccountRole.choices",
+        "TransferKind": "apps.ledger.models.TransferKind.choices",
+        "LedgerDirection": "apps.ledger.models.Direction.choices",
+        "CashDirection": "apps.ledger.models.CashDirection.choices",
+        "MovementSource": "apps.ledger.models.MovementSource.choices",
     },
 }
 

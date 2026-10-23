@@ -98,6 +98,25 @@ def add_error_codes(result: Any, **kwargs: Any) -> Any:
     return result
 
 
+#: Read fields some roles never receive: dropped from the response rather than
+#: nulled (the serializer's get_fields says why). The generator marks every
+#: read-only field required, which would type them as always present.
+ROLE_DEPENDENT_FIELDS: dict[str, tuple[str, ...]] = {
+    "CustomerRead": ("accounts",),
+}
+
+
+def optional_by_role(result: Any, **kwargs: Any) -> Any:
+    """Take the role-dependent fields out of their component's `required`."""
+    schemas = result.get("components", {}).get("schemas", {})
+    for component, fields in ROLE_DEPENDENT_FIELDS.items():
+        schema = schemas.get(component)
+        if schema is None or "required" not in schema:
+            continue
+        schema["required"] = [name for name in schema["required"] if name not in fields]
+    return result
+
+
 def restore_language(result: Any, **kwargs: Any) -> Any:
     # There is no LocaleMiddleware here, so an activation would otherwise stick
     # to the thread and outlive the request that served /schema/.

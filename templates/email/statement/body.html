@@ -1,0 +1,15 @@
+{% extends "email/base.html" %}
+{% load email_format %}
+{% block preheader %}Kapanış bakiyesi {{ closing|tr_decimal }} {{ currency }}. Ekstre PDF olarak eklidir.{% endblock %}
+{% block title %}Hesap ekstresi{% endblock %}
+{% block content %}
+  <p style="margin:0 0 14px 0;">Merhaba,</p>
+  <p style="margin:0 0 14px 0;color:#5a5f6b;"><strong style="color:#16171c;font-weight:600;">{{ company_name }}</strong>, {{ account_name }} için {% include "email/statement/_range.txt" %} hesap ekstresini gönderdi. Ekstre bu e-postaya PDF olarak eklidir.</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px 0;color:#5a5f6b;">
+    <tr><td style="padding:2px 16px 2px 0;">Kapanış bakiyesi</td><td style="padding:2px 0;color:#16171c;font-weight:600;">{{ closing|tr_decimal }} {{ currency }}</td></tr>
+  </table>
+  <p style="margin:0 0 14px 0;color:#5a5f6b;">Ekstreyle ilgili sorularınız için {{ company_name }} ile iletişime geçebilirsiniz.</p>
+{% endblock %}
+{% block footer %}
+  Bu ekstre, firmanızın ShiftLush üzerinden gönderdiği hesap ekstresidir.
+{% endblock %}

@@ -376,6 +376,7 @@ they wait for the API to be healthy, which is after its migrations.
 | `purge_attachments` | 03:15 | deletes the stored bytes of attachments soft-deleted over `ATTACHMENT_PURGE_AFTER_DAYS` ago |
 | `prune_task_results` | 03:30 | drops task results: successes after 7 days, failures after 30 |
 | `purge_public_reporter_data` | 03:45 | blanks the name and phone of public QR fault reports closed or cancelled more than 90 days ago |
+| `carry_over_invoices` | 04:30 | posts to the ledger every issued or paid invoice draft that has no posting yet — one an old container issued or marked paid during a deploy, after the carry-over migration. One query when there is nothing to do; each draft in its own transaction; a failure is logged with the draft's id and retried the next night. `manage.py carry_over_invoices` runs it by hand, say right after a deploy |
 | `draft_invoices` | 05:00 | drafts invoices for every contract billing period that ended yesterday or earlier (back to 92 days), and tells the owner, admins and accountants |
 | `contract_renewal_notice` | 06:00 | notifies owners and admins `renewal_notice_days` before a contract ends |
 | `inspection_due_notice` | 06:15 | notifies the office 30 days before a covered lift's next periodic inspection |

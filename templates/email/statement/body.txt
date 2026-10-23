@@ -1,0 +1,11 @@
+{% load email_format %}{% autoescape off %}Merhaba,
+
+{{ company_name }}, {{ account_name }} için {% include "email/statement/_range.txt" %} hesap ekstresini gönderdi. Ekstre bu e-postaya PDF olarak eklidir.
+
+Kapanış bakiyesi: {{ closing|tr_decimal }} {{ currency }}
+
+Ekstreyle ilgili sorularınız için {{ company_name }} ile iletişime geçebilirsiniz.
+
+--
+ShiftLush · Asansör bakım ve muayene yönetimi
+{% endautoescape %}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 import django_filters
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -11,6 +11,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.customers.api.v1.serializers import (
+    LEDGER_ACCOUNT_ROWS,
     CustomerContactNestedWriteSerializer,
     CustomerContactReadSerializer,
     CustomerContactWriteSerializer,
@@ -18,10 +19,13 @@ from apps.customers.api.v1.serializers import (
     CustomerWriteSerializer,
 )
 from apps.customers.models import Customer, CustomerContact
+from apps.ledger.balances import customer_accounts
+from apps.ledger.models import Account
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
 from core.filters import TenantFilterSet
 from core.idempotency import replay_protected
+from core.permissions import may_see_balances
 from core.requests import authenticated_user
 from core.serializers import ADDRESS_JOIN
 from core.text import normalize
@@ -65,7 +69,7 @@ class CustomerViewSet(TenantViewSet[Customer]):
     customer_path = "id"
 
     def get_base_queryset(self) -> QuerySet[Customer]:
-        return (
+        customers = (
             Customer.objects.annotate(
                 building_count=Count(
                     "buildings", distinct=True, filter=Q(buildings__is_deleted=False)
@@ -79,6 +83,17 @@ class CustomerViewSet(TenantViewSet[Customer]):
             .select_related(*ADDRESS_JOIN)
             .prefetch_related("contacts")
         )
+        if may_see_balances(getattr(self.request.user, "role", None)):
+            # One query for every row's accounts and their balances, rather than
+            # one per customer; read by CustomerReadSerializer.get_account.
+            customers = customers.prefetch_related(
+                Prefetch(
+                    "ledger_accounts",
+                    queryset=customer_accounts(Account.objects.all()),
+                    to_attr=LEDGER_ACCOUNT_ROWS,
+                )
+            )
+        return customers
 
     def perform_destroy(self, instance: Customer) -> None:
         # PROTECT does not fire on a soft delete — that only raises on a real
