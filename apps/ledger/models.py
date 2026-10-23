@@ -7,6 +7,8 @@ movements, computed by apps.ledger.balances.
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.conf import settings
 from django.db import models
 
@@ -185,6 +187,14 @@ class CashAccount(CompanyOwnedModel):
         return f"{self.name} ({self.kind})"
 
 
+class MovementImmutableError(RuntimeError):
+    """Raised when code tries to change or remove a movement.
+
+    A programming error, not a request error: a mistake in the books is
+    corrected by a reversal (apps.ledger.posting.reverse_document).
+    """
+
+
 class Movement(CompanyOwnedModel):
     """One amount of money, on a party's account, a cash account, or both.
 
@@ -266,3 +276,16 @@ class Movement(CompanyOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.date} {self.source} {self.amount} {self.currency}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Written once, by apps.ledger.posting, and never again. A queryset
+        # update() goes around this; nothing in the code base issues one.
+        if not self._state.adding:
+            raise MovementImmutableError(f"Movement {self.pk} cannot be changed; reverse it.")
+        super().save(*args, **kwargs)
+
+    def delete(self, using: str | None = None, keep_parents: bool = False) -> Any:
+        raise MovementImmutableError(f"Movement {self.pk} cannot be deleted; reverse it.")
+
+    def hard_delete(self, using: str | None = None) -> Any:
+        raise MovementImmutableError(f"Movement {self.pk} cannot be deleted; reverse it.")

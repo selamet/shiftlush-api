@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, OuterRef, Q, QuerySet, Subquery, Sum, Value
 from django.db.models.expressions import CombinedExpression
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Round
 
 from apps.ledger.models import Account, CashAccount, CashDirection, Direction, Movement
 
@@ -21,7 +21,14 @@ ZERO = Decimal("0.00")
 _MONEY = DecimalField(max_digits=16, decimal_places=2)
 
 
-def _signed_sum(positive: Q, negative: Q) -> CombinedExpression:
+def _signed_sum(positive: Q, negative: Q) -> Round:
+    # Rounded to the cent: SQLite sums decimals as floats, and Django quantizes
+    # only a plain column, so 200 movements could add up to 825.809999999999.
+    # A no-op on PostgreSQL, whose numeric sum is exact.
+    return Round(_difference(positive, negative), 2, output_field=_MONEY)
+
+
+def _difference(positive: Q, negative: Q) -> CombinedExpression:
     return Coalesce(
         Sum("amount", filter=positive, output_field=_MONEY),
         Value(ZERO, output_field=_MONEY),
@@ -33,22 +40,22 @@ def _signed_sum(positive: Q, negative: Q) -> CombinedExpression:
     )
 
 
-def _account_total() -> CombinedExpression:
+def _account_total() -> Round:
     return _signed_sum(Q(direction=Direction.DEBIT), Q(direction=Direction.CREDIT))
 
 
-def _cash_total() -> CombinedExpression:
+def _cash_total() -> Round:
     return _signed_sum(Q(cash_direction=CashDirection.IN), Q(cash_direction=CashDirection.OUT))
 
 
 def account_balance(account: Account) -> Decimal:
     total = Movement.objects.filter(account=account).aggregate(balance=_account_total())
-    return Decimal(total["balance"] or ZERO)
+    return Decimal(total["balance"] or ZERO).quantize(ZERO)
 
 
 def cash_balance(cash: CashAccount) -> Decimal:
     total = Movement.objects.filter(cash_account=cash).aggregate(balance=_cash_total())
-    return Decimal(total["balance"] or ZERO)
+    return Decimal(total["balance"] or ZERO).quantize(ZERO)
 
 
 def with_balance(qs: QuerySet[Account]) -> QuerySet[Account]:
