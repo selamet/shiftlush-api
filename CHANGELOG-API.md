@@ -311,7 +311,10 @@ carried as compatibility shims nobody will ever remove.
   they cover the total, with `paid_on` the date of the latest of them, and
   back to `issued` when one is cancelled. A draft issued for a zero total owes
   nothing: it reads `paid` at once, with `paid_on` its `invoice_date`, and
-  posts no movement.
+  posts no movement. `cancel` now also accepts a `paid` invoice: with no
+  collection behind it (a zero total) it cancels; with one it is
+  `409 INVOICE_HAS_COLLECTIONS`, where it used to be
+  `409 INVOICE_TRANSITION_NOT_ALLOWED`.
   - `POST /invoice-drafts/{id}/mark-paid/` is **deprecated** in favour of a
     collection with `applies`. It keeps working: it records a collection of
     everything the invoice still owes, dated `paid_on`, into the optional

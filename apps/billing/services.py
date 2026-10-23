@@ -507,19 +507,23 @@ def mark_paid(
 
 @transaction.atomic
 def cancel(draft: InvoiceDraft, *, reason: str, by: User) -> InvoiceDraft:
-    """Cancel a draft or an issued draft, and give its faults back.
+    """Cancel a draft or an issued invoice, and give its faults back.
 
     The period is given back too (the unique constraint ignores cancelled
     drafts), so the next run drafts it again and picks the faults up. A
     cancelled issued draft stays as the record; the credit note is the
     e-invoicing system's business. Its debit is reversed in the same
     transaction, which is refused while a collection pays any of it
-    (`409 INVOICE_HAS_COLLECTIONS`).
+    (`409 INVOICE_HAS_COLLECTIONS`): reverse the collection first.
+
+    A `paid` invoice is issued and settled; with no collection standing behind
+    it (a zero total, paid on issue) it cancels like an issued one, and with
+    one it is refused the same way.
     """
     draft = _locked(draft)
-    if draft.status not in (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED):
+    if draft.status not in (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PAID):
         raise _refuse()
-    if draft.status == InvoiceStatus.ISSUED:
+    if draft.status != InvoiceStatus.DRAFT:
         ledger.reverse_invoice(draft, by=by)
     draft.status = InvoiceStatus.CANCELLED
     draft.cancelled_at = timezone.now()

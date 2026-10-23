@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps as global_apps
 from django.db import IntegrityError, transaction
+from django.db.models import QuerySet
 from django.urls import reverse
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
@@ -1722,3 +1723,87 @@ class TestInvoiceGuarantees:
         # second mark-paid in sequence gets. (The injected payment ran inside
         # this request's transaction here, so it rolled back with it.)
         assert codes(error) == "INVOICE_TRANSITION_NOT_ALLOWED"
+
+
+LOCKED_AFTER_INVOICES = frozenset(
+    {"Collection", "DocumentCounter", "Movement", "Account", "CashAccount"}
+)
+
+
+class TestLockOrder:
+    """Fix round 2: one lock order for every money path (apps.ledger.services,
+    "LOCK ORDER"): invoices first, then the document, the counter, movements
+    and the sides."""
+
+    @pytest.mark.parametrize(
+        "path", ["record_collection", "cancel_collection", "mark_paid", "cancel", "issue"]
+    )
+    def test_every_path_locks_invoices_first(self, books, path):
+        issued = issued_through_m7(books)
+        receive(books, "50.00")  # the counter row exists
+        standing = receive(books, "200.00", applies=[(issued, Decimal("200.00"))])
+        draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+        billing.add_line(
+            draft,
+            description="Bakim",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+            by=books.owner,
+        )
+        draft_to_cancel = issued_through_m7(books, number="GIB-3")
+        run = {
+            "record_collection": lambda: receive(
+                books, "300.00", applies=[(issued, Decimal("300.00"))]
+            ),
+            "cancel_collection": lambda: cancel_collection(standing, by=books.owner),
+            "mark_paid": lambda: billing.mark_paid(issued, paid_on=local_today(), by=books.owner),
+            "cancel": lambda: billing.cancel(draft_to_cancel, reason="x", by=books.owner),
+            "issue": lambda: billing.issue(
+                draft, invoice_number="GIB-2", invoice_date=local_today(), by=books.owner
+            ),
+        }[path]
+
+        locks: list[str] = []
+        real = QuerySet.select_for_update
+
+        def spy(self: QuerySet[Any], *args: Any, **kwargs: Any) -> QuerySet[Any]:
+            locks.append(self.model.__name__)
+            return real(self, *args, **kwargs)
+
+        with patch.object(QuerySet, "select_for_update", spy):
+            run()
+
+        invoice_locks = [i for i, name in enumerate(locks) if name == "InvoiceDraft"]
+        later_locks = [i for i, name in enumerate(locks) if name in LOCKED_AFTER_INVOICES]
+        assert invoice_locks, locks
+        assert later_locks, locks
+        assert max(invoice_locks) < min(later_locks), locks
+
+    def test_a_zero_invoice_can_be_cancelled(self, books):
+        draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+        billing.add_line(
+            draft,
+            description="Ucretsiz",
+            quantity=Decimal("1"),
+            unit_price=Decimal("0.00"),
+            by=books.owner,
+        )
+        billing.issue(draft, invoice_number="GIB-0", invoice_date=local_today(), by=books.owner)
+        assert fresh(draft).status == InvoiceStatus.PAID
+
+        billing.cancel(draft, reason="Issued by mistake", by=books.owner)
+
+        assert fresh(draft).status == InvoiceStatus.CANCELLED
+        assert movements_of(draft) == []
+
+    def test_a_paid_invoice_with_collections_is_refused(self, books):
+        draft = issued_through_m7(books)
+        receive(books, "1200.00", applies=[(draft, Decimal("1200.00"))])
+        assert fresh(draft).status == InvoiceStatus.PAID
+
+        with pytest.raises(Conflict) as error:
+            billing.cancel(draft, reason="x", by=books.owner)
+
+        assert codes(error) == "INVOICE_HAS_COLLECTIONS"
+        assert fresh(draft).status == InvoiceStatus.PAID
+        assert len(movements_of(draft)) == 1

@@ -897,7 +897,8 @@ class TestPaidAndCancelled:
         )
         refused = api_for(firm.accountant).post(url, {"reason": "x"})
         assert refused.status_code == 409
-        assert refused.data["error"]["code"] == ErrorCode.INVOICE_TRANSITION_NOT_ALLOWED.value
+        # Paid means a collection stands behind it: that goes first.
+        assert refused.data["error"]["code"] == ErrorCode.INVOICE_HAS_COLLECTIONS.value
 
     def test_an_issued_draft_can_be_cancelled_and_releases_its_number(self, drafted):
         firm, draft = drafted

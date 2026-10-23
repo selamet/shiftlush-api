@@ -96,6 +96,25 @@ def create_default_cash_account(company: Company) -> CashAccount:
 
 
 # Documents ----------------------------------------------------------------------
+#
+# LOCK ORDER. Every path that moves money takes its row locks in this order,
+# and never goes back to an earlier kind once it has a later one:
+#
+#   1. invoice drafts, in pk order        (_lock_invoices, billing._locked)
+#   2. the document row (collection, ...) (_lock)
+#   3. the document counter               (next_number)
+#   4. movements                          (posting.reverse_document)
+#   5. accounts, then cash accounts, each in pk order (posting.lock_sides;
+#      a movement insert also takes FOR KEY SHARE on its sides)
+#
+# A path holding a later lock while waiting for an earlier one is a deadlock
+# on PostgreSQL against a path going the right way: cancel_collection used to
+# hold the account (key share, from the mirror insert) and wait for the
+# invoice, while mark_paid held the invoice and waited for the account. So the
+# invoices a document touches are found without a lock and locked first, and
+# what runs after that reads them plainly under the locks already held
+# (_apply, sync_invoice_status). tests/test_ledger.py
+# `test_every_path_locks_invoices_first` checks it.
 
 COLLECTION_PREFIX = "T-"
 PAYMENT_OUT_PREFIX = "O-"
@@ -181,6 +200,7 @@ def _cancel[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](
 
 
 def _lock_invoices(pks: set[UUID]) -> None:
+    """Step 1 of the lock order: these invoices, in pk order."""
     if pks:
         list(InvoiceDraft.objects.select_for_update(of=("self",)).filter(pk__in=pks).order_by("pk"))
 
@@ -199,14 +219,10 @@ def _apply(
         raise _invalid("applies", "More is applied than the collection brought in.")
 
     account = collection.account
-    # Locked in a fixed order, so two collections paying the same invoices
-    # cannot each hold one and wait for the other.
+    # record_collection locked these first (the lock order above); read under
+    # that lock, in the same order.
     for pk in sorted(per_invoice):
-        locked = (
-            InvoiceDraft.objects.select_for_update(of=("self",))
-            .filter(pk=pk, company_id=collection.company_id)
-            .first()
-        )
+        locked = InvoiceDraft.objects.filter(pk=pk, company_id=collection.company_id).first()
         if locked is None:
             raise _invalid("applies", "No such record.", code="does_not_exist")
         invoice = locked
@@ -300,10 +316,18 @@ def record_collection(
 
 def cancel_collection(c: Collection, *, by: User) -> Collection:
     """Reverse a collection. The invoices it paid owe that amount again."""
+    # Read without a lock: a collection's applications are written with it
+    # and never change. Then the lock order: its invoices, then the collection
+    # itself (_cancel re-checks under that lock that it is not cancelled yet).
+    invoice_ids = set(
+        CollectionApplication.unscoped.filter(collection_id=c.pk, is_deleted=False).values_list(
+            "invoice_id", flat=True
+        )
+    )
     with transaction.atomic():
+        _lock_invoices(invoice_ids)
         cancelled = _cancel(c, by=by)
-        paid = CollectionApplication.unscoped.filter(collection=cancelled, is_deleted=False)
-        for invoice_id in sorted(set(paid.values_list("invoice_id", flat=True))):
+        for invoice_id in sorted(invoice_ids):
             sync_invoice_status(InvoiceDraft.objects.get(pk=invoice_id))
     return cancelled
 
@@ -383,8 +407,12 @@ def sync_invoice_status(draft: InvoiceDraft) -> InvoiceDraft:
     at issue, and by every collection and cancellation that touches the
     invoice, in the same transaction. A draft or a cancelled invoice is left as
     it is.
+
+    The caller holds the invoice's lock already: every caller takes it first,
+    per the lock order above, so this reads it plainly rather than locking it
+    again after the sides.
     """
-    locked = InvoiceDraft.objects.select_for_update(of=("self",)).get(pk=draft.pk)
+    locked = InvoiceDraft.objects.get(pk=draft.pk)
     if locked.status not in _PAYABLE_STATUSES or locked.cancelled_at is not None:
         return locked
     status: str
