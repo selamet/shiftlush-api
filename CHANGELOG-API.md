@@ -350,7 +350,10 @@ carried as compatibility shims nobody will ever remove.
   - `GET/POST/PATCH /ledger/cash-accounts/` with `balance`, and
     `GET /ledger/cash-accounts/{id}/movements/`, newest first. A cash
     account's `currency` cannot change once it has a movement. The list and
-    detail are readable by operations too; the movements are not.
+    detail are readable by operations too, in a picker shape (`id`, `name`,
+    `kind`, `currency`, `is_active`; schema `CashAccountListItem`, a oneOf of
+    `CashAccountRead` and `CashAccountPicker`) with no `balance` or `iban`, and
+    `?ordering=balance` ignored; the movements are not readable by operations.
   - `GET/POST/PATCH /ledger/suppliers/`. A supplier is created with its
     account, which follows a rename.
   - `GET /ledger/finance/summary/?period=today|yesterday|week|month` — a

@@ -2329,6 +2329,58 @@ class TestApi:
         if invoice_id is not None:
             assert invoice_remaining(draft) == Decimal("500.00")
 
+    def test_the_picker_shows_no_money(self, books):
+        bank = CashAccount.objects.create(
+            company=books.company, kind=CashKind.BANK, name="Ziraat", iban="TR1200010000000001"
+        )
+        receive(books, "900.00", cash_account=bank)
+        receive(books, "10.00")
+        parts = supplier_account(books)
+        record_payment_out(
+            account=parts,
+            cash_account=bank,
+            amount=Decimal("50.00"),
+            method=PaymentMethod.TRANSFER,
+            date=local_today(),
+            note="",
+            by=books.owner,
+        )
+        money = {"balance", "iban"}
+        ops = api_for(staff(books.company, Role.OPERATIONS))
+        cash_list = reverse("ledger-cash-account-list")
+        cash_detail = reverse("ledger-cash-account-detail", args=[bank.pk])
+
+        rows = ops.get(cash_list).json()["results"]
+        assert {row["name"] for row in rows} == {"Merkez kasa", "Ziraat"}
+        for row in rows:
+            assert set(row) == {"id", "name", "kind", "currency", "is_active"}
+        assert not money & set(ops.get(cash_detail).json())
+
+        # Ordering by a balance it may not see tells it nothing: ignored.
+        for ordering in ("-balance", "balance"):
+            response = ops.get(cash_list, {"ordering": ordering})
+            assert response.status_code == 200, response.data
+            assert [row["name"] for row in response.json()["results"]] == [
+                "Merkez kasa",
+                "Ziraat",
+            ]
+
+        suppliers = ops.get(reverse("ledger-supplier-list")).json()["results"]
+        assert suppliers
+        for row in suppliers:
+            assert "balance" not in row
+        supplier = ops.get(reverse("ledger-supplier-detail", args=[suppliers[0]["id"]])).json()
+        assert "balance" not in supplier
+
+        # Whoever reads the ledger still gets the full shape.
+        accountant = api_for(staff(books.company, Role.ACCOUNTANT))
+        full = accountant.get(cash_list, {"ordering": "-balance"}).json()["results"]
+        assert [(row["name"], row["balance"]) for row in full] == [
+            ("Ziraat", "850.00"),
+            ("Merkez kasa", "10.00"),
+        ]
+        assert accountant.get(cash_detail).json()["iban"] == "TR1200010000000001"
+
     def test_the_customer_read_shows_the_account_to_who_may_see_it(
         self, books, django_assert_max_num_queries
     ):

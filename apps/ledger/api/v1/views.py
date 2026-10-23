@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import django_filters
 from django.db.models import Exists, OuterRef, Q, QuerySet
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiParameter, PolymorphicProxySerializer, extend_schema
 from rest_framework import mixins, status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -31,6 +31,7 @@ from apps.ledger.api.v1.serializers import (
     AccountDetailSerializer,
     AccountReadSerializer,
     AccountTotalsSerializer,
+    CashAccountPickerSerializer,
     CashAccountReadSerializer,
     CashAccountWriteSerializer,
     CollectionCreateSerializer,
@@ -66,7 +67,7 @@ from apps.ledger.models import (
 from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate
 from core.pagination import StandardPagination
-from core.permissions import RolePermission
+from core.permissions import READ, RolePermission, may
 from core.requests import authenticated_company, authenticated_company_id, authenticated_user
 from core.scheduling import local_today
 
@@ -223,6 +224,16 @@ class AccountViewSet(
 # Cash accounts and suppliers ------------------------------------------------------
 
 
+def _cash_account_either(many: bool = False) -> PolymorphicProxySerializer:
+    """The two shapes a cash-account read takes, by the reader's role."""
+    return PolymorphicProxySerializer(
+        component_name="CashAccountListItem",
+        serializers=[CashAccountReadSerializer, CashAccountPickerSerializer],
+        resource_type_field_name=None,
+        many=many,
+    )
+
+
 class CashAccountViewSet(
     ReplayProtectedCreate,
     mixins.ListModelMixin,
@@ -248,8 +259,41 @@ class CashAccountViewSet(
     ordering = ["name", "id"]
     ordering_fields = ["name", "balance"]
 
+    def _picker_only(self) -> bool:
+        """Whether this request may pick a cash account but not read the ledger.
+
+        Such a reader gets the slim shape: no balance, no IBAN, and no ordering
+        by a balance it may not see (an ordering would leak it as a ranking).
+        """
+        role = getattr(self.request.user, "role", None)
+        return self.action in ("list", "retrieve") and not may(role, "ledger", READ)
+
+    def initial(self, request: Request, *args: Any, **kwargs: Any) -> None:
+        super().initial(request, *args, **kwargs)
+        if self._picker_only():
+            # An ordering field not listed is ignored by the ordering filter.
+            self.ordering_fields = ["name"]
+
     def get_queryset(self) -> QuerySet[CashAccount]:
+        if getattr(self, "request", None) is not None and self._picker_only():
+            # No balance annotation: it is neither shown nor sortable here.
+            return CashAccount.objects.all()
         return with_cash_balance(CashAccount.objects.all())
+
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
+        if getattr(self, "request", None) is not None and self._picker_only():
+            return CashAccountPickerSerializer
+        return CashAccountReadSerializer
+
+    @extend_schema(responses={200: _cash_account_either(many=True)})
+    def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Every cash account. Operations gets the picker shape, without balance or IBAN."""
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(responses={200: _cash_account_either()})
+    def retrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """One cash account. Operations gets the picker shape, without balance or IBAN."""
+        return super().retrieve(request, *args, **kwargs)
 
     def _read(self, cash: CashAccount) -> Response:
         return Response(CashAccountReadSerializer(self.get_queryset().get(pk=cash.pk)).data)

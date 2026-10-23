@@ -3724,7 +3724,8 @@ paths:
   /api/v1/ledger/cash-accounts/:
     get:
       operationId: ledger_cash_accounts_list
-      description: 'Where the firm''s money is: tills, bank accounts and card POS.'
+      description: Every cash account. Operations gets the picker shape, without balance
+        or IBAN.
       parameters:
       - in: query
         name: is_active
@@ -3769,7 +3770,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedCashAccountReadList'
+                $ref: '#/components/schemas/PaginatedCashAccountListItemList'
           description: ''
     post:
       operationId: ledger_cash_accounts_create
@@ -3800,7 +3801,8 @@ paths:
   /api/v1/ledger/cash-accounts/{id}/:
     get:
       operationId: ledger_cash_accounts_retrieve
-      description: 'Where the firm''s money is: tills, bank accounts and card POS.'
+      description: One cash account. Operations gets the picker shape, without balance
+        or IBAN.
       parameters:
       - in: path
         name: id
@@ -3818,7 +3820,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CashAccountRead'
+                $ref: '#/components/schemas/CashAccountListItem'
           description: ''
     patch:
       operationId: ledger_cash_accounts_partial_update
@@ -7243,6 +7245,39 @@ components:
         * `cash` - Cash
         * `bank` - Bank
         * `card` - Card
+    CashAccountListItem:
+      oneOf:
+      - $ref: '#/components/schemas/CashAccountRead'
+      - $ref: '#/components/schemas/CashAccountPicker'
+    CashAccountPicker:
+      type: object
+      description: |-
+        A cash account to pick, for a role that records money but does not read
+        the ledger (operations): what it is, never what it holds or its IBAN.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/CashAccountKind'
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+      required:
+      - currency
+      - id
+      - is_active
+      - kind
+      - name
     CashAccountRead:
       type: object
       properties:
@@ -11099,7 +11134,7 @@ components:
             total_pages:
               type: integer
               example: 14
-    PaginatedCashAccountReadList:
+    PaginatedCashAccountListItemList:
       type: object
       required:
       - results
@@ -11108,7 +11143,7 @@ components:
         results:
           type: array
           items:
-            $ref: '#/components/schemas/CashAccountRead'
+            $ref: '#/components/schemas/CashAccountListItem'
         pagination:
           type: object
           required:

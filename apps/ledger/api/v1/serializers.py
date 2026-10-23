@@ -192,6 +192,16 @@ class CashAccountReadSerializer(serializers.ModelSerializer[CashAccount]):
         return _money(cash_balance(cash) if balance is None else balance)
 
 
+class CashAccountPickerSerializer(serializers.ModelSerializer[CashAccount]):
+    """A cash account to pick, for a role that records money but does not read
+    the ledger (operations): what it is, never what it holds or its IBAN."""
+
+    class Meta:
+        model = CashAccount
+        fields = ["id", "name", "kind", "currency", "is_active"]
+        read_only_fields = fields
+
+
 class SupplierReadSerializer(serializers.ModelSerializer[Supplier]):
     account = serializers.SerializerMethodField(help_text="The supplier's account.")
 
