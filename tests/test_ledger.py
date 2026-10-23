@@ -3334,3 +3334,117 @@ class TestAccountsPerCurrency:
         with django_assert_max_num_queries(len(few.captured_queries)):
             rows = client.get(reverse("customer-list")).json()["results"]
         assert all("accounts" in row for row in rows)
+
+
+def old_code_paid(draft: InvoiceDraft, paid_on: date | None = None) -> None:
+    """What the M7 mark-paid of an old container does: the status, no collection."""
+    InvoiceDraft.objects.filter(pk=draft.pk).update(
+        status=InvoiceStatus.PAID, paid_on=paid_on or local_today()
+    )
+
+
+def run_carry_over_job() -> dict[str, int]:
+    from apps.ledger.tasks import carry_over_invoices as job
+
+    result: dict[str, int] = job.call()
+    return result
+
+
+class TestCarryOverJob:
+    """I1: an invoice the old container issues or marks paid after the
+    carry-over migration commits is posted by the daily job. M1: a legacy
+    zero-total issued draft it carries becomes paid."""
+
+    def test_drafts_written_by_old_code_are_posted_by_the_job(self, books):
+        issued = make_invoice(books, "1000.00")
+        paid = make_invoice(books, "500.00", status=InvoiceStatus.PAID)
+        settled_late = issued_through_m7(books)
+        old_code_paid(settled_late)
+
+        assert run_carry_over_job() == {"posted": 2, "collected": 2, "failed": 0}
+
+        assert {m.document_id for m in Movement.objects.filter(source=MovementSource.INVOICE)} == {
+            issued.pk,
+            paid.pk,
+            settled_late.pk,
+        }
+        (devir,) = CashAccount.objects.filter(role=CashAccountRole.CARRIED_OVER)
+        assert cash_balance(devir) == Decimal("1700.00")
+        assert account_balance(books.account) == Decimal("1000.00")
+        assert [fresh(d).status for d in (issued, paid, settled_late)] == [
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.PAID,
+            InvoiceStatus.PAID,
+        ]
+        assert invoice_remaining(fresh(settled_late)) == Decimal("0.00")
+
+    def test_a_second_run_posts_nothing(self, books, django_assert_max_num_queries):
+        make_invoice(books, "1000.00")
+        make_invoice(books, "500.00", status=InvoiceStatus.PAID)
+        issued_through_m7(books)
+        run_carry_over_job()
+        before = Movement.objects.count()
+
+        # Cheap when there is nothing to do: one query finds the drafts.
+        with django_assert_max_num_queries(1):
+            again = run_carry_over_job()
+
+        assert again == {"posted": 0, "collected": 0, "failed": 0}
+        assert Movement.objects.count() == before
+
+    def test_one_failing_draft_does_not_stop_the_others(self, books, caplog):
+        first = make_invoice(books, "100.00")
+        broken = make_invoice(books, "200.00")
+        last = make_invoice(books, "300.00", status=InvoiceStatus.PAID)
+        real = ledger_services.post_invoice
+
+        def fails_for_one(draft: InvoiceDraft, **kwargs: Any) -> Movement | None:
+            if draft.pk == broken.pk:
+                raise Boom("broken row")
+            return real(draft, **kwargs)
+
+        with patch.object(ledger_services, "post_invoice", side_effect=fails_for_one):
+            result = run_carry_over_job()
+
+        assert result == {"posted": 2, "collected": 1, "failed": 1}
+        assert movements_of(broken) == []
+        assert len(movements_of(first)) == 1
+        assert len(movements_of(last)) == 1
+        assert str(broken.pk) in caplog.text
+        # The next run retries it.
+        assert run_carry_over_job() == {"posted": 1, "collected": 0, "failed": 0}
+        assert len(movements_of(broken)) == 1
+
+    def test_a_failure_after_the_posting_leaves_that_draft_unposted(self, books):
+        paid = make_invoice(books, "500.00", status=InvoiceStatus.PAID)
+
+        with patch.object(ledger_services, "record_collection", side_effect=Boom):
+            assert run_carry_over_job() == {"posted": 0, "collected": 0, "failed": 1}
+
+        # Not half done: no debit without its collection.
+        assert movements_of(paid) == []
+        assert not Collection.objects.exists()
+        assert run_carry_over_job() == {"posted": 1, "collected": 1, "failed": 0}
+
+    def test_a_legacy_zero_invoice_becomes_paid(self, books):
+        zero = make_invoice(books, "0.00")
+
+        with system_context():
+            carry_over_invoices()
+
+        assert (fresh(zero).status, fresh(zero).paid_on) == (InvoiceStatus.PAID, date(2026, 10, 1))
+        assert movements_of(zero) == []
+        assert run_carry_over_job() == {"posted": 0, "collected": 0, "failed": 0}
+
+    def test_the_command_and_the_schedule(self, books):
+        from django.core.management import call_command
+
+        from core import scheduling
+
+        make_invoice(books, "100.00")
+        out = io.StringIO()
+        call_command("carry_over_invoices", stdout=out)
+        assert out.getvalue().strip() == "posted 1, collected 0, failed 0"
+
+        (job,) = [s for s in scheduling.get_schedules() if s.name == "carry_over_invoices"]
+        assert (job.at.hour, job.at.minute) == (4, 30)

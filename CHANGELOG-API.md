@@ -441,6 +441,11 @@ carried as compatibility shims nobody will ever remove.
     TRY: an invoice in another currency with no `cash_account` is
     `400 CURRENCY_MISMATCH` on `cash_account` — pick a till in the invoice's
     currency.
+  - A draft the previous release issues or marks paid while a deploy is in
+    flight, after the carry-over migration, is posted (and, if paid,
+    collected into the carried-over till) by the nightly `carry_over_invoices`
+    job. Until then it reads `collected` 0, and its customer's balance leaves
+    it out.
   - An `invoice_date` or `paid_on` after today, or inside the firm's closed
     period, is now refused with a `400` on `date`: no movement is dated in the
     future or in a closed month.
