@@ -1752,7 +1752,8 @@ class TestLockOrder:
     and the sides."""
 
     @pytest.mark.parametrize(
-        "path", ["record_collection", "cancel_collection", "mark_paid", "cancel", "issue"]
+        "path",
+        ["record_collection", "cancel_collection", "mark_paid", "cancel", "issue", "apply"],
     )
     def test_every_path_locks_invoices_first(self, books, path):
         issued = issued_through_m7(books)
@@ -1767,6 +1768,7 @@ class TestLockOrder:
             by=books.owner,
         )
         draft_to_cancel = issued_through_m7(books, number="GIB-3")
+        advance = receive(books, "100.00")
         run = {
             "record_collection": lambda: receive(
                 books, "300.00", applies=[(issued, Decimal("300.00"))]
@@ -1776,6 +1778,9 @@ class TestLockOrder:
             "cancel": lambda: billing.cancel(draft_to_cancel, reason="x", by=books.owner),
             "issue": lambda: billing.issue(
                 draft, invoice_number="GIB-2", invoice_date=local_today(), by=books.owner
+            ),
+            "apply": lambda: ledger_services.apply_collection(
+                advance, applies=[(issued, Decimal("100.00"))], by=books.owner
             ),
         }[path]
 
@@ -3448,3 +3453,234 @@ class TestCarryOverJob:
 
         (job,) = [s for s in scheduling.get_schedules() if s.name == "carry_over_invoices"]
         assert (job.at.hour, job.at.minute) == (4, 30)
+
+
+def apply_url(collection: Collection) -> str:
+    return reverse("ledger-collection-apply", args=[collection.pk])
+
+
+def open_invoices_url(account: Account) -> str:
+    return reverse("ledger-account-open-invoices", args=[account.pk])
+
+
+class TestSettlingAnAdvance:
+    """I2: operations records an advance, then applies it to the invoices it
+    pays, from a picker it can read. Allocation only: the money is posted."""
+
+    def test_operations_settles_an_invoice_from_an_advance(self, books):
+        draft = owed(books, books.customer, "800.00", days_ago=10)
+        ops = api_for(staff(books.company, Role.OPERATIONS))
+        customer = ops.get(reverse("customer-detail", args=[books.customer.pk])).json()
+        (account,) = customer["accounts"]
+        tills = ops.get(reverse("ledger-cash-account-list")).json()["results"]
+        made = keyed(
+            ops,
+            reverse("ledger-collection-list"),
+            {
+                "account": account["id"],
+                "cash_account": tills[0]["id"],
+                "amount": "800.00",
+                "method": "cash",
+            },
+        )
+        assert made.status_code == 201, made.data
+        assert fresh(draft).status == InvoiceStatus.ISSUED
+
+        listed = ops.get(open_invoices_url(books.account))
+        assert listed.status_code == 200, listed.data
+        assert listed.json() == [
+            {
+                "id": str(draft.pk),
+                "invoice_number": draft.invoice_number,
+                "invoice_date": str(draft.invoice_date),
+                "total": "800.00",
+                "remaining": "800.00",
+            }
+        ]
+
+        movements_before = Movement.objects.count()
+        applied = keyed(
+            ops,
+            apply_url(Collection.objects.get(pk=made.data["id"])),
+            {"applies": [{"invoice": str(draft.pk), "amount": "800.00"}]},
+        )
+
+        assert applied.status_code == 200, applied.data
+        assert applied.data["applies"] == [{"invoice": draft.pk, "amount": "800.00"}]
+        assert fresh(draft).status == InvoiceStatus.PAID
+        assert invoice_remaining(fresh(draft)) == Decimal("0.00")
+        # Allocation only: the money posted when the collection was recorded.
+        assert Movement.objects.count() == movements_before
+        assert account_balance(books.account) == Decimal("0.00")
+        assert ops.get(open_invoices_url(books.account)).json() == []
+
+    def test_a_retried_apply_applies_once(self, books):
+        draft = owed(books, books.customer, "800.00", days_ago=10)
+        advance = receive(books, "300.00")
+        client = api_for(books.owner)
+        body = {"applies": [{"invoice": str(draft.pk), "amount": "300.00"}]}
+
+        first = keyed(client, apply_url(advance), body, key="apply-1")
+        again = keyed(client, apply_url(advance), body, key="apply-1")
+
+        assert (first.status_code, again.status_code) == (200, 200)
+        assert again.json() == first.json()
+        assert CollectionApplication.objects.filter(collection=advance).count() == 1
+        missing = client.post(apply_url(advance), body, format="json")
+        assert error_of(missing)[0] == "IDEMPOTENCY_KEY_REQUIRED"
+
+    def test_over_allocation_is_refused(self, books):
+        first = owed(books, books.customer, "100.00", days_ago=10)
+        second = owed(books, books.customer, "100.00", days_ago=5)
+        advance = receive(books, "100.00", applies=[(first, Decimal("60.00"))])
+        client = api_for(books.owner)
+
+        too_much = keyed(
+            client,
+            apply_url(advance),
+            {"applies": [{"invoice": str(second.pk), "amount": "50.00"}]},
+        )
+
+        assert too_much.status_code == 400, too_much.data
+        assert error_of(too_much)[1] == [("applies", "invalid")]
+        # It pays `first` already; an application is written once.
+        again_on_first = keyed(
+            client,
+            apply_url(advance),
+            {"applies": [{"invoice": str(first.pk), "amount": "40.00"}]},
+        )
+        assert error_of(again_on_first)[1] == [("applies", "unique")]
+        exact = keyed(
+            client,
+            apply_url(advance),
+            {"applies": [{"invoice": str(second.pk), "amount": "40.00"}]},
+        )
+        assert exact.status_code == 200, exact.data
+        assert CollectionApplication.objects.filter(collection=advance).count() == 2
+
+    def test_overpaying_an_invoice_is_refused(self, books):
+        small = owed(books, books.customer, "30.00", days_ago=10)
+        advance = receive(books, "100.00")
+
+        response = keyed(
+            api_for(books.owner),
+            apply_url(advance),
+            {"applies": [{"invoice": str(small.pk), "amount": "50.00"}]},
+        )
+
+        assert error_of(response)[1] == [("applies", "OVERPAYMENT_ON_INVOICE")]
+        assert not CollectionApplication.objects.exists()
+
+    def test_what_an_advance_cannot_pay(self, books):
+        advance = receive(books, "100.00")
+        client = api_for(books.owner)
+        other_customer = make_customer(books.company, "Other")
+        theirs = owed(books, other_customer, "50.00", days_ago=1)
+        euros = euro_draft(books)
+        with system_context():
+            other_firm, _ = make_firm("B")
+        foreign = make_invoice(books, "50.00", customer=make_customer(other_firm, "Foreign"))
+
+        def refused(invoice: InvoiceDraft) -> tuple[int, list[tuple[str, str]]]:
+            response = keyed(
+                client,
+                apply_url(advance),
+                {"applies": [{"invoice": str(invoice.pk), "amount": "10.00"}]},
+            )
+            return response.status_code, error_of(response)[1]
+
+        assert refused(theirs) == (400, [("applies", "invalid")])
+        assert refused(euros) == (400, [("applies", "CURRENCY_MISMATCH")])
+        assert refused(foreign) == (400, [("applies.0.invoice", "does_not_exist")])
+        assert not CollectionApplication.objects.exists()
+
+        mine = owed(books, books.customer, "50.00", days_ago=1)
+        cancel_collection(advance, by=books.owner)
+        cancelled = keyed(
+            client, apply_url(advance), {"applies": [{"invoice": str(mine.pk), "amount": "10.00"}]}
+        )
+        assert (cancelled.status_code, error_of(cancelled)[0]) == (409, "ALREADY_REVERSED")
+        empty = keyed(client, apply_url(receive(books, "5.00")), {"applies": []})
+        assert empty.status_code == 400
+
+    def test_a_failing_sync_leaves_no_application(self, books):
+        draft = owed(books, books.customer, "100.00", days_ago=1)
+        advance = receive(books, "100.00")
+
+        with (
+            patch.object(ledger_services, "sync_invoice_status", side_effect=Boom),
+            pytest.raises(Boom),
+        ):
+            ledger_services.apply_collection(
+                advance, applies=[(draft, Decimal("100.00"))], by=books.owner
+            )
+
+        assert not CollectionApplication.objects.exists()
+        assert fresh(draft).status == InvoiceStatus.ISSUED
+
+    def test_the_picker_lists_this_accounts_open_invoices_only(self, books):
+        partly = owed(books, books.customer, "100.00", days_ago=10)
+        receive(books, "40.00", applies=[(partly, Decimal("40.00"))])
+        settled = owed(books, books.customer, "70.00", days_ago=9)
+        receive(books, "70.00", applies=[(settled, Decimal("70.00"))])
+        owed(books, make_customer(books.company, "Other"), "10.00", days_ago=1)
+        euro_draft(books)
+        cancelled = owed(books, books.customer, "20.00", days_ago=1)
+        billing.cancel(cancelled, reason="x", by=books.owner)
+        tech = api_for(staff(books.company, Role.TECHNICIAN))
+
+        rows = api_for(books.owner).get(open_invoices_url(books.account)).json()
+
+        assert [(row["id"], row["remaining"]) for row in rows] == [(str(partly.pk), "60.00")]
+        euros = api_for(books.owner).get(open_invoices_url(account_in(books.customer, "EUR")))
+        assert [row["remaining"] for row in euros.json()] == ["120.00"]
+        assert api_for(books.owner).get(open_invoices_url(supplier_account(books))).json() == []
+        assert tech.get(open_invoices_url(books.account)).status_code == 403
+
+    def test_cancelling_after_an_apply_reopens_the_invoice(self, books):
+        draft = owed(books, books.customer, "100.00", days_ago=1)
+        advance = receive(books, "100.00")
+        ledger_services.apply_collection(
+            advance, applies=[(draft, Decimal("100.00"))], by=books.owner
+        )
+        assert fresh(draft).status == InvoiceStatus.PAID
+
+        cancel_collection(advance, by=books.owner)
+
+        assert fresh(draft).status == InvoiceStatus.ISSUED
+        assert invoice_remaining(fresh(draft)) == Decimal("100.00")
+
+    def test_a_cancel_racing_an_apply_still_reopens_the_invoice(self, books):
+        draft = owed(books, books.customer, "100.00", days_ago=1)
+        advance = receive(books, "100.00")
+        real_read = ledger_services._applied_invoice_ids
+        real_lock = ledger_services._lock_invoices
+        locked: list[set[Any]] = []
+
+        def apply_lands_after_the_read(collection: Collection) -> set[Any]:
+            # The cancel reads the collection's invoices (none yet) without a
+            # lock; an apply commits before it takes the locks.
+            seen = real_read(collection)
+            if not locked:
+                ledger_services.apply_collection(
+                    advance, applies=[(draft, Decimal("100.00"))], by=books.owner
+                )
+            return seen
+
+        def spy(pks: set[Any]) -> None:
+            locked.append(set(pks))
+            real_lock(pks)
+
+        with (
+            patch.object(
+                ledger_services, "_applied_invoice_ids", side_effect=apply_lands_after_the_read
+            ),
+            patch.object(ledger_services, "_lock_invoices", side_effect=spy),
+        ):
+            cancel_collection(advance, by=books.owner)
+
+        # The first try found an invoice it had not locked, and tried again.
+        assert locked[-1] == {draft.pk}
+        assert Collection.objects.get(pk=advance.pk).cancelled_at is not None
+        assert fresh(draft).status == InvoiceStatus.ISSUED
+        assert invoice_remaining(fresh(draft)) == Decimal("100.00")

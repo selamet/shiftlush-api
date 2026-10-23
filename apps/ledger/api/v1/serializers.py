@@ -433,6 +433,34 @@ class ApplySerializer(serializers.Serializer[Any]):
         return fields
 
 
+class CollectionApplySerializer(StrictMixin, serializers.Serializer[Any]):
+    applies = ApplySerializer(
+        many=True,
+        allow_empty=False,
+        help_text=(
+            "The invoices it pays, each up to what it still owes, all together up "
+            "to what the collection has not yet applied."
+        ),
+    )
+
+
+class OpenInvoiceSerializer(serializers.ModelSerializer[InvoiceDraft]):
+    """An invoice a collection can still pay, as the picker lists it."""
+
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    remaining = serializers.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        read_only=True,
+        help_text="The total less what standing collections pay of it.",
+    )
+
+    class Meta:
+        model = InvoiceDraft
+        fields = ["id", "invoice_number", "invoice_date", "total", "remaining"]
+        read_only_fields = fields
+
+
 class CollectionCreateSerializer(_DocumentWriteSerializer):
     account = _related(Account, "The party's account.")
     cash_account = _related(CashAccount, "Where the money went.")

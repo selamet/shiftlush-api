@@ -360,6 +360,23 @@ carried as compatibility shims nobody will ever remove.
     when omitted), `note` and `applies: [{invoice, amount}]`; none applied is
     an advance. Numbered `T-000001` per firm. An inactive account or cash
     account takes no new document (`400 does_not_exist`).
+  - `POST /ledger/collections/{id}/apply/` with `{applies: [{invoice,
+    amount}]}` settles invoices from a standing collection — an advance
+    operations took at the door, say. It **requires** `Idempotency-Key`.
+    Each invoice up to what it still owes (`400 OVERPAYMENT_ON_INVOICE` on
+    `applies`), all together up to the collection's unallocated amount, its
+    amount less what it already applies (`400 invalid` on `applies`, as for
+    a create that applies more than it brought in); an invoice this
+    collection already pays is `400 unique` on `applies`. The collection's own
+    customer and currency only; a cancelled collection is
+    `409 ALREADY_REVERSED`. It moves no money — the collection posted when it
+    was recorded — and answers the collection with its `applies`. Owner,
+    admin, accountant and operations.
+  - `GET /ledger/accounts/{id}/open-invoices/` — what `apply` (and a create's
+    `applies`) can pay on this account: its customer's issued invoices in its
+    currency with something left, oldest first, as `[{id, invoice_number,
+    invoice_date, total, remaining}]`, unpaginated; empty for a supplier or
+    staff account. Readable by operations too, which sees no balance here.
   - `GET/POST /ledger/payments-out/` (numbered `O-…`), `/manual-entries/`
     (with a required `reason`), `/transfers/` (`kind` `account` or `cash`)
     and `/opening-balances/` (on an account or a cash account), each with

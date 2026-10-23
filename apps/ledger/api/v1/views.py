@@ -36,6 +36,7 @@ from apps.ledger.api.v1.serializers import (
     CashAccountPickerSerializer,
     CashAccountReadSerializer,
     CashAccountWriteSerializer,
+    CollectionApplySerializer,
     CollectionCreateSerializer,
     CollectionReadSerializer,
     FinanceQuerySerializer,
@@ -46,6 +47,7 @@ from apps.ledger.api.v1.serializers import (
     MovementSerializer,
     OpeningBalanceCreateSerializer,
     OpeningBalanceReadSerializer,
+    OpenInvoiceSerializer,
     PaymentOutCreateSerializer,
     PaymentOutReadSerializer,
     StatementQuerySerializer,
@@ -56,7 +58,7 @@ from apps.ledger.api.v1.serializers import (
     TransferCreateSerializer,
     TransferReadSerializer,
 )
-from apps.ledger.balances import with_balance, with_cash_balance
+from apps.ledger.balances import with_balance, with_cash_balance, with_collected
 from apps.ledger.models import (
     Account,
     AccountKind,
@@ -190,7 +192,13 @@ class AccountViewSet(
     """
 
     resource = "ledger"
-    resource_by_action = {"create": "ledger_admin", "statement_send": "ledger_statement_send"}
+    resource_by_action = {
+        "create": "ledger_admin",
+        "statement_send": "ledger_statement_send",
+        # Operations records a collection against these invoices, so it picks
+        # them; it sees no balance here, only what each invoice still owes.
+        "open_invoices": "ledger_picker",
+    }
     permission_classes = [RolePermission]
     queryset = Account.objects.none()
     serializer_class = AccountReadSerializer
@@ -228,6 +236,32 @@ class AccountViewSet(
         )
         fresh = self.get_queryset().get(pk=account.pk)
         return Response(AccountReadSerializer(fresh).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(responses={200: OpenInvoiceSerializer(many=True)})
+    @action(detail=True, methods=["get"], url_path="open-invoices", pagination_class=None)
+    def open_invoices(self, request: Request, pk: str | None = None) -> Response:
+        """The issued invoices a collection on this account can still pay.
+
+        Its customer's, in its currency, with something left to pay; oldest
+        first. Empty for a supplier or staff account. Readable by operations,
+        which applies an advance to them (`POST /collections/{id}/apply/`).
+        """
+        account = self.get_object()
+        if account.kind != AccountKind.CUSTOMER or account.customer_id is None:
+            return Response([])
+        invoices = (
+            with_collected(
+                InvoiceDraft.objects.filter(
+                    customer_id=account.customer_id,
+                    currency=account.currency,
+                    status=InvoiceStatus.ISSUED,
+                    cancelled_at__isnull=True,
+                )
+            )
+            .filter(Q(remaining__gt=0))
+            .order_by("invoice_date", "invoice_number", "id")
+        )
+        return Response(OpenInvoiceSerializer(invoices, many=True).data)
 
     # The statement ----------------------------------------------------------------
     #
@@ -566,6 +600,30 @@ class CollectionViewSet(_DocumentViewSet[Collection]):
 
     def _cancel(self, document: Collection, *, by: Any) -> Collection:
         return services.cancel_collection(document, by=by)
+
+    @extend_schema(
+        request=CollectionApplySerializer,
+        responses={200: CollectionReadSerializer},
+        parameters=[IDEMPOTENCY_KEY],
+    )
+    @action(detail=True, methods=["post"])
+    @replay_protected
+    def apply(self, request: Request, pk: str | None = None) -> Response:
+        """Apply what the collection has not yet applied to invoices it pays.
+
+        An advance settles invoices this way. Each invoice up to what it still
+        owes, all together up to the collection's unallocated amount; the
+        collection's own customer and currency. No money moves: the collection
+        posted when it was recorded.
+        """
+        form = CollectionApplySerializer(data=request.data, context=self.get_serializer_context())
+        form.is_valid(raise_exception=True)
+        collection = services.apply_collection(
+            self.get_object(),
+            applies=[(row["invoice"], row["amount"]) for row in form.validated_data["applies"]],
+            by=authenticated_user(request),
+        )
+        return self._read(collection)
 
     @extend_schema(
         request=CollectionCreateSerializer,

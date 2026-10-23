@@ -124,7 +124,9 @@ def create_default_cash_account(company: Company) -> CashAccount:
 # invoice, while mark_paid held the invoice and waited for the account. So the
 # invoices a document touches are found without a lock and locked first, and
 # what runs after that reads them plainly under the locks already held
-# (_apply, sync_invoice_status). tests/test_ledger.py
+# (_apply, sync_invoice_status). apply_collection adds applications to a
+# standing collection, so cancel_collection reads its invoices again under the
+# collection's lock and starts over if one was added. tests/test_ledger.py
 # `test_every_path_locks_invoices_first` checks it.
 
 COLLECTION_PREFIX = "T-"
@@ -198,15 +200,22 @@ def _lock[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](do
     return locked
 
 
+def _stamp_cancelled[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](
+    locked: D, *, by: User
+) -> None:
+    """Post the reversal of a locked document and stamp it cancelled."""
+    reverse_document(locked, date=local_today(), by=by)
+    locked.cancelled_at = timezone.now()
+    locked.updated_by = by
+    locked.save(update_fields=["cancelled_at", "updated_by", "updated_at"])
+
+
 def _cancel[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](
     document: D, *, by: User
 ) -> D:
     with transaction.atomic():
         locked = _lock(document)
-        reverse_document(locked, date=local_today(), by=by)
-        locked.cancelled_at = timezone.now()
-        locked.updated_by = by
-        locked.save(update_fields=["cancelled_at", "updated_by", "updated_at"])
+        _stamp_cancelled(locked, by=by)
     return locked
 
 
@@ -217,16 +226,26 @@ def _lock_invoices(pks: set[UUID]) -> None:
 
 
 def _apply(
-    collection: Collection, applies: list[tuple[InvoiceDraft, Decimal]], *, by: User | None
+    collection: Collection,
+    applies: list[tuple[InvoiceDraft, Decimal]],
+    *,
+    by: User | None,
+    limit: Decimal | None = None,
 ) -> None:
-    """Pay invoices from a collection, each up to what it still owes."""
+    """Pay invoices from a collection, each up to what it still owes, and all
+    of them together up to `limit`: the collection's amount by default, what
+    is left of it unallocated for apply_collection.
+
+    Allocation only: no movement. The collection posted its whole amount when
+    it was recorded; an application says which invoices that money paid.
+    """
     per_invoice: dict[UUID, Decimal] = defaultdict(lambda: _ZERO)
     for invoice, amount in applies:
         _same_firm(collection.company_id, applies=invoice)
         if not is_money(amount):
             raise _invalid("applies", "An amount applied is positive, to two decimal places.")
         per_invoice[invoice.pk] += amount
-    if sum(per_invoice.values(), _ZERO) > collection.amount:
+    if sum(per_invoice.values(), _ZERO) > (collection.amount if limit is None else limit):
         raise _invalid("applies", "More is applied than the collection brought in.")
 
     account = collection.account
@@ -248,6 +267,9 @@ def _apply(
             raise field_error("applies", ErrorCode.CURRENCY_MISMATCH)
         if per_invoice[pk] > invoice_remaining(invoice):
             raise field_error("applies", ErrorCode.OVERPAYMENT_ON_INVOICE)
+        if CollectionApplication.unscoped.filter(collection=collection, invoice=invoice).exists():
+            # One application per collection and invoice, written once.
+            raise _invalid("applies", "This collection already pays this invoice.", code="unique")
         CollectionApplication.objects.create(
             company_id=collection.company_id,
             collection=collection,
@@ -325,22 +347,83 @@ def record_collection(
     return collection
 
 
+#: How many times cancel_collection reads the invoices again when an apply
+#: added one between its read and its locks, before it locks the newcomer late.
+_CANCEL_ATTEMPTS = 3
+
+
+class _AppliedMeanwhile(Exception):
+    """An apply added an invoice after cancel_collection read them: try again."""
+
+
+def _applied_invoice_ids(collection: Collection) -> set[UUID]:
+    """The invoices a collection pays, read without a lock."""
+    return set(
+        CollectionApplication.unscoped.filter(
+            collection_id=collection.pk, is_deleted=False
+        ).values_list("invoice_id", flat=True)
+    )
+
+
 def cancel_collection(c: Collection, *, by: User) -> Collection:
     """Reverse a collection. The invoices it paid owe that amount again."""
-    # Read without a lock: a collection's applications are written with it
-    # and never change. Then the lock order: its invoices, then the collection
-    # itself (_cancel re-checks under that lock that it is not cancelled yet).
-    invoice_ids = set(
-        CollectionApplication.unscoped.filter(collection_id=c.pk, is_deleted=False).values_list(
-            "invoice_id", flat=True
-        )
-    )
+    # The lock order: its invoices, then the collection itself. The invoices
+    # are read without a lock first, so they can be locked before the
+    # collection; apply_collection can add one after that read. So the set is
+    # read again under the collection's lock (an apply holds it too, so none
+    # can land after this second read), and if it grew, the attempt is rolled
+    # back and made again with the new set. A last attempt that still finds a
+    # newcomer locks it out of order rather than leave it reading paid.
+    for attempt in range(_CANCEL_ATTEMPTS):
+        invoice_ids = _applied_invoice_ids(c)
+        try:
+            with transaction.atomic():
+                _lock_invoices(invoice_ids)
+                locked = _lock(c)
+                applied = _applied_invoice_ids(c)
+                if not applied <= invoice_ids:
+                    if attempt + 1 < _CANCEL_ATTEMPTS:
+                        raise _AppliedMeanwhile
+                    _lock_invoices(applied - invoice_ids)
+                _stamp_cancelled(locked, by=by)
+                for invoice_id in sorted(applied):
+                    sync_invoice_status(InvoiceDraft.objects.get(pk=invoice_id))
+            return locked
+        except _AppliedMeanwhile:
+            continue
+    raise AssertionError("unreachable: the last attempt never retries")  # pragma: no cover
+
+
+def apply_collection(
+    collection: Collection, *, applies: list[tuple[InvoiceDraft, Decimal]], by: User
+) -> Collection:
+    """Apply what is left of a standing collection to the invoices it pays.
+
+    An advance (a collection recorded with no invoice, by operations at the
+    door, say) settles invoices later this way. Up to the collection's
+    unallocated amount (its amount less its standing applications), each
+    invoice up to what it still owes, of the collection's own customer and
+    currency. Allocation only, as at record_collection: the money posted when
+    the collection was recorded, so this writes no movement. Each invoice it
+    pays then reads paid or issued by what it owes.
+    """
+    if not applies:
+        raise _invalid("applies", "Name the invoices it pays.", code="required")
     with transaction.atomic():
-        _lock_invoices(invoice_ids)
-        cancelled = _cancel(c, by=by)
-        for invoice_id in sorted(invoice_ids):
+        # The lock order: the invoices first, in pk order, then the collection,
+        # refused if it is cancelled.
+        _lock_invoices({invoice.pk for invoice, _ in applies})
+        locked = _lock(collection)
+        applied = CollectionApplication.unscoped.filter(
+            collection=locked, is_deleted=False
+        ).aggregate(total=Sum("amount"))["total"]
+        unallocated = (Decimal(locked.amount) - Decimal(applied or _ZERO)).quantize(_ZERO)
+        # The collection row itself is not written: a document is never edited,
+        # and each application records who made it.
+        _apply(locked, applies, by=by, limit=unallocated)
+        for invoice_id in sorted({invoice.pk for invoice, _ in applies}):
             sync_invoice_status(InvoiceDraft.objects.get(pk=invoice_id))
-    return cancelled
+    return locked
 
 
 # Invoices (M7) ------------------------------------------------------------------

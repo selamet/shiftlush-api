@@ -3721,6 +3721,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountDetail'
           description: ''
+  /api/v1/ledger/accounts/{id}/open-invoices/:
+    get:
+      operationId: ledger_accounts_open_invoices_list
+      description: |-
+        The issued invoices a collection on this account can still pay.
+
+        Its customer's, in its currency, with something left to pay; oldest
+        first. Empty for a supplier or staff account. Readable by operations,
+        which applies an advance to them (`POST /collections/{id}/apply/`).
+      parameters:
+      - in: query
+        name: has_balance
+        schema:
+          type: boolean
+        description: Whether the balance is anything but zero.
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this account.
+        required: true
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - customer
+          - staff
+          - supplier
+        description: |-
+          * `customer` - Customer
+          * `supplier` - Supplier
+          * `staff` - Staff
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: overdue
+        schema:
+          type: boolean
+        description: Owes the firm, and has an issued invoice still unpaid that is
+          older than `overdue_days`.
+      - in: query
+        name: overdue_days
+        schema: {}
+        description: Days, for `overdue`. 30 when omitted.
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Part of the name.
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenInvoice'
+          description: ''
   /api/v1/ledger/accounts/{id}/statement/:
     get:
       operationId: ledger_accounts_statement_retrieve
@@ -4190,6 +4262,54 @@ paths:
         required: true
       tags:
       - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRead'
+          description: ''
+  /api/v1/ledger/collections/{id}/apply/:
+    post:
+      operationId: ledger_collections_apply_create
+      description: |-
+        Apply what the collection has not yet applied to invoices it pays.
+
+        An advance settles invoices this way. Each invoice up to what it still
+        owes, all together up to the collection's unallocated amount; the
+        collection's own customer and currency. No money moves: the collection
+        posted when it was recorded.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this collection.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionApplyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CollectionApplyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CollectionApplyRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -7544,6 +7664,21 @@ components:
       required:
       - amount
       - invoice
+    CollectionApplyRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        applies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplyRequest'
+          description: The invoices it pays, each up to what it still owes, all together
+            up to what the collection has not yet applied.
+      required:
+      - applies
     CollectionCreateRequest:
       type: object
       description: 'What every document takes: an amount and a business date.'
@@ -11103,6 +11238,39 @@ components:
     NullEnum:
       enum:
       - null
+    OpenInvoice:
+      type: object
+      description: An invoice a collection can still pay, as the picker lists it.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        invoice_number:
+          type: string
+          readOnly: true
+        invoice_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        remaining:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+          description: The total less what standing collections pay of it.
+      required:
+      - id
+      - invoice_date
+      - invoice_number
+      - remaining
+      - total
     OpeningBalanceCreateRequest:
       type: object
       description: 'What every document takes: an amount and a business date.'
