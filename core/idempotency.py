@@ -6,6 +6,23 @@ most common complaint in field software, and they are expensive to unpick
 afterwards because both copies look legitimate.
 
 The header is optional; clients that do not send it get today's behaviour.
+
+The key is reserved *before* the handler runs (issue #155). It used to be
+stored only after the handler returned, so a client that timed out and retried
+while the first request was still working found nothing and ran the handler a
+second time — a second record, every report mail sent twice, and soon a second
+collection booked against an invoice. Now:
+
+- The first request inserts a pending row under the unique key, in its own
+  transaction, and commits it before the work starts.
+- An overlapping request with the same key finds that row and is refused with
+  409 `IDEMPOTENCY_KEY_IN_FLIGHT`; the client retries later and is then served
+  the stored answer.
+- A successful handler fills the row in. A failed one (non-2xx, or an
+  exception) deletes it, so a transient error neither sticks nor locks the key.
+- A pending row older than `PENDING_TIMEOUT` belonged to a worker that died
+  mid-request, and the next request takes it over — one winner, decided by a
+  conditional update.
 """
 
 from __future__ import annotations
@@ -13,22 +30,38 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import logging
 from collections.abc import Callable
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from core.error_codes import ErrorCode
-from core.exceptions import BadRequest, RecordInUse
+from core.exceptions import BadRequest, Conflict, RecordInUse
 from core.models import IdempotencyKey
 from core.requests import authenticated_user
 
 HEADER = "Idempotency-Key"
 RETENTION = timedelta(hours=24)
+
+#: How long a reservation may stay pending before it counts as abandoned. Well
+#: past any request the API serves — the slowest is a report send over SMTP —
+#: and short enough that a client whose first attempt died with its worker is
+#: not shut out for long. Taking over a reservation whose handler is in fact
+#: still running would run that handler twice, so this errs long.
+PENDING_TIMEOUT = timedelta(seconds=60)
+
+#: Insert, find the row gone (released in between), insert again. More rounds
+#: than that means something other than this race is going on.
+_RESERVE_ATTEMPTS = 3
+
+logger = logging.getLogger(__name__)
 
 
 def retention_for(view: Any) -> timedelta:
@@ -85,6 +118,144 @@ def _owner(request: Request) -> tuple[Any, dict[str, Any]]:
     return user.company_id, {"user_id": user.pk, "portal_account_id": None}
 
 
+@dataclass(frozen=True)
+class _Reservation:
+    """The pending row this request holds, and when it took it.
+
+    The timestamp is the fencing token: a reservation taken over after
+    `PENDING_TIMEOUT` has a newer one, so a slow original that finally finishes
+    can neither overwrite nor delete the row it no longer owns.
+    """
+
+    pk: int
+    reserved_at: datetime
+
+    def mine(self) -> QuerySet[IdempotencyKey]:
+        return IdempotencyKey.objects.filter(
+            pk=self.pk, created_at=self.reserved_at, response_status__isnull=True
+        )
+
+
+def _take_over(
+    pk: int,
+    candidate: QuerySet[IdempotencyKey],
+    *,
+    endpoint: str,
+    fingerprint: str,
+    now: datetime,
+    retention: timedelta,
+) -> _Reservation | None:
+    """Turn an expired or abandoned row into this request's reservation.
+
+    A conditional UPDATE, so of two requests taking over the same row exactly
+    one matches: the second waits on the first's row lock and then finds the
+    condition no longer holds.
+    """
+    updated = candidate.update(
+        endpoint=endpoint,
+        request_hash=fingerprint,
+        response_status=None,
+        response_body=None,
+        created_at=now,
+        expires_at=now + retention,
+    )
+    if updated != 1:
+        return None
+    return _Reservation(pk, now)
+
+
+def _reserve(
+    *,
+    company_id: Any,
+    owner: dict[str, Any],
+    key: str,
+    endpoint: str,
+    fingerprint: str,
+    retention: timedelta,
+) -> _Reservation | Response:
+    """Claim the key before the work, or say why this request may not run.
+
+    Returns the reservation, or the stored response to replay. Raises 409 for a
+    key reused with another body, or one whose first request is still running.
+    """
+    for _ in range(_RESERVE_ATTEMPTS):
+        now = timezone.now()
+        try:
+            # Its own transaction, committed before the handler starts, so an
+            # overlapping request sees the row. The unique constraint decides
+            # which of two simultaneous inserts wins.
+            with transaction.atomic():
+                row = IdempotencyKey.objects.create(
+                    company_id=company_id,
+                    key=key,
+                    **owner,
+                    endpoint=endpoint,
+                    request_hash=fingerprint,
+                    response_status=None,
+                    response_body=None,
+                    expires_at=now + retention,
+                )
+            return _Reservation(row.pk, row.created_at)
+        except IntegrityError:
+            pass
+
+        existing = IdempotencyKey.objects.filter(company_id=company_id, key=key, **owner).first()
+        if existing is None:
+            # Released between the insert and the read: the first request
+            # failed, so this one may run. Insert again.
+            continue
+
+        taken: _Reservation | None
+        if existing.expires_at <= now:
+            taken = _take_over(
+                existing.pk,
+                IdempotencyKey.objects.filter(pk=existing.pk, expires_at__lte=now),
+                endpoint=endpoint,
+                fingerprint=fingerprint,
+                now=now,
+                retention=retention,
+            )
+        elif existing.request_hash != fingerprint or existing.endpoint != endpoint:
+            raise RecordInUse(ErrorCode.IDEMPOTENCY_KEY_REUSED)
+        elif not existing.is_pending:
+            return Response(existing.response_body, status=existing.response_status)
+        elif existing.created_at > now - PENDING_TIMEOUT:
+            # The first request is still working. Waiting for it would hold a
+            # worker for as long as the slowest handler; the client is told to
+            # come back, and then gets the stored answer.
+            raise Conflict(ErrorCode.IDEMPOTENCY_KEY_IN_FLIGHT)
+        else:
+            taken = _take_over(
+                existing.pk,
+                IdempotencyKey.objects.filter(
+                    pk=existing.pk,
+                    response_status__isnull=True,
+                    created_at__lt=now - PENDING_TIMEOUT,
+                ),
+                endpoint=endpoint,
+                fingerprint=fingerprint,
+                now=now,
+                retention=retention,
+            )
+        if taken is not None:
+            return taken
+        # Someone else changed the row first; look again.
+
+    raise Conflict(ErrorCode.IDEMPOTENCY_KEY_IN_FLIGHT)
+
+
+def _release(reservation: _Reservation) -> None:
+    """Drop the reservation of a request that did not succeed.
+
+    A failure on the way out must not mask the handler's own error; the row is
+    then abandoned and taken over after `PENDING_TIMEOUT`.
+    """
+    try:
+        reservation.mine().delete()
+    except Exception:
+        logger.exception("Could not release idempotency key %s", reservation.pk)
+
+
 def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response]:
     """Wrap a create view so the same key returns the same answer.
 
@@ -92,6 +263,9 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
     409 rather than served the stored response. Returning the old answer there
     would reply to a question that was never asked, and that is one of the
     hardest classes of bug to trace afterwards.
+
+    The handler's own transaction is untouched: the reservation commits before
+    it opens, and the answer is written after it closes.
     """
 
     @functools.wraps(handler)
@@ -114,34 +288,38 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
             # company-scoped and the permission class refuses first.
             return handler(self, request, *args, **kwargs)
 
-        existing = IdempotencyKey.objects.filter(company_id=company_id, key=key, **owner).first()
+        retention = retention_for(self)
+        reserved = _reserve(
+            company_id=company_id,
+            owner=owner,
+            key=key,
+            endpoint=endpoint,
+            fingerprint=fingerprint,
+            retention=retention,
+        )
+        if isinstance(reserved, Response):
+            return reserved
 
-        if existing is not None:
-            if existing.expires_at <= timezone.now():
-                existing.delete()
-            elif existing.request_hash != fingerprint or existing.endpoint != endpoint:
-                raise RecordInUse(ErrorCode.IDEMPOTENCY_KEY_REUSED)
-            else:
-                return Response(existing.response_body, status=existing.response_status)
-
-        response = handler(self, request, *args, **kwargs)
+        try:
+            response = handler(self, request, *args, **kwargs)
+        except BaseException:
+            _release(reserved)
+            raise
 
         # Only successful creates are worth replaying. Storing a failure would
-        # make a transient error permanent for the next twenty-four hours.
-        if 200 <= response.status_code < 300:
-            response_data = response.data
-            IdempotencyKey.objects.update_or_create(
-                company_id=company_id,
-                key=key,
-                **owner,
-                defaults={
-                    "endpoint": endpoint,
-                    "request_hash": fingerprint,
-                    "response_status": response.status_code,
-                    "response_body": json.loads(json.dumps(response_data, default=str)),
-                    "expires_at": timezone.now() + retention_for(self),
-                },
-            )
+        # make a transient error permanent for the next twenty-four hours, and
+        # keeping the reservation would refuse the retry that fixes it.
+        if not 200 <= response.status_code < 300:
+            _release(reserved)
+            return response
+
+        # Zero rows when the reservation was taken over after PENDING_TIMEOUT:
+        # the request that took it stores its own answer.
+        reserved.mine().update(
+            response_status=response.status_code,
+            response_body=json.loads(json.dumps(response.data, default=str)),
+            expires_at=timezone.now() + retention,
+        )
         return response
 
     # Read back by ReplayProtectedCreate below, and by the test that walks the

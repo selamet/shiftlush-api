@@ -76,6 +76,10 @@ class ErrorCode(models.TextChoices):
         "IDEMPOTENCY_KEY_REQUIRED",
         "This request must carry an Idempotency-Key header",
     )
+    IDEMPOTENCY_KEY_IN_FLIGHT = (
+        "IDEMPOTENCY_KEY_IN_FLIGHT",
+        "A request with this Idempotency-Key is still being processed; retry later",
+    )
 
     # Business rules --------------------------------------------------------
     ELEVATOR_ALREADY_CONTRACTED = (

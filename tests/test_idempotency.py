@@ -6,6 +6,8 @@ tap. Without this there are now two contracts, both looking legitimate.
 
 from __future__ import annotations
 
+import threading
+import time
 from contextlib import contextmanager
 from datetime import date, timedelta
 from io import StringIO
@@ -13,15 +15,18 @@ from io import StringIO
 import pytest
 from django.core import mail as django_mail
 from django.core.management import call_command
+from django.db import connection, connections
 from django.urls import get_resolver, reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.contracts.api.v1.serializers import ContractWriteSerializer
 from apps.contracts.models import Contract, PricingType, Scope
 from apps.customers.models import Customer, CustomerType
 from apps.users.models import Invitation, Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
+from core.idempotency import PENDING_TIMEOUT
 from core.models import IdempotencyKey
 from tests.identifiers import tax_number
 
@@ -528,3 +533,177 @@ class TestNoCreateEndpointCanForgetThis:
         # object, so a retry returns the record the first call made. Any other
         # name arriving here is a decision to be made rather than inherited.
         assert exempt == {"AttachmentViewSet"}
+
+
+def contracts(company) -> int:
+    with company_context(company.id):
+        return Contract.objects.count()
+
+
+class TestTheKeyIsReservedBeforeTheWork:
+    """Issue #155: the key used to be stored only after the handler returned.
+
+    A client that timed out and retried while the first request was still
+    running found no row and ran the handler again: two contracts, or every
+    report mail sent twice. The key is now reserved before the work starts.
+    """
+
+    def post(self, firm, body=None):
+        _, owner, customer = firm
+        return api_for(owner).post(
+            reverse("contract-list"),
+            body or payload(customer.id),
+            format="json",
+            HTTP_IDEMPOTENCY_KEY=KEY,
+        )
+
+    def pending(self, firm, *, since=None) -> None:
+        """Turn the stored answer back into a reservation still being worked on."""
+        assert self.post(firm).status_code == 201
+        IdempotencyKey.objects.update(
+            response_status=None, response_body=None, created_at=since or timezone.now()
+        )
+
+    def test_a_key_in_flight_is_refused(self, firm):
+        company, _, _ = firm
+        self.pending(firm)
+
+        response = self.post(firm)
+
+        assert response.status_code == 409
+        assert response.data["error"]["code"] == "IDEMPOTENCY_KEY_IN_FLIGHT"
+        # The handler did not run a second time.
+        assert contracts(company) == 1
+        # And the reservation belongs to the request that holds it.
+        assert IdempotencyKey.objects.get().response_status is None
+
+    def test_a_key_in_flight_with_a_different_body_is_reused(self, firm):
+        _, _, customer = firm
+        self.pending(firm)
+
+        response = self.post(firm, payload(customer.id) | {"monthly_fee": "2000.00"})
+
+        assert response.status_code == 409
+        assert response.data["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+    def test_a_failed_handler_leaves_no_key(self, firm, monkeypatch):
+        company, _, _ = firm
+        seen: list[IdempotencyKey] = []
+
+        def explode(serializer, validated_data):
+            # The reservation is in place while the work runs, so a retry
+            # arriving now would be refused rather than run.
+            seen.extend(IdempotencyKey.objects.filter(key=KEY))
+            raise RuntimeError("smtp went away")
+
+        monkeypatch.setattr(ContractWriteSerializer, "create", explode)
+        # The exception handler turns the crash into a 500.
+        assert self.post(firm).status_code == 500
+
+        assert [row.response_status for row in seen] == [None]
+        # Released: a transient error must not lock the key, and must not be
+        # stored as the answer either.
+        assert not IdempotencyKey.objects.exists()
+        assert contracts(company) == 0
+
+        monkeypatch.undo()
+        assert self.post(firm).status_code == 201
+        assert contracts(company) == 1
+        assert IdempotencyKey.objects.get().response_status == 201
+
+    def test_a_refused_handler_leaves_no_key(self, firm):
+        company, _, customer = firm
+        broken = payload(customer.id) | {"end_date": str(TODAY - timedelta(days=1))}
+
+        assert self.post(firm, broken).status_code == 400
+        assert not IdempotencyKey.objects.exists()
+
+        assert self.post(firm).status_code == 201
+        assert contracts(company) == 1
+
+    def test_an_abandoned_reservation_is_taken_over(self, firm):
+        company, _, _ = firm
+        # A worker that died mid-request never released its key.
+        self.pending(firm, since=timezone.now() - PENDING_TIMEOUT - timedelta(seconds=1))
+
+        response = self.post(firm)
+
+        assert response.status_code == 201
+        assert contracts(company) == 2
+        row = IdempotencyKey.objects.get()
+        assert row.response_status == 201
+        assert row.response_body is not None
+        assert row.response_body["id"] == response.data["id"]
+
+    def test_a_completed_key_is_still_replayed(self, firm):
+        company, _, _ = firm
+        first = self.post(firm)
+        second = self.post(firm)
+
+        assert first.status_code == second.status_code == 201
+        assert first.data["id"] == second.data["id"]
+        assert contracts(company) == 1
+
+
+@pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="SQLite serialises every write; the overlap only exists on PostgreSQL",
+)
+@pytest.mark.django_db(transaction=True)
+class TestTwoOverlappingRetries:
+    """Issue #155, for real: two requests with one key, at the same moment."""
+
+    def test_the_handler_runs_once(self, monkeypatch):
+        company, owner = register_company(
+            legal_name="Race Ltd",
+            display_name="Race",
+            first_name="R",
+            last_name="Owner",
+            email="race@example.com",
+            password=PASSWORD,
+        )
+        with company_context(company.id):
+            customer = Customer.objects.create(
+                company=company, type=CustomerType.CORPORATE, legal_name="A customer"
+            )
+
+        runs: list[int] = []
+        original = ContractWriteSerializer.create
+
+        def slow(serializer, validated_data):
+            runs.append(1)
+            # Long enough that the second request arrives while the first is
+            # still inside the handler.
+            time.sleep(0.5)
+            return original(serializer, validated_data)
+
+        monkeypatch.setattr(ContractWriteSerializer, "create", slow)
+        start = threading.Barrier(2)
+        answers: list[tuple[int, dict]] = []
+
+        def client() -> None:
+            try:
+                start.wait()
+                response = api_for(owner).post(
+                    reverse("contract-list"),
+                    payload(customer.id),
+                    format="json",
+                    HTTP_IDEMPOTENCY_KEY=KEY,
+                )
+                answers.append((response.status_code, response.data))
+            finally:
+                connections.close_all()
+
+        threads = [threading.Thread(target=client) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(runs) == 1
+        assert contracts(company) == 1
+        statuses = sorted(status for status, _ in answers)
+        assert statuses in ([201, 201], [201, 409])
+        for status, data in answers:
+            if status == 409:
+                assert data["error"]["code"] == "IDEMPOTENCY_KEY_IN_FLIGHT"

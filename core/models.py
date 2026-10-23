@@ -163,8 +163,15 @@ class IdempotencyKey(models.Model):
     # the stored response there would return an answer to a question that was
     # never asked, so the hash lets that case be caught and rejected.
     request_hash = models.CharField(max_length=64)
-    response_status = models.SmallIntegerField()
-    response_body = models.JSONField()
+    # Both empty while the key is reserved and its handler is still running
+    # (issue #155): the row is written *before* the work, so a retry that
+    # overlaps the first request finds it and is refused instead of running the
+    # handler a second time. Both are filled once the handler succeeds; a
+    # failed handler deletes the row instead.
+    response_status = models.SmallIntegerField(null=True, blank=True)
+    response_body = models.JSONField(null=True, blank=True)
+    # For a pending row, when the current reservation was taken: an abandoned
+    # reservation is taken over by moving it forward (see core/idempotency.py).
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(db_index=True)
 
@@ -186,10 +193,22 @@ class IdempotencyKey(models.Model):
                 | models.Q(user__isnull=True, portal_account__isnull=False),
                 name="idempotency_key_one_principal",
             ),
+            # A pending row has no answer yet. The reverse is not required: a
+            # stored 2xx whose body is empty is a legitimate answer, and None
+            # reaches a nullable JSONField as SQL NULL.
+            models.CheckConstraint(
+                condition=models.Q(response_status__isnull=False)
+                | models.Q(response_body__isnull=True),
+                name="idempotency_key_pending_has_no_body",
+            ),
         ]
 
     def __str__(self) -> str:
         return f"{self.endpoint} {self.key}"
+
+    @property
+    def is_pending(self) -> bool:
+        return self.response_status is None
 
 
 class ScheduledRun(models.Model):
