@@ -111,6 +111,7 @@ class Activity:
     notifications: int = 0
     positions: int = 0
     signatures: int = 0
+    reports: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -149,6 +150,7 @@ def populate_activity(
         activity.planned_visits += _plan(firm, generator, day, offsets, activity)
         activity.planned_days += _planned_days(day)
         activity.signatures += _signatures(firm, generator)
+        activity.reports += _reports(firm, day, activity)
         activity.faults += _faults(firm, generator, day)
         activity.inspections += _inspections(firm, generator, day)
         activity.portal_accounts += _portal(firm, staff_domain)
@@ -584,6 +586,28 @@ def _signatures(firm: _Firm, rng: random.Random) -> int:
         MaintenanceVisit.objects.filter(pk=visit.pk).update(**changes)
         given += 1
     return given
+
+
+def _reports(firm: _Firm, today: date, activity: Activity) -> int:
+    """Make last month's customer reports, none sent (the demo firm's switch is off).
+
+    The PDFs need a bucket to live in, the same rule as the signature images:
+    with none reachable nothing is generated, so no report is left half made.
+    """
+    from apps.attachments.models import AttachmentCategory
+    from apps.attachments.services import _backend_for
+    from apps.reports import services as reports
+    from core import storage
+
+    if not (
+        settings.DEMO_SIGNATURE_IMAGES
+        and storage.reachable(_backend_for(AttachmentCategory.MONTHLY_REPORT))
+    ):
+        activity.notes.append("no bucket to store the monthly reports in, so none were made")
+        return 0
+    last = today.replace(day=1) - timedelta(days=1)
+    period = f"{last.year:04d}-{last.month:02d}"
+    return reports.generate(firm.company, period, today=today, send=False).created
 
 
 # Positions -----------------------------------------------------------------------------
