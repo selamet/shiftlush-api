@@ -139,22 +139,24 @@ class Account(CompanyOwnedModel):
                 ),
                 name="ledger_account_one_party",
             ),
-            # One account per party. Live rows only, as for every unique key on
-            # a soft-deleted model (core.models.SoftDeleteModel).
+            # One account per party and currency: a contract can be in any
+            # currency, and an amount is only ever added to one in the same
+            # currency. Live rows only, as for every unique key on a
+            # soft-deleted model (core.models.SoftDeleteModel).
             models.UniqueConstraint(
-                fields=["customer"],
+                fields=["customer", "currency"],
                 condition=models.Q(is_deleted=False, customer__isnull=False),
-                name="uq_ledger_account_customer",
+                name="uq_ledger_account_customer_currency",
             ),
             models.UniqueConstraint(
-                fields=["supplier"],
+                fields=["supplier", "currency"],
                 condition=models.Q(is_deleted=False, supplier__isnull=False),
-                name="uq_ledger_account_supplier",
+                name="uq_ledger_account_supplier_currency",
             ),
             models.UniqueConstraint(
-                fields=["user"],
+                fields=["user", "currency"],
                 condition=models.Q(is_deleted=False, user__isnull=False),
-                name="uq_ledger_account_user",
+                name="uq_ledger_account_user_currency",
             ),
         ]
         indexes = [models.Index(fields=["company", "kind"])]
@@ -168,7 +170,7 @@ class CashAccountRole(models.TextChoices):
     #: payment with no cash account named goes, whatever the firm renames it.
     DEFAULT = "default", "Default till"
     #: Payments M7 recorded before the ledger existed ("Devir"), carried over
-    #: by the data migration (apps.ledger.migration_helpers).
+    #: by the data migration (apps.ledger.migration_helpers). One per currency.
     CARRIED_OVER = "carried_over", "Carried over from M7"
 
 
@@ -194,11 +196,18 @@ class CashAccount(CompanyOwnedModel):
             models.CheckConstraint(
                 condition=models.Q(kind__in=CashKind.values), name="ledger_cash_account_kind_valid"
             ),
-            # One of each system cash account per firm.
+            # One default till per firm, in the firm's currency.
             models.UniqueConstraint(
-                fields=["company", "role"],
-                condition=models.Q(is_deleted=False) & ~models.Q(role=""),
-                name="uq_ledger_cash_account_role",
+                fields=["company"],
+                condition=models.Q(is_deleted=False, role=CashAccountRole.DEFAULT),
+                name="uq_ledger_cash_account_default",
+            ),
+            # One "Devir" till per firm and currency: a carried-over payment
+            # goes into a till in the invoice's own currency.
+            models.UniqueConstraint(
+                fields=["company", "currency"],
+                condition=models.Q(is_deleted=False, role=CashAccountRole.CARRIED_OVER),
+                name="uq_ledger_cash_account_carried_over",
             ),
         ]
 

@@ -478,6 +478,7 @@ SPECTACULAR_SETTINGS = {
         # The error vocabulary cannot be inferred from the views, so it is
         # added here from the enum rather than maintained by hand.
         "core.spectacular.add_error_codes",
+        "core.spectacular.optional_by_role",
         "core.spectacular.restore_language",
     ],
     "COMPONENT_SPLIT_REQUEST": True,

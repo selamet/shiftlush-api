@@ -12,12 +12,24 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import DecimalField, F, OuterRef, Q, QuerySet, Subquery, Sum, Value
+from django.db.models import (
+    Case,
+    DecimalField,
+    F,
+    OuterRef,
+    Q,
+    QuerySet,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.expressions import CombinedExpression
 from django.db.models.functions import Coalesce, Round
 
 from apps.billing.models import InvoiceDraft
 from apps.ledger.models import (
+    DEFAULT_CURRENCY,
     Account,
     CashAccount,
     CashDirection,
@@ -95,6 +107,13 @@ def with_balance(qs: QuerySet[Account]) -> QuerySet[Account]:
             output_field=_MONEY,
         )
     )
+
+
+def customer_accounts(qs: QuerySet[Account]) -> QuerySet[Account]:
+    """A customer's accounts as the customer page lists them: balance
+    annotated, TRY first, then the other currencies alphabetically."""
+    lira_first = Case(When(currency=DEFAULT_CURRENCY, then=Value(0)), default=Value(1))
+    return with_balance(qs).order_by(lira_first, "currency", "id")
 
 
 def with_cash_balance(qs: QuerySet[CashAccount]) -> QuerySet[CashAccount]:

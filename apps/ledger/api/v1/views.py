@@ -142,6 +142,9 @@ class AccountFilter(TenantFilterSet):
         # they do (apps.ledger.services.sync_invoice_status).
         unpaid = InvoiceDraft.objects.filter(
             customer_id=OuterRef("customer_id"),
+            # An account owes in its own currency: an overdue EUR invoice makes
+            # the EUR account overdue, not the TRY one.
+            currency=OuterRef("currency"),
             status=InvoiceStatus.ISSUED,
             cancelled_at__isnull=True,
             invoice_date__lt=cutoff,

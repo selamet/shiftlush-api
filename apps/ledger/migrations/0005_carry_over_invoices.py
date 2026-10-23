@@ -1,31 +1,12 @@
-"""Post the invoices M7 issued before the ledger existed, and their payments.
+"""Moved to 0008_carry_over_invoices. Kept, as a no-op, for the graph.
 
-The work is apps.ledger.migration_helpers.carry_over_invoices, which the demo
-reuses: every issued or paid draft posts its debit once, and every paid draft
-gets a collection into the firm's "Devir" cash account, dated when it was
-paid. Idempotent, so running it again changes nothing.
-
-It runs the live services rather than historical models, because the ledger's
-rules live there and a second copy of them here would drift. That is safe for
-the database this ships to, whose schema is the live one. A fresh database has
-no issued drafts, and the historical check below returns before the live
-models are touched, so replaying the migrations from scratch never meets a
-schema the live models do not match.
+The carry-over ran here, before 0007 made accounts one per (customer,
+currency). A firm with a non-TRY draft then had no account the invoice could
+post to, and the deploy failed on it. It runs after 0007 now; a database that
+ran it here runs it again there, which is idempotent.
 """
 
 from django.db import migrations
-
-
-def carry_over(apps, schema_editor):
-    draft_model = apps.get_model("billing", "InvoiceDraft")
-    if not draft_model._default_manager.filter(
-        is_deleted=False, status__in=["issued", "paid"]
-    ).exists():
-        return
-
-    from apps.ledger.migration_helpers import carry_over_invoices
-
-    carry_over_invoices()
 
 
 class Migration(migrations.Migration):
@@ -34,11 +15,4 @@ class Migration(migrations.Migration):
         ("ledger", "0004_cash_account_role"),
     ]
 
-    operations = [
-        migrations.RunPython(
-            carry_over,
-            # Movements are never deleted, and the carried-over collections are
-            # documents like any other: undone by cancelling them, not here.
-            reverse_code=migrations.RunPython.noop,
-        )
-    ]
+    operations = []

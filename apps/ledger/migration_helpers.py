@@ -32,7 +32,13 @@ from django.db import transaction
 
 from apps.billing.models import InvoiceDraft, InvoiceStatus
 from apps.ledger import services
-from apps.ledger.models import CashAccount, CashAccountRole, CashKind, PaymentMethod
+from apps.ledger.models import (
+    DEFAULT_CURRENCY,
+    CashAccount,
+    CashAccountRole,
+    CashKind,
+    PaymentMethod,
+)
 from core.context import company_context
 from core.scheduling import local_today
 
@@ -54,17 +60,25 @@ class CarriedOver:
     collected: int = 0
 
 
-def carried_over_cash_account(company_id: UUID) -> CashAccount:
-    """The firm's "Devir" cash account, found by its role and made on first ask."""
+def carried_over_cash_account(company_id: UUID, currency: str = DEFAULT_CURRENCY) -> CashAccount:
+    """The firm's "Devir" cash account in `currency`, found by its role and made
+    on first ask. One per currency: a payment is carried into a till in the
+    invoice's own currency. The TRY one keeps the plain name; another carries
+    its currency in the name, so the two read apart in a list."""
     till = CashAccount.unscoped.filter(
-        company_id=company_id, role=CashAccountRole.CARRIED_OVER, is_deleted=False
+        company_id=company_id,
+        role=CashAccountRole.CARRIED_OVER,
+        currency=currency,
+        is_deleted=False,
     ).first()
     if till is None:
+        name = labels()["carried_over_cash_account"]
         till = CashAccount.objects.create(
             company_id=company_id,
             kind=CashKind.CASH,
             role=CashAccountRole.CARRIED_OVER,
-            name=labels()["carried_over_cash_account"],
+            currency=currency,
+            name=name if currency == DEFAULT_CURRENCY else f"{name} {currency}",
         )
     return till
 
@@ -99,7 +113,7 @@ def _carry_over_firm(company_id: UUID, result: CarriedOver) -> None:
             draft,
             date=_not_after_today(paid_on),
             by=None,
-            cash_account=carried_over_cash_account(company_id),
+            cash_account=carried_over_cash_account(company_id, draft.currency),
             method=PaymentMethod.TRANSFER,
             note=labels()["carried_over_note"],
         )

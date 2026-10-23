@@ -8,7 +8,7 @@ from rest_framework import serializers
 
 from apps.customers.models import ContactRole, Customer, CustomerContact, CustomerType
 from apps.customers.services import demote_other_primaries
-from apps.ledger.balances import with_balance
+from apps.ledger.balances import customer_accounts
 from apps.ledger.models import Account
 from core.crypto import fingerprint
 from core.error_codes import ErrorCode
@@ -142,13 +142,13 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
         ]
 
 
-#: Where the viewset prefetches each customer's ledger account, balance
-#: annotated, for the roles that may see it.
+#: Where the viewset prefetches each customer's ledger accounts, balance
+#: annotated, for the roles that may see them.
 LEDGER_ACCOUNT_ROWS = "ledger_account_rows"
 
 
 class CustomerAccountSerializer(serializers.Serializer[Any]):
-    """The customer's ledger account, as the customer page shows it."""
+    """One of the customer's ledger accounts, as the customer page shows it."""
 
     id = serializers.UUIDField(read_only=True)
     balance = serializers.DecimalField(
@@ -164,38 +164,46 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
-    account = serializers.SerializerMethodField(
+    accounts = serializers.SerializerMethodField(
         help_text=(
-            "The customer's ledger account and balance. Absent for roles that may "
-            "not see balances (the technician)."
+            "The customer's ledger accounts, one per currency, each with its "
+            "balance; TRY first. Absent for roles that may not see balances "
+            "(the technician)."
         )
     )
 
     def get_fields(self) -> dict[str, Any]:
         fields = super().get_fields()
-        # Dropped rather than nulled for a role that may not see money, as
-        # `unit_price` is on the elevator: `null` would say the customer has no
+        # Dropped rather than emptied for a role that may not see money, as
+        # `unit_price` is on the elevator: `[]` would say the customer has no
         # account, absence says the reader is not entitled to ask. Outside a
-        # request (the schema generator) the field stays declared.
+        # request, and for the schema generator (whose mock request has no
+        # role), the field stays declared: it is in the contract.
         request = self.context.get("request")
-        if request is not None and not may_see_balances(getattr(request.user, "role", None)):
-            fields.pop("account", None)
+        view = self.context.get("view")
+        generating_schema = getattr(view, "swagger_fake_view", False)
+        if (
+            request is not None
+            and not generating_schema
+            and not may_see_balances(getattr(request.user, "role", None))
+        ):
+            fields.pop("accounts", None)
         return fields
 
-    @extend_schema_field(CustomerAccountSerializer(allow_null=True))
-    def get_account(self, customer: Customer) -> dict[str, Any] | None:
+    @extend_schema_field(CustomerAccountSerializer(many=True))
+    def get_accounts(self, customer: Customer) -> list[dict[str, Any]]:
         rows = getattr(customer, LEDGER_ACCOUNT_ROWS, None)
         if rows is None:
             # A record not read through the viewset's queryset: a create.
-            rows = list(with_balance(Account.objects.filter(customer=customer)))
-        if not rows:
-            return None
-        account = rows[0]
-        return dict(
-            CustomerAccountSerializer(
-                {"id": account.pk, "balance": account.balance, "currency": account.currency}
-            ).data
-        )
+            rows = list(customer_accounts(Account.objects.filter(customer=customer)))
+        return [
+            dict(
+                CustomerAccountSerializer(
+                    {"id": account.pk, "balance": account.balance, "currency": account.currency}
+                ).data
+            )
+            for account in rows
+        ]
 
     class Meta:
         model = Customer
@@ -219,7 +227,7 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
             "contacts",
             "building_count",
             "elevator_count",
-            "account",
+            "accounts",
             "created_at",
             "updated_at",
         ]

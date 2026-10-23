@@ -1560,7 +1560,7 @@ class TestInvoiceMigration:
         theirs = make_invoice(books, "800.00", status=InvoiceStatus.PAID, customer=their_customer)
         InvoiceDraft.unscoped.filter(pk=theirs.pk).update(paid_on=date(2026, 10, 3))
 
-        migration = importlib.import_module("apps.ledger.migrations.0005_carry_over_invoices")
+        migration = importlib.import_module("apps.ledger.migrations.0008_carry_over_invoices")
         with system_context():
             migration.carry_over(global_apps, None)
             first = carry_over_invoices()
@@ -2311,11 +2311,9 @@ class TestApi:
 
         # Only ids its own reads hand it: the customer page and the till picker.
         customer = ops.get(reverse("customer-detail", args=[books.customer.pk])).json()
-        assert customer["account"] == {
-            "id": str(books.account.pk),
-            "balance": "800.00",
-            "currency": "TRY",
-        }
+        assert customer["accounts"] == [
+            {"id": str(books.account.pk), "balance": "800.00", "currency": "TRY"}
+        ]
         tills = ops.get(reverse("ledger-cash-account-list")).json()["results"]
         till = next(row for row in tills if row["name"] == "Merkez kasa")
         drafts = ops.get(reverse("invoice-draft-list"))
@@ -2325,7 +2323,7 @@ class TestApi:
             invoice_id = None
 
         body: dict[str, Any] = {
-            "account": customer["account"]["id"],
+            "account": customer["accounts"][0]["id"],
             "cash_account": till["id"],
             "amount": "300.00",
             "method": "cash",
@@ -2336,7 +2334,7 @@ class TestApi:
 
         assert response.status_code == 201, response.data
         after = ops.get(reverse("customer-detail", args=[books.customer.pk])).json()
-        assert after["account"]["balance"] == "500.00"
+        assert after["accounts"][0]["balance"] == "500.00"
         if invoice_id is not None:
             assert invoice_remaining(draft) == Decimal("500.00")
 
@@ -2402,9 +2400,9 @@ class TestApi:
         )
         url = reverse("customer-detail", args=[books.customer.pk])
 
-        assert "account" not in api_for(tech).get(url).json()
+        assert "accounts" not in api_for(tech).get(url).json()
         for role in (Role.OPERATIONS, Role.ACCOUNTANT, Role.ADMIN):
-            account = api_for(staff(books.company, role)).get(url).json()["account"]
+            (account,) = api_for(staff(books.company, role)).get(url).json()["accounts"]
             assert (account["id"], account["balance"]) == (str(books.account.pk), "100.00")
 
         # One query for every row's account, not one per customer.
@@ -2416,7 +2414,7 @@ class TestApi:
             owed(books, make_customer(books.company, f"More {n}"), "10.00", days_ago=1)
         with django_assert_max_num_queries(len(few.captured_queries)):
             rows = client.get(reverse("customer-list")).json()["results"]
-        assert {row["account"]["balance"] for row in rows} == {"100.00", "10.00"}
+        assert {row["accounts"][0]["balance"] for row in rows} == {"100.00", "10.00"}
 
     def test_inactive_accounts_take_no_documents(self, books):
         books.account.is_active = False
@@ -3098,3 +3096,241 @@ class TestConcurrency(TransactionTestCase):
             assert Collection.objects.count() == 1
             assert Movement.objects.filter(source=MovementSource.COLLECTION).count() == 1
             assert account_balance(self.books.account) == Decimal("900.00")
+
+
+# Final fix pass ---------------------------------------------------------------------
+#
+# The rulings of the final review (.superpowers/sdd/2026-10-23-f0-ledger-api,
+# "Final:"): C1 accounts per currency, I1 the carry-over job, I2 settling an
+# advance, and the minors re-graded into the pass (M1, M3, M4, M5).
+
+
+def euro_draft(
+    books: SimpleNamespace, number: str = "EUR-1", price: str = "100.00"
+) -> InvoiceDraft:
+    """A EUR draft with one priced line, issued through M7: `price` + 20% VAT."""
+    draft = make_invoice(books, status=InvoiceStatus.DRAFT, currency="EUR")
+    billing.add_line(
+        draft,
+        description="Maintenance",
+        quantity=Decimal("1"),
+        unit_price=Decimal(price),
+        by=books.owner,
+    )
+    return billing.issue(
+        draft,
+        invoice_number=number,
+        invoice_date=local_today() - timedelta(days=5),
+        by=books.owner,
+    )
+
+
+def euro_till(books: SimpleNamespace, name: str = "EUR bank") -> CashAccount:
+    return CashAccount.objects.create(
+        company=books.company, kind=CashKind.BANK, name=name, currency="EUR"
+    )
+
+
+def account_in(customer: Customer, currency: str) -> Account:
+    return Account.objects.get(customer=customer, currency=currency)
+
+
+class TestAccountsPerCurrency:
+    """C1: a customer has one account per currency, and a non-TRY invoice posts
+    to the account in its own currency."""
+
+    def test_a_firm_with_euro_invoices_migrates_cleanly(self, books):
+        issued = make_invoice(books, "120.00", currency="EUR")
+        paid = make_invoice(books, "60.00", status=InvoiceStatus.PAID, currency="EUR")
+        lira = make_invoice(books, "1000.00")
+
+        migration = importlib.import_module("apps.ledger.migrations.0008_carry_over_invoices")
+        with system_context():
+            migration.carry_over(global_apps, None)
+            again = carry_over_invoices()
+        assert (again.posted, again.collected) == (0, 0)
+
+        euros = account_in(books.customer, "EUR")
+        assert (euros.kind, euros.name) == (AccountKind.CUSTOMER, books.customer.legal_name)
+        assert account_balance(euros) == Decimal("120.00")
+        assert account_balance(books.account) == Decimal("1000.00")
+        (devir,) = CashAccount.objects.filter(role=CashAccountRole.CARRIED_OVER)
+        assert (devir.currency, cash_balance(devir)) == ("EUR", Decimal("60.00"))
+        assert {m.document_id: m.account_id for m in movements_of(issued)} == {issued.pk: euros.pk}
+        assert movements_of(lira)[0].account_id == books.account.pk
+        assert (fresh(paid).status, invoice_remaining(fresh(paid))) == (
+            InvoiceStatus.PAID,
+            Decimal("0.00"),
+        )
+
+    def test_each_currency_gets_its_own_carried_over_till(self, books):
+        make_invoice(books, "60.00", status=InvoiceStatus.PAID, currency="EUR")
+        make_invoice(books, "500.00", status=InvoiceStatus.PAID)
+
+        with system_context():
+            carry_over_invoices()
+
+        tills = CashAccount.objects.filter(role=CashAccountRole.CARRIED_OVER)
+        assert sorted((t.currency, cash_balance(t)) for t in tills) == [
+            ("EUR", Decimal("60.00")),
+            ("TRY", Decimal("500.00")),
+        ]
+        # The default till stays the one TRY till.
+        assert list(
+            CashAccount.objects.filter(role=CashAccountRole.DEFAULT).values_list("currency")
+        ) == [("TRY",)]
+
+    def test_issuing_a_euro_draft_posts_to_the_euro_account(self, books):
+        draft = euro_draft(books)
+
+        euros = account_in(books.customer, "EUR")
+        assert account_balance(euros) == Decimal("120.00")
+        assert account_balance(books.account) == Decimal("0.00")
+        (debit,) = movements_of(draft)
+        assert (debit.account_id, debit.currency) == (euros.pk, "EUR")
+
+    def test_lira_and_euro_invoices_of_one_customer_go_to_two_accounts(self, books):
+        issued_through_m7(books)
+        euro_draft(books)
+
+        accounts = Account.objects.filter(customer=books.customer)
+        assert sorted((a.currency, account_balance(a)) for a in accounts) == [
+            ("EUR", Decimal("120.00")),
+            ("TRY", Decimal("1200.00")),
+        ]
+
+    def test_a_rename_renames_every_account_of_the_customer(self, books):
+        euro_draft(books)
+
+        books.customer.legal_name = "Renamed"
+        books.customer.save()
+
+        assert sorted(
+            Account.objects.filter(customer=books.customer).values_list("currency", "name")
+        ) == [("EUR", "Renamed"), ("TRY", "Renamed")]
+
+    def test_a_staff_account_can_be_opened_in_a_second_currency(self, books):
+        clerk = staff(books.company, Role.OPERATIONS, "clerk")
+        ledger_services.open_account(
+            company_id=books.company.pk, kind=AccountKind.STAFF, user=clerk, by=books.owner
+        )
+
+        euros = ledger_services.open_account(
+            company_id=books.company.pk,
+            kind=AccountKind.STAFF,
+            user=clerk,
+            currency="EUR",
+            by=books.owner,
+        )
+
+        assert euros.currency == "EUR"
+        with pytest.raises(ValidationError) as error:
+            ledger_services.open_account(
+                company_id=books.company.pk,
+                kind=AccountKind.STAFF,
+                user=clerk,
+                currency="EUR",
+                by=books.owner,
+            )
+        assert codes(error) == {"user": "unique"}
+
+    def test_euro_balances_and_collections_stay_in_euro(self, books):
+        draft = euro_draft(books)
+        till = euro_till(books)
+
+        ledger_services.collect_invoice(
+            draft, date=local_today(), by=books.owner, cash_account=till
+        )
+
+        assert account_balance(account_in(books.customer, "EUR")) == Decimal("0.00")
+        assert cash_balance(till) == Decimal("120.00")
+        assert cash_balance(books.till) == Decimal("0.00")
+        assert fresh(draft).status == InvoiceStatus.PAID
+
+    def test_mark_paid_on_a_euro_invoice_asks_for_a_euro_till(self, books):
+        draft = euro_draft(books)
+        url = reverse("invoice-draft-mark-paid", args=[draft.pk])
+        client = api_for(books.owner)
+
+        refused = client.post(url, {"paid_on": str(local_today())})
+
+        assert refused.status_code == 400, refused.data
+        assert error_of(refused)[1] == [("cash_account", "CURRENCY_MISMATCH")]
+        assert not Collection.objects.exists()
+        # The envelope carries the code; the message, for the log and the
+        # service's callers, says what to do.
+        with pytest.raises(ValidationError) as error:
+            billing.mark_paid(draft, paid_on=local_today(), by=books.owner)
+        assert "pick a cash account in EUR" in str(error.value.detail)
+
+        till = euro_till(books)
+        paid = client.post(url, {"paid_on": str(local_today()), "cash_account": str(till.pk)})
+        assert paid.status_code == 200, paid.data
+        assert paid.data["status"] == InvoiceStatus.PAID
+        assert cash_balance(till) == Decimal("120.00")
+
+    def test_the_statement_and_the_summary_keep_currencies_apart(self, books):
+        issued_through_m7(books)
+        euro_draft(books)
+        client = api_for(books.owner)
+
+        euros = account_in(books.customer, "EUR")
+        rows = client.get(reverse("ledger-account-statement", args=[euros.pk])).json()["rows"]
+        assert [(row["debit"], row["credit"]) for row in rows] == [("120.00", "0.00")]
+        rows = client.get(reverse("ledger-account-statement", args=[books.account.pk])).json()[
+            "rows"
+        ]
+        assert [(row["debit"], row["credit"]) for row in rows] == [("1200.00", "0.00")]
+
+        view = client.get(reverse("ledger-finance-summary")).json()
+        owed_by_currency = {row["currency"]: row["receivables"] for row in view["currencies"]}
+        assert owed_by_currency == {"TRY": "1200.00", "EUR": "120.00"}
+
+    def test_overdue_matches_the_invoice_currency(self, books):
+        stale = euro_draft(books)
+        InvoiceDraft.objects.filter(pk=stale.pk).update(invoice_date=date(2026, 1, 1))
+        # The TRY account owes too, but on nothing overdue.
+        record_manual_entry(
+            account=books.account,
+            direction=Direction.DEBIT,
+            amount=Decimal("10.00"),
+            date=local_today(),
+            reason="fee",
+            by=books.owner,
+        )
+
+        rows = (
+            api_for(books.owner)
+            .get(reverse("ledger-account-list"), {"overdue": "true"})
+            .json()["results"]
+        )
+
+        assert [row["id"] for row in rows] == [str(account_in(books.customer, "EUR").pk)]
+
+    def test_the_customer_read_lists_every_account(self, books, django_assert_max_num_queries):
+        issued_through_m7(books)
+        euro_draft(books)
+        url = reverse("customer-detail", args=[books.customer.pk])
+
+        accounts = api_for(books.owner).get(url).json()["accounts"]
+
+        assert sorted((row["currency"], row["balance"]) for row in accounts) == [
+            ("EUR", "120.00"),
+            ("TRY", "1200.00"),
+        ]
+        tech = staff(books.company, Role.TECHNICIAN)
+        UserCustomer.objects.create(
+            company=books.company, user=tech, customer=books.customer, assigned_by=books.owner
+        )
+        assert "accounts" not in api_for(tech).get(url).json()
+
+        client = api_for(books.owner)
+        client.get(reverse("customer-list"))
+        with django_assert_max_num_queries(12) as few:
+            client.get(reverse("customer-list"))
+        for n in range(4):
+            euro_draft(books, number=f"EUR-{n + 2}")
+            owed(books, make_customer(books.company, f"More {n}"), "10.00", days_ago=1)
+        with django_assert_max_num_queries(len(few.captured_queries)):
+            rows = client.get(reverse("customer-list")).json()["results"]
+        assert all("accounts" in row for row in rows)

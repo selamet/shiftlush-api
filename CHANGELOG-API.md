@@ -345,8 +345,16 @@ carried as compatibility shims nobody will ever remove.
     (name), `has_balance`, and `overdue` (owes, and has an issued invoice
     still unpaid older than `overdue_days`, 30 by default).
     `GET /ledger/accounts/{id}/` adds `last_movement`. `POST /ledger/accounts/`
-    (owner, accountant) opens an account for a party that has none — a staff
-    member, mostly; a party that has one is `400 unique`.
+    (owner, accountant) opens an account for a party that has none in the
+    given `currency` — a staff member, mostly; a party that has one in that
+    currency is `400 unique`.
+  - **One account per party and currency.** A contract, and so an invoice, can
+    be in any currency, and amounts in two currencies are never added. A
+    customer's TRY account is made with the customer; its account in another
+    currency is made by the first invoice in that currency, which posts there.
+    A rename renames every account of the customer. Collections pay invoices
+    of the account's own currency only (`400 CURRENCY_MISMATCH` on
+    `applies`), and `overdue` looks at invoices in the account's currency.
   - `GET/POST /ledger/collections/`, `POST /ledger/collections/{id}/cancel/`.
     The body is `account`, `cash_account`, `amount`, `method`, `date` (today
     when omitted), `note` and `applies: [{invoice, amount}]`; none applied is
@@ -395,9 +403,10 @@ carried as compatibility shims nobody will ever remove.
     `{closed_through: date|null}`. Nothing can be dated on or before it
     (`400 PERIOD_CLOSED`); a date after today is `400 invalid`; moving it back
     or clearing it reopens the books. Every change is on the audit trail.
-  - `GET /customers/` and `GET /customers/{id}/` gain `account`
-    (`{id, balance, currency}`) for the roles that may see balances (owner,
-    admin, accountant, operations). It is absent for the technician.
+  - `GET /customers/` and `GET /customers/{id}/` gain `accounts`
+    (`[{id, balance, currency}]`, one per currency, TRY first) for the roles
+    that may see balances (owner, admin, accountant, operations). It is absent
+    for the technician, and so optional in the contract.
   - Every id in a request is looked up in the requesting firm only; another
     firm's is `400 does_not_exist` on that field, as an unknown id is.
   - Errors: `400 CURRENCY_MISMATCH`, `400 PERIOD_CLOSED`,
@@ -428,7 +437,10 @@ carried as compatibility shims nobody will ever remove.
     collection with `applies`. It keeps working: it records a collection of
     everything the invoice still owes, dated `paid_on`, into the optional
     `cash_account` (the firm's main till when omitted) with the optional
-    `method` (`transfer` by default, enum `PaymentMethod`).
+    `method` (`transfer` by default, enum `PaymentMethod`). The main till is in
+    TRY: an invoice in another currency with no `cash_account` is
+    `400 CURRENCY_MISMATCH` on `cash_account` — pick a till in the invoice's
+    currency.
   - An `invoice_date` or `paid_on` after today, or inside the firm's closed
     period, is now refused with a `400` on `date`: no movement is dated in the
     future or in a closed month.

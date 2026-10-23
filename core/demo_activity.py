@@ -1240,7 +1240,7 @@ def _customer_collections(
         if draft.customer_id == overdue or issued_on > settled_before:
             continue
         cash = bank if rng.random() < 0.7 else till
-        account = ledger.account_for_customer(draft.customer)
+        account = ledger.account_for_customer(draft.customer, draft.currency)
         paid_on = issued_on + timedelta(days=rng.randint(7, 21))
         ledger.collect_invoice(
             draft,
@@ -1272,7 +1272,7 @@ def _customer_collections(
         amount = _share(ledger.invoice_remaining(draft), rng.choice((25, 40, 50, 60)))
         if amount <= 0:
             continue
-        account = ledger.account_for_customer(draft.customer)
+        account = ledger.account_for_customer(draft.customer, draft.currency)
         paid_on = issued_on + timedelta(days=rng.randint(2, 10))
         ledger.record_collection(
             account=account,

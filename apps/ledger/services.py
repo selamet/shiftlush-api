@@ -54,25 +54,34 @@ from core.scheduling import local_today
 DEFAULT_CASH_ACCOUNT_NAME = "Merkez kasa"
 
 
-def account_for_customer(customer: Customer) -> Account:
-    """The customer's account, created on first ask.
+def account_for_customer(customer: Customer, currency: str = DEFAULT_CURRENCY) -> Account:
+    """The customer's account in `currency`, created on first ask.
 
-    Called by the post_save receiver (apps.ledger.signals) and by M7 when an
-    invoice posts, so a customer that somehow has none still gets one rather
-    than failing the invoice.
+    A customer has one account per currency: the TRY one is made with the
+    customer (the post_save receiver, apps.ledger.signals), and one in another
+    currency the first time an invoice in it posts. A customer that somehow has
+    none still gets one rather than failing the invoice.
     """
     # Looked up unscoped, by the customer the caller already holds: a customer
     # saved with no company in context (a script, a command) would otherwise
     # find no account through the scoped manager and try to make a second one.
     # The create still passes through the tenant guard.
-    account = Account.unscoped.filter(customer=customer, is_deleted=False).first()
+    live = Account.unscoped.filter(customer=customer, currency=currency, is_deleted=False)
+    account = live.first()
     if account is None:
-        account = Account.objects.create(
-            company_id=customer.company_id,
-            kind=AccountKind.CUSTOMER,
-            customer=customer,
-            name=customer.legal_name,
-        )
+        try:
+            with transaction.atomic():
+                account = Account.objects.create(
+                    company_id=customer.company_id,
+                    kind=AccountKind.CUSTOMER,
+                    customer=customer,
+                    name=customer.legal_name,
+                    currency=currency,
+                )
+        except IntegrityError:
+            # Another transaction made it between the read and the insert; the
+            # unique (customer, currency) refused this one. Theirs is the one.
+            account = live.get()
     return account
 
 
@@ -370,7 +379,7 @@ def post_invoice(
         if _invoice_movement(locked) is not None or Decimal(locked.total) == _ZERO:
             return None
         return post(
-            account=account_for_customer(locked.customer),
+            account=account_for_customer(locked.customer, locked.currency),
             cash_account=None,
             direction=Direction.DEBIT,
             cash_direction=None,
@@ -452,11 +461,29 @@ def collect_invoice(
     method: str = PaymentMethod.TRANSFER,
     note: str = "",
 ) -> Collection:
-    """A collection of everything the invoice still owes, applied to it."""
+    """A collection of everything the invoice still owes, applied to it.
+
+    Into `cash_account`, or the firm's default till when none is named. That
+    till is in TRY: an invoice in another currency names a till in its own,
+    or is refused (`CURRENCY_MISMATCH` on `cash_account`) with a message
+    saying so, rather than the bare mismatch the posting would give.
+    """
+    if cash_account is None:
+        cash_account = default_cash_account(draft.company_id)
+        if cash_account.currency != draft.currency:
+            raise ValidationError(
+                {
+                    "cash_account": ErrorDetail(
+                        f"This invoice is in {draft.currency}; "
+                        f"pick a cash account in {draft.currency}.",
+                        code=ErrorCode.CURRENCY_MISMATCH.value,
+                    )
+                }
+            )
     remaining = invoice_remaining(draft)
     return record_collection(
-        account=account_for_customer(draft.customer),
-        cash_account=cash_account or default_cash_account(draft.company_id),
+        account=account_for_customer(draft.customer, draft.currency),
+        cash_account=cash_account,
         amount=remaining,
         method=method,
         date=date,
@@ -744,9 +771,9 @@ def open_account(
     user: User | None = None,
     currency: str = DEFAULT_CURRENCY,
 ) -> Account:
-    """An account for a party that has none: a staff member above all, whose
-    account is opened the first time they are given one. Exactly the party
-    `kind` names, of this firm."""
+    """An account for a party that has none in `currency`: a staff member above
+    all, whose account is opened the first time they are given one. Exactly the
+    party `kind` names, of this firm. A party has one account per currency."""
     if kind not in _PARTY_FIELD:
         raise _invalid("kind", "Not an account kind.")
     parties: dict[str, Customer | Supplier | User | None] = {
@@ -762,8 +789,8 @@ def open_account(
     if party is None:
         raise _invalid(field, "Required for this kind.", code="required")
     _same_firm(company_id, **{field: party})
-    taken = _invalid(field, "This party already has an account.", code="unique")
-    if _has_account(field, party):
+    taken = _invalid(field, "This party already has an account in this currency.", code="unique")
+    if _has_account(field, party, currency):
         raise taken
     try:
         with transaction.atomic():
@@ -786,8 +813,8 @@ def open_account(
         raise taken from exc
 
 
-def _has_account(field: str, party: Customer | Supplier | User) -> bool:
-    return Account.unscoped.filter(is_deleted=False, **{field: party}).exists()
+def _has_account(field: str, party: Customer | Supplier | User, currency: str) -> bool:
+    return Account.unscoped.filter(is_deleted=False, currency=currency, **{field: party}).exists()
 
 
 def create_supplier(*, company_id: UUID, by: User, **fields: object) -> Supplier:

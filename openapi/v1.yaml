@@ -8270,6 +8270,28 @@ components:
       - last_name
       - phone
       - role
+    CustomerAccount:
+      type: object
+      description: One of the customer's ledger accounts, as the customer page shows
+        it.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+          description: 'Debits less credits. Positive: the customer owes the firm.'
+        currency:
+          type: string
+          readOnly: true
+      required:
+      - balance
+      - currency
+      - id
     CustomerContactNestedWriteRequest:
       type: object
       description: |-
@@ -8479,6 +8501,14 @@ components:
           type: integer
           readOnly: true
           default: 0
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAccount'
+          readOnly: true
+          description: The customer's ledger accounts, one per currency, each with
+            its balance; TRY first. Absent for roles that may not see balances (the
+            technician).
         created_at:
           type: string
           format: date-time

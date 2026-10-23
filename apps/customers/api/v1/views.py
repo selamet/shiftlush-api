@@ -19,7 +19,7 @@ from apps.customers.api.v1.serializers import (
     CustomerWriteSerializer,
 )
 from apps.customers.models import Customer, CustomerContact
-from apps.ledger.balances import with_balance
+from apps.ledger.balances import customer_accounts
 from apps.ledger.models import Account
 from core.error_codes import ErrorCode
 from core.exceptions import RecordInUse
@@ -84,12 +84,12 @@ class CustomerViewSet(TenantViewSet[Customer]):
             .prefetch_related("contacts")
         )
         if may_see_balances(getattr(self.request.user, "role", None)):
-            # One query for every row's account and its balance, rather than
+            # One query for every row's accounts and their balances, rather than
             # one per customer; read by CustomerReadSerializer.get_account.
             customers = customers.prefetch_related(
                 Prefetch(
                     "ledger_accounts",
-                    queryset=with_balance(Account.objects.all()),
+                    queryset=customer_accounts(Account.objects.all()),
                     to_attr=LEDGER_ACCOUNT_ROWS,
                 )
             )
