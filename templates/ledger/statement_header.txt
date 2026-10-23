@@ -1,0 +1,5 @@
+Tarih
+Açıklama
+Borç
+Alacak
+Bakiye

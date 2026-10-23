@@ -9,6 +9,7 @@ disagree.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from django.db.models import DecimalField, F, OuterRef, Q, QuerySet, Subquery, Sum, Value
@@ -58,6 +59,14 @@ def _cash_total() -> Round:
 
 def account_balance(account: Account) -> Decimal:
     total = Movement.objects.filter(account=account).aggregate(balance=_account_total())
+    return Decimal(total["balance"] or ZERO).quantize(ZERO)
+
+
+def account_balance_before(account: Account, day: date) -> Decimal:
+    """The balance of everything dated strictly before `day`: a statement's opening."""
+    total = Movement.objects.filter(account=account, date__lt=day).aggregate(
+        balance=_account_total()
+    )
     return Decimal(total["balance"] or ZERO).quantize(ZERO)
 
 

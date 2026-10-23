@@ -218,6 +218,21 @@ def send_monthly_report(
     )
 
 
+def send_statement(*, to: str, context: dict[str, Any], pdf: bytes, filename: str) -> None:
+    """E-mail an account statement with the PDF attached (F0), after commit.
+
+    `context` carries company_name, account_name, start, end, closing and
+    currency.
+    """
+    send_after_commit(
+        template="statement",
+        subject_key="statement",
+        to=to,
+        context=context,
+        attachments=[(filename, pdf, "application/pdf")],
+    )
+
+
 #: Where a notification's button leads, by its subject type. A type missing here
 #: still gets a working link — to the notification list — rather than a guess.
 NOTIFICATION_SUBJECT_PATHS = {

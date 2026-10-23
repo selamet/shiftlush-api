@@ -1,0 +1,73 @@
+{% load email_format %}{% comment %}
+An account statement (ekstre), A4, in the plain style of the M7 invoice draft.
+Every value is autoescaped: a description is whatever someone typed. A reversal
+is its own row, marked, so a cancelled document reads as two lines that net to
+zero.
+{% endcomment %}<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      @page { size: A4; margin: 18mm 16mm; @bottom-right { content: "Sayfa " counter(page) " / " counter(pages); font-size: 8pt; color: #5a5f6b; } }
+      body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #16171c; }
+      h1 { font-size: 16pt; margin: 0 0 4mm 0; }
+      .muted { color: #5a5f6b; }
+      .parties { width: 100%; margin: 6mm 0; border-collapse: collapse; }
+      .parties td { vertical-align: top; width: 50%; padding: 0; }
+      table.rows { width: 100%; border-collapse: collapse; margin-top: 4mm; }
+      table.rows thead { display: table-header-group; }
+      table.rows th { text-align: left; border-bottom: 1.5pt solid #16171c; padding: 2mm 1mm; font-size: 8.5pt; }
+      table.rows td { border-bottom: 0.75pt solid #e4e6eb; padding: 1.6mm 1mm; vertical-align: top; }
+      table.rows tr.carried td { font-weight: bold; background: #f4f5f7; }
+      table.rows tr.reversal td { color: #5a5f6b; }
+      .num { text-align: right; white-space: nowrap; }
+      .date { white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Hesap ekstresi</h1>
+    <div class="muted">
+      {% if statement.start and statement.end %}{{ statement.start|tr_date }} – {{ statement.end|tr_date }}{% elif statement.start %}{{ statement.start|tr_date }} tarihinden itibaren{% elif statement.end %}{{ statement.end|tr_date }} tarihine kadar{% else %}Tüm hareketler{% endif %}
+      · Para birimi: {{ statement.currency }}
+    </div>
+    <table class="parties">
+      <tr>
+        <td><strong>{{ company.display_name }}</strong><br>{{ company.legal_name }}{% if company.phone %}<br>{{ company.phone }}{% endif %}</td>
+        <td><strong>{{ statement.account.name }}</strong></td>
+      </tr>
+    </table>
+    <table class="rows">
+      <thead>
+        <tr><th>Tarih</th><th>Açıklama</th><th class="num">Borç</th><th class="num">Alacak</th><th class="num">Bakiye</th></tr>
+      </thead>
+      <tbody>
+        <tr class="carried">
+          <td class="date">{{ statement.start|tr_date }}</td>
+          <td>Devir bakiyesi</td>
+          <td class="num"></td>
+          <td class="num"></td>
+          <td class="num">{{ statement.opening|tr_decimal }}</td>
+        </tr>
+        {% for row in statement.rows %}
+        <tr{% if row.is_reversal %} class="reversal"{% endif %}>
+          <td class="date">{{ row.date|tr_date }}</td>
+          <td>{% if row.is_reversal %}İptal: {% endif %}{{ row.description }}</td>
+          <td class="num">{% if row.debit %}{{ row.debit|tr_decimal }}{% endif %}</td>
+          <td class="num">{% if row.credit %}{{ row.credit|tr_decimal }}{% endif %}</td>
+          <td class="num">{{ row.balance|tr_decimal }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="muted">Bu aralıkta hareket yok.</td></tr>
+        {% endfor %}
+        <tr class="carried">
+          <td class="date">{{ statement.end|tr_date }}</td>
+          <td>Kapanış bakiyesi</td>
+          <td class="num">{{ statement.total_debit|tr_decimal }}</td>
+          <td class="num">{{ statement.total_credit|tr_decimal }}</td>
+          <td class="num">{{ statement.closing|tr_decimal }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">Bakiye pozitifse {{ statement.account.name }} firmaya borçludur; negatifse firma {{ statement.account.name }} hesabına borçludur.</p>
+  </body>
+</html>

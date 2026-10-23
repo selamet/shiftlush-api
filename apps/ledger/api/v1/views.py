@@ -10,11 +10,14 @@ cancelled, and cancelling posts the reversal.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, cast
 
 import django_filters
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, PolymorphicProxySerializer, extend_schema
 from rest_framework import mixins, status
 from rest_framework.decorators import action
@@ -25,7 +28,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
 
 from apps.billing.models import InvoiceDraft, InvoiceStatus
-from apps.ledger import finance, services
+from apps.ledger import finance, services, statement
 from apps.ledger.api.v1.serializers import (
     AccountCreateSerializer,
     AccountDetailSerializer,
@@ -46,6 +49,9 @@ from apps.ledger.api.v1.serializers import (
     OpeningBalanceReadSerializer,
     PaymentOutCreateSerializer,
     PaymentOutReadSerializer,
+    StatementQuerySerializer,
+    StatementSentSerializer,
+    StatementSerializer,
     SupplierReadSerializer,
     SupplierWriteSerializer,
     TransferCreateSerializer,
@@ -64,8 +70,9 @@ from apps.ledger.models import (
     Supplier,
     Transfer,
 )
+from core.exceptions import ServiceUnavailable
 from core.filters import TenantFilterSet
-from core.idempotency import ReplayProtectedCreate
+from core.idempotency import ReplayProtectedCreate, replay_protected
 from core.pagination import StandardPagination
 from core.permissions import READ, RolePermission, may
 from core.requests import authenticated_company, authenticated_company_id, authenticated_user
@@ -181,7 +188,7 @@ class AccountViewSet(
     """
 
     resource = "ledger"
-    resource_by_action = {"create": "ledger_admin"}
+    resource_by_action = {"create": "ledger_admin", "statement_send": "ledger_statement_send"}
     permission_classes = [RolePermission]
     queryset = Account.objects.none()
     serializer_class = AccountReadSerializer
@@ -219,6 +226,116 @@ class AccountViewSet(
         )
         fresh = self.get_queryset().get(pk=account.pk)
         return Response(AccountReadSerializer(fresh).data, status=status.HTTP_201_CREATED)
+
+    # The statement ----------------------------------------------------------------
+    #
+    # Reads, apart from the send: no lock is taken. Every one goes through
+    # `get_object()`, so another firm's account is a 404.
+
+    @property
+    def idempotency_key_required(self) -> bool:
+        # Sending mails the customer; a retried request must not mail twice. The
+        # account create keeps its key optional.
+        return getattr(self, "action", None) == "statement_send"
+
+    def _statement(self, params: Any) -> statement.Statement:
+        query = StatementQuerySerializer(data=params)
+        query.is_valid(raise_exception=True)
+        return statement.statement_rows(
+            self.get_object(),
+            start=query.validated_data.get("start"),
+            end=query.validated_data.get("end"),
+        )
+
+    @extend_schema(parameters=[StatementQuerySerializer], responses={200: StatementSerializer})
+    # Not named `statement`: the router orders the routes by method name and
+    # gives each a format-suffix twin, so `statement\.(?P<format>…)` would come
+    # first and swallow `statement.csv/` and `statement.pdf/` as unknown formats.
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="statement",
+        url_name="statement",
+        pagination_class=None,
+    )
+    def statement_read(self, request: Request, pk: str | None = None) -> Response:
+        """Its movements from `start` to `end` (both optional, inclusive), each with
+        the running balance after it, under the opening balance before `start`.
+        A reversal is its own row. `start` after `end` is `400` on `start`."""
+        return Response(StatementSerializer(self._statement(request.query_params)).data)
+
+    @extend_schema(
+        parameters=[StatementQuerySerializer], responses={(200, "text/csv"): OpenApiTypes.STR}
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="statement.csv",
+        url_name="statement-csv",
+        pagination_class=None,
+    )
+    def statement_csv(self, request: Request, pk: str | None = None) -> HttpResponse:
+        """The statement as CSV: semicolons, UTF-8 with a BOM, decimal commas."""
+        found = self._statement(request.query_params)
+        response = HttpResponse(
+            statement.statement_csv(found).encode("utf-8"), content_type="text/csv; charset=utf-8"
+        )
+        filename = statement.statement_filename(found, "csv")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @extend_schema(
+        parameters=[StatementQuerySerializer],
+        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="statement.pdf",
+        url_name="statement-pdf",
+        pagination_class=None,
+    )
+    def statement_pdf(self, request: Request, pk: str | None = None) -> HttpResponse:
+        """The statement as a PDF. `503` where the renderer is not installed."""
+        found = self._statement(request.query_params)
+        try:
+            pdf = statement.render_statement_pdf(found, company=authenticated_company(request))
+        except statement.PdfRenderingUnavailable as exc:
+            raise ServiceUnavailable() from exc
+        response = HttpResponse(pdf, content_type="application/pdf")
+        filename = statement.statement_filename(found, "pdf")
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response
+
+    @extend_schema(
+        parameters=[IDEMPOTENCY_KEY],
+        request=StatementQuerySerializer,
+        responses={200: StatementSentSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="statement/send", url_name="statement-send")
+    # One transaction around the key and the send, so the mails (queued on
+    # commit) go only once both are committed: a retry replays the stored
+    # answer and mails nobody twice, and a send that failed stores no key.
+    @transaction.atomic
+    @replay_protected
+    def statement_send(self, request: Request, pk: str | None = None) -> Response:
+        """E-mail the statement's PDF to the customer's contacts who receive reports.
+
+        The body is `{start, end}`, both optional. The mails go out after this
+        commits. No recipient is `409 REPORT_NO_RECIPIENT`; requires
+        `Idempotency-Key`.
+        """
+        query = StatementQuerySerializer(data=request.data)
+        query.is_valid(raise_exception=True)
+        start: date | None = query.validated_data.get("start")
+        end: date | None = query.validated_data.get("end")
+        try:
+            emails = statement.send_statement(
+                self.get_object(), start=start, end=end, by=authenticated_user(request)
+            )
+        except statement.PdfRenderingUnavailable as exc:
+            raise ServiceUnavailable() from exc
+        return Response(StatementSentSerializer({"recipients": emails}).data)
 
 
 # Cash accounts and suppliers ------------------------------------------------------

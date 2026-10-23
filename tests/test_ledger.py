@@ -21,6 +21,7 @@ from uuid import uuid4
 
 import pytest
 from django.apps import apps as global_apps
+from django.core import mail as django_mail
 from django.db import IntegrityError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
 from django.test import TransactionTestCase
@@ -33,7 +34,7 @@ from apps.billing import services as billing
 from apps.billing.models import InvoiceDraft, InvoiceStatus
 from apps.companies.models import Company
 from apps.contracts.models import BillingPeriod, Contract, ContractStatus, PricingType, Scope
-from apps.customers.models import Customer, CustomerType
+from apps.customers.models import Customer, CustomerContact, CustomerType
 from apps.ledger import services as ledger_services
 from apps.ledger.balances import account_balance, cash_balance, with_balance, with_cash_balance
 from apps.ledger.migration_helpers import carry_over_invoices
@@ -74,6 +75,12 @@ from apps.ledger.services import (
     record_opening,
     record_payment_out,
     record_transfer,
+)
+from apps.ledger.statement import (
+    build_statement_html,
+    render_statement_pdf,
+    send_statement,
+    statement_rows,
 )
 from apps.users.models import Role, User, UserCustomer
 from apps.users.services import issue_tokens, register_company
@@ -2653,6 +2660,241 @@ class TestApi:
             OpeningBalance.unscoped.count(),
             Transfer.unscoped.count(),
         ) == counts
+
+
+# The statement ---------------------------------------------------------------------
+
+
+def contact(books: SimpleNamespace, email: str, *, ticked: bool = True) -> CustomerContact:
+    return CustomerContact.objects.create(
+        company=books.company,
+        customer=books.customer,
+        full_name="Contact",
+        email=email,
+        receives_monthly_report=ticked,
+    )
+
+
+@pytest.fixture
+def statement_books(books):
+    """A fee before the range, a cancelled collection and a fee inside it.
+
+    Opening at `start` is the 500 fee; then the collection (-100), a 25 fee,
+    and the collection's reversal today (+100), which nets the collection out.
+    """
+    today = local_today()
+    books.start = today - timedelta(days=6)
+    record_manual_entry(
+        account=books.account,
+        direction=Direction.DEBIT,
+        amount=Decimal("500.00"),
+        date=today - timedelta(days=10),
+        reason="Old fee",
+        by=books.owner,
+    )
+    books.collection = receive(books, "100.00", date=today - timedelta(days=5))
+    record_manual_entry(
+        account=books.account,
+        direction=Direction.DEBIT,
+        amount=Decimal("25.00"),
+        date=today - timedelta(days=2),
+        reason="Late fee",
+        by=books.owner,
+    )
+    cancel_collection(books.collection, by=books.owner)
+    return books
+
+
+class TestStatement:
+    def test_running_balance_and_opening_at_from(self, statement_books):
+        books = statement_books
+        found = statement_rows(books.account, start=books.start, end=None)
+        assert found.opening == Decimal("500.00")
+        assert [(r.debit, r.credit, r.balance) for r in found.rows] == [
+            (Decimal("0.00"), Decimal("100.00"), Decimal("400.00")),
+            (Decimal("25.00"), Decimal("0.00"), Decimal("425.00")),
+            (Decimal("100.00"), Decimal("0.00"), Decimal("525.00")),
+        ]
+        assert found.closing == Decimal("525.00")
+        # The cancelled collection is two lines, both naming it, that net out.
+        collection_rows = [r for r in found.rows if r.document_id == books.collection.pk]
+        assert [r.is_reversal for r in collection_rows] == [False, True]
+        assert {r.document_type for r in collection_rows} == {"ledger.collection"}
+        assert sum(r.debit - r.credit for r in collection_rows) == Decimal("0.00")
+
+        # Unbounded: the opening is nothing, and the closing is the balance.
+        everything = statement_rows(books.account, start=None, end=None)
+        assert everything.opening == Decimal("0.00")
+        assert len(everything.rows) == 4
+        assert everything.closing == account_balance(books.account) == Decimal("525.00")
+
+        # `end` is inclusive, and the closing is the balance through it.
+        through = statement_rows(
+            books.account, start=books.start, end=local_today() - timedelta(days=5)
+        )
+        assert [r.credit for r in through.rows] == [Decimal("100.00")]
+        assert through.closing == Decimal("400.00")
+
+    def test_the_endpoint_answers_the_same_and_checks_the_range(self, statement_books):
+        books = statement_books
+        client = api_for(books.owner)
+        url = reverse("ledger-account-statement", args=[books.account.pk])
+        body = client.get(url, {"start": books.start.isoformat()}).data
+        assert (body["opening"], body["closing"]) == ("500.00", "525.00")
+        assert (body["total_debit"], body["total_credit"]) == ("125.00", "100.00")
+        assert [row["balance"] for row in body["rows"]] == ["400.00", "425.00", "525.00"]
+        reversal = body["rows"][-1]
+        assert reversal["is_reversal"] is True
+        assert reversal["document_type"] == "ledger.collection"
+        assert reversal["document_id"] == str(books.collection.pk)
+
+        wrong = client.get(url, {"start": "2026-10-10", "end": "2026-10-01"})
+        assert wrong.status_code == 400
+        assert error_of(wrong) == (
+            "VALIDATION_ERROR",
+            [("start", "END_DATE_BEFORE_START_DATE")],
+        )
+
+        # Operations records collections but reads no statement, nor sends one.
+        operations = api_for(staff(books.company, Role.OPERATIONS))
+        for name in ("statement", "statement-csv", "statement-pdf"):
+            response = operations.get(reverse(f"ledger-account-{name}", args=[books.account.pk]))
+            assert response.status_code == 403, name
+        send = reverse("ledger-account-statement-send", args=[books.account.pk])
+        assert keyed(operations, send, {}).status_code == 403
+        accountant = api_for(staff(books.company, Role.ACCOUNTANT))
+        assert accountant.get(url).status_code == 200
+
+    def test_csv_matches_json(self, statement_books):
+        books = statement_books
+        client = api_for(books.owner)
+        params = {"start": books.start.isoformat()}
+        body = client.get(reverse("ledger-account-statement", args=[books.account.pk]), params).data
+        response = client.get(
+            reverse("ledger-account-statement-csv", args=[books.account.pk]), params
+        )
+        assert response.status_code == 200
+        assert response["Content-Type"] == "text/csv; charset=utf-8"
+        assert "attachment" in response["Content-Disposition"]
+        text = response.content.decode("utf-8")
+        assert text.startswith("\ufeff")
+        lines = [line.split(";") for line in text.lstrip("\ufeff").split("\r\n") if line]
+        header, opening, *rows, closing = lines
+        assert header == ["Tarih", "Açıklama", "Borç", "Alacak", "Bakiye"]
+
+        def comma(value: str) -> str:
+            return value.replace(".", ",")
+
+        assert opening[0] == books.start.strftime("%d.%m.%Y")
+        assert opening[-1] == comma(body["opening"]) == "500,00"
+        assert len(rows) == len(body["rows"])
+        for csv_row, row in zip(rows, body["rows"], strict=True):
+            day = date.fromisoformat(row["date"]).strftime("%d.%m.%Y")
+            assert csv_row[0] == day
+            assert csv_row[1].endswith(row["description"])
+            assert csv_row[2:] == [comma(row["debit"]), comma(row["credit"]), comma(row["balance"])]
+        assert rows[-1][1].startswith("İptal: ")
+        assert closing[2:] == [
+            comma(body["total_debit"]),
+            comma(body["total_credit"]),
+            comma(body["closing"]),
+        ]
+
+    def test_html_escapes_and_lists_every_row(self, statement_books):
+        books = statement_books
+        record_manual_entry(
+            account=books.account,
+            direction=Direction.CREDIT,
+            amount=Decimal("1234.50"),
+            date=local_today(),
+            reason='<script>alert("x")</script> & co',
+            by=books.owner,
+        )
+        found = statement_rows(books.account, start=None, end=None)
+        html = build_statement_html(found, company=books.company)
+        assert "<script>" not in html
+        assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; co" in html
+        for description in ("Old fee", "Late fee", f"Tahsilat {books.collection.number}"):
+            assert description in html
+        # The opening, every row, and the closing.
+        assert html.count('<td class="date">') == 1 + len(found.rows) + 1
+        assert html.count("İptal: ") == 1
+        assert "1.234,50" in html
+        assert books.company.display_name in html
+
+    def test_pdf_renders(self, statement_books):
+        books = statement_books
+        response = api_for(books.owner).get(
+            reverse("ledger-account-statement-pdf", args=[books.account.pk])
+        )
+        try:
+            import weasyprint  # noqa: F401
+        except (ImportError, OSError):
+            assert response.status_code == 503
+            pytest.skip("WeasyPrint or Pango is not available here")
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+        assert response.content.startswith(b"%PDF")
+        found = statement_rows(books.account, start=None, end=None)
+        assert render_statement_pdf(found, company=books.company).startswith(b"%PDF")
+
+    def test_send_goes_to_report_recipients_with_the_pdf(
+        self, statement_books, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        books = statement_books
+        monkeypatch.setattr(
+            "apps.ledger.statement.render_statement_pdf", lambda statement, *, company: b"%PDF-1"
+        )
+        contact(books, "one@example.com")
+        contact(books, "two@example.com")
+        contact(books, "", ticked=True)
+        contact(books, "not-ticked@example.com", ticked=False)
+        client = api_for(books.owner)
+        url = reverse("ledger-account-statement-send", args=[books.account.pk])
+        body = {"start": books.start.isoformat()}
+
+        assert client.post(url, body, format="json").status_code == 400  # no key
+
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=False) as callbacks:
+            response = keyed(client, url, body, key="send-1")
+        assert response.status_code == 200, response.data
+        assert response.data == {"recipients": ["one@example.com", "two@example.com"]}
+        # Nothing went while the transaction was open: one send per recipient waits.
+        assert django_mail.outbox == []
+        assert len(callbacks) == 2
+        for callback in callbacks:
+            callback()
+        assert sorted(m.to[0] for m in django_mail.outbox) == [
+            "one@example.com",
+            "two@example.com",
+        ]
+        for message in django_mail.outbox:
+            assert books.account.name in message.subject
+            assert "525,00" in message.body
+            ((filename, content, mime_type),) = message.attachments
+            assert (content, mime_type) == (b"%PDF-1", "application/pdf")
+            assert filename == f"ekstre-{books.start.isoformat()}.pdf"
+
+        # A retry with the same key answers the first send and mails nobody.
+        django_mail.outbox.clear()
+        with django_capture_on_commit_callbacks(execute=True):
+            again = keyed(client, url, body, key="send-1")
+        assert again.status_code == 200
+        assert django_mail.outbox == []
+
+    def test_send_without_a_recipient_is_refused(self, books, django_capture_on_commit_callbacks):
+        contact(books, "not-ticked@example.com", ticked=False)
+        url = reverse("ledger-account-statement-send", args=[books.account.pk])
+        with django_capture_on_commit_callbacks(execute=True):
+            response = keyed(api_for(books.owner), url, {})
+        assert response.status_code == 409
+        assert error_of(response)[0] == "REPORT_NO_RECIPIENT"
+        assert django_mail.outbox == []
+        # A supplier's account has no report recipients at all.
+        supplier = supplier_account(books)
+        with pytest.raises(Conflict):
+            send_statement(supplier, start=None, end=None, by=books.owner)
 
 
 # Concurrency, on PostgreSQL ------------------------------------------------------

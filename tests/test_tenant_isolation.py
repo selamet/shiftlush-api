@@ -691,6 +691,21 @@ class TestRoutesWithoutADetailView:
         assert response.status_code == 404
         assert error_code(response) == ErrorCode.NOT_FOUND.value
 
+        # Their account's statement, in every form, and sending it.
+        their_account = theirs.records["ledger-account"].pk
+        for name in ("statement", "statement-csv", "statement-pdf"):
+            response = client.get(reverse(f"ledger-account-{name}", args=[their_account]))
+            assert response.status_code == 404, name
+            assert error_code(response) == ErrorCode.NOT_FOUND.value
+        response = client.post(
+            reverse("ledger-account-statement-send", args=[their_account]),
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="their-statement",
+        )
+        assert response.status_code == 404
+        assert error_code(response) == ErrorCode.NOT_FOUND.value
+
         with company_context(ours.company.id):
             our_movements = set(Movement.objects.values_list("pk", flat=True))
         with system_context():

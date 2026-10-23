@@ -1,0 +1,1 @@
+{% if key == "opening" %}Devir bakiyesi{% elif key == "closing" %}Kapanış bakiyesi{% elif key == "reversal" %}İptal{% elif key == "filename" %}ekstre{% else %}{{ key }}{% endif %}

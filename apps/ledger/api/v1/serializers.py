@@ -41,6 +41,8 @@ from apps.ledger.models import (
     TransferKind,
 )
 from apps.users.models import User
+from core.error_codes import ErrorCode
+from core.exceptions import field_error
 from core.scheduling import local_today
 from core.validators import normalize_email, normalize_phone, validate_tax_number
 
@@ -538,4 +540,65 @@ class FinanceSummarySerializer(serializers.Serializer[Any]):
     date_to = serializers.DateField()
     currencies = FinanceCurrencySerializer(
         many=True, help_text="One entry per currency; amounts in two currencies are never added."
+    )
+
+
+# The statement ----------------------------------------------------------------------
+
+
+class StatementQuerySerializer(serializers.Serializer[Any]):
+    """The range of a statement, from the query string or the send body."""
+
+    start = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Inclusive. The opening balance is everything dated before it.",
+    )
+    end = serializers.DateField(required=False, allow_null=True, help_text="Inclusive.")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        start, end = attrs.get("start"), attrs.get("end")
+        if start is not None and end is not None and start > end:
+            raise field_error("start", ErrorCode.END_DATE_BEFORE_START_DATE)
+        return attrs
+
+
+class StatementRowSerializer(serializers.Serializer[Any]):
+    movement_id = serializers.UUIDField()
+    date = serializers.DateField()
+    description = serializers.CharField()
+    debit = serializers.DecimalField(max_digits=16, decimal_places=2)
+    credit = serializers.DecimalField(max_digits=16, decimal_places=2)
+    balance = serializers.DecimalField(
+        max_digits=16, decimal_places=2, help_text="The account's balance after this row."
+    )
+    document_type = serializers.CharField(
+        help_text='The source document as "app_label.model_name", e.g. "ledger.collection".'
+    )
+    document_id = serializers.UUIDField(allow_null=True)
+    is_reversal = serializers.BooleanField(
+        help_text="The mirror of an earlier row: a cancelled document shows as both."
+    )
+
+
+class StatementSerializer(serializers.Serializer[Any]):
+    account = serializers.UUIDField(source="account.pk")
+    account_name = serializers.CharField(source="account.name")
+    currency = serializers.CharField()
+    start = serializers.DateField(allow_null=True)
+    end = serializers.DateField(allow_null=True)
+    opening = serializers.DecimalField(
+        max_digits=16, decimal_places=2, help_text="The balance before `start`; 0 without one."
+    )
+    total_debit = serializers.DecimalField(max_digits=16, decimal_places=2)
+    total_credit = serializers.DecimalField(max_digits=16, decimal_places=2)
+    closing = serializers.DecimalField(
+        max_digits=16, decimal_places=2, help_text="The balance after the last row."
+    )
+    rows = StatementRowSerializer(many=True)
+
+
+class StatementSentSerializer(serializers.Serializer[Any]):
+    recipients = serializers.ListField(
+        child=serializers.EmailField(), help_text="Each address the statement was sent to."
     )

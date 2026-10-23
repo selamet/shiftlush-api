@@ -67,6 +67,9 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     # against: operations picks from them, and reads nothing else of the ledger.
     ("ledger_picker", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
     ("ledger_picker", WRITE): set(),
+    # Sending a statement is the ledger readers' (operations gets none).
+    ("ledger_statement_send", READ): set(),
+    ("ledger_statement_send", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
 }
 
 

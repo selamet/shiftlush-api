@@ -195,6 +195,12 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
         WRITE: set(),
     },
+    # E-mailing a statement to the customer: a POST, but it moves no money, so
+    # it is for whoever reads the ledger. Operations has no part in statements.
+    "ledger_statement_send": {
+        READ: set(),
+        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    },
     # Manual entries, transfers, opening balances and the closed-through date:
     # the books themselves, the owner's and the accountant's alone.
     "ledger_admin": {

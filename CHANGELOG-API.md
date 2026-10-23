@@ -364,6 +364,20 @@ carried as compatibility shims nobody will ever remove.
     period), and `money_in`/`money_out`, which are those lines added up.
     Transfers between cash accounts and opening balances are neither in nor
     out, and a document cancelled within the period contributes nothing.
+  - `GET /ledger/accounts/{id}/statement/?start=&end=` — the account's
+    statement: `opening` (the balance before `start`, 0 without one), `rows`
+    (`movement_id`, `date`, `description`, `debit`, `credit`, the running
+    `balance`, `document_type`, `document_id`, `is_reversal`; a cancelled
+    document is two rows that net to zero), `total_debit`, `total_credit` and
+    `closing`. Both dates are optional and inclusive; `start` after `end` is
+    `400 END_DATE_BEFORE_START_DATE` on `start`. The same as
+    `…/statement.csv/` (UTF-8 with a BOM, `;`, decimal comma) and
+    `…/statement.pdf/` (`503` without the renderer). `POST
+    …/statement/send/` with `{start, end}` **requires** `Idempotency-Key` and
+    e-mails the PDF to the customer's contacts who receive reports, after the
+    request commits; it answers `{recipients}`, and none is
+    `409 REPORT_NO_RECIPIENT`. Owner, admin and accountant; operations gets
+    `403`.
   - `GET/PATCH /ledger/settings/` (owner, accountant) —
     `{closed_through: date|null}`. Nothing can be dated on or before it
     (`400 PERIOD_CLOSED`); a date after today is `400 invalid`; moving it back

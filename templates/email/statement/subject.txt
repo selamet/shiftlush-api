@@ -1,0 +1,1 @@
+{% load email_format %}{{ company_name }} — hesap ekstresi ({{ account_name }})
