@@ -316,6 +316,51 @@ carried as compatibility shims nobody will ever remove.
   - New notification kind `monthly_reports_ready`; `AttachmentCategory` gains
     `monthly_report`.
 
+- **The ledger (F0)** — under `/ledger/`: each party's account, the firm's
+  cash accounts, suppliers, the documents that move money, and the finance
+  summary. A balance is never stored or typed in: it is the sum of the
+  movements. Reading is owner, admin and accountant; collections and payments
+  out are also recorded by operations; manual entries, transfers and opening
+  balances are the owner's and the accountant's alone. The technician has no
+  access (`403`).
+  - `GET /ledger/accounts/` — each account with its `balance` (debits less
+    credits; positive means the party owes the firm), and `totals`
+    (`receivables`, `payables`, `net`) beside the usual envelope, summed over
+    every row the filters select. Filters: `kind`, `is_active`, `search`
+    (name), `has_balance`, and `overdue` (owes, and has an issued invoice
+    still unpaid older than `overdue_days`, 30 by default).
+    `GET /ledger/accounts/{id}/` adds `last_movement`. `POST /ledger/accounts/`
+    (owner, accountant) opens an account for a party that has none — a staff
+    member, mostly; a party that has one is `400 unique`.
+  - `GET/POST /ledger/collections/`, `POST /ledger/collections/{id}/cancel/`.
+    The body is `account`, `cash_account`, `amount`, `method`, `date` (today
+    when omitted), `note` and `applies: [{invoice, amount}]`; none applied is
+    an advance. Numbered `T-000001` per firm.
+  - `GET/POST /ledger/payments-out/` (numbered `O-…`), `/manual-entries/`
+    (with a required `reason`), `/transfers/` (`kind` `account` or `cash`)
+    and `/opening-balances/` (on an account or a cash account), each with
+    `POST …/{id}/cancel/`, which posts the reversal; a second cancel is
+    `409 ALREADY_REVERSED`. No document is ever edited or deleted.
+  - Every document create **requires** `Idempotency-Key` (`400
+    IDEMPOTENCY_KEY_REQUIRED` without it); a retry with the same key and body
+    answers the first response and records nothing more.
+  - `GET/POST/PATCH /ledger/cash-accounts/` with `balance`, and
+    `GET /ledger/cash-accounts/{id}/movements/`, newest first. A cash
+    account's `currency` cannot change once it has a movement.
+  - `GET/POST/PATCH /ledger/suppliers/`. A supplier is created with its
+    account, which follows a rename.
+  - `GET /ledger/finance/summary/?period=today|yesterday|week|month` —
+    `receivables` and `payables` today, each active cash account's `balance`
+    with its `money_in` and `money_out` in the period, and the period's
+    totals. Transfers between cash accounts and opening balances are neither
+    in nor out.
+  - Every id in a request is looked up in the requesting firm only; another
+    firm's is `400 does_not_exist` on that field, as an unknown id is.
+  - Errors: `400 CURRENCY_MISMATCH`, `400 PERIOD_CLOSED`,
+    `400 OVERPAYMENT_ON_INVOICE`, `409 ALREADY_REVERSED`.
+  - New enums `LedgerAccountKind`, `CashAccountKind`, `CashAccountRole`,
+    `TransferKind`, `LedgerDirection`, `CashDirection` and `MovementSource`.
+
 ### Changed
 
 - **The notification kind enum grew** (`monthly_reports_ready`) and so did

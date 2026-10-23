@@ -170,13 +170,19 @@ class TestTheSchemaMatchesTheServer:
         ]
         assert paginated, "no paginated schemas found — the naming convention changed"
 
+        # The one list that carries more than a page: the ledger's accounts add
+        # `totals` beside the envelope (F0 spec, "the list carries totals"),
+        # summed over every row the filters select rather than over the page.
+        # The envelope itself is unchanged; any other addition is a decision to
+        # be argued for here, not inherited.
+        beside_the_envelope = {"PaginatedAccountReadList": {"totals"}}
         for name in paginated:
             # One shape everywhere. A client that learns the envelope once should
             # not meet a second one on the ninth endpoint.
             assert set(spec["components"]["schemas"][name]["properties"]) == {
                 "results",
                 "pagination",
-            }, name
+            } | beside_the_envelope.get(name, set()), name
 
 
 class TestNullableAddressNames:

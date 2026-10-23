@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -46,6 +47,17 @@ from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
 from apps.faults.models import Fault, FaultChannel
 from apps.inspections.models import Inspection, Label, NonConformity
+from apps.ledger import services as ledger
+from apps.ledger.models import (
+    Account,
+    CashAccount,
+    CashAccountRole,
+    CashKind,
+    Direction,
+    Movement,
+    PaymentMethod,
+    TransferKind,
+)
 from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
 from apps.portal.authentication import PortalJWTAuthentication
@@ -398,6 +410,57 @@ def _build_firm(letter: str, seed: int) -> Firm:
         report = CustomerReport.objects.create(
             company=company, customer=customer, period=f"{TODAY:%Y-%m}"
         )
+        # The ledger: one of each document, through the services that post them.
+        account = Account.objects.get(customer=customer)
+        till = CashAccount.objects.get(role=CashAccountRole.DEFAULT)
+        bank = CashAccount.objects.create(company=company, kind=CashKind.BANK, name="Bank")
+        supplier = ledger.create_supplier(
+            company_id=company.id, by=owner, name=f"Supplier of {letter}"
+        )
+        supplier_account = Account.objects.get(supplier=supplier)
+        opening = ledger.record_opening(
+            cash_account=bank,
+            direction=Direction.DEBIT,
+            amount=Decimal("500.00"),
+            date=TODAY,
+            by=owner,
+        )
+        collection = ledger.record_collection(
+            account=account,
+            cash_account=till,
+            amount=Decimal("100.00"),
+            method=PaymentMethod.CASH,
+            date=TODAY,
+            note="",
+            applies=[],
+            by=owner,
+        )
+        payment_out = ledger.record_payment_out(
+            account=supplier_account,
+            cash_account=till,
+            amount=Decimal("40.00"),
+            method=PaymentMethod.CASH,
+            date=TODAY,
+            note="",
+            by=owner,
+        )
+        manual_entry = ledger.record_manual_entry(
+            account=account,
+            direction=Direction.DEBIT,
+            amount=Decimal("25.00"),
+            date=TODAY,
+            reason="Late fee",
+            by=owner,
+        )
+        transfer = ledger.record_transfer(
+            kind=TransferKind.CASH,
+            from_cash=bank,
+            to_cash=till,
+            amount=Decimal("10.00"),
+            date=TODAY,
+            note="",
+            by=owner,
+        )
 
     return Firm(
         company=company,
@@ -420,6 +483,14 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "invoice-draft": draft,
             "invoice-line": line,
             "customer-report": report,
+            "ledger-account": account,
+            "ledger-cash-account": bank,
+            "ledger-supplier": supplier,
+            "ledger-collection": collection,
+            "ledger-payment-out": payment_out,
+            "ledger-manual-entry": manual_entry,
+            "ledger-transfer": transfer,
+            "ledger-opening": opening,
         },
     )
 
@@ -591,6 +662,50 @@ class TestRoutesWithoutADetailView:
         assert str(theirs_notification.pk) not in {row["id"] for row in listed}
         with system_context():
             assert Notification.unscoped.get(pk=theirs_notification.pk).read_at is None
+
+    def test_a_firm_never_sees_anothers_ledger(self, two_firms):
+        # Cancelling is a POST on a detail action, which the sweep above does
+        # not reach; the totals and the finance summary are sums, where another
+        # firm's rows would hide as a wrong number rather than a stray row.
+        ours, theirs = two_firms
+        client = api_for(ours.owner)
+        for basename in (
+            "ledger-collection",
+            "ledger-payment-out",
+            "ledger-manual-entry",
+            "ledger-transfer",
+            "ledger-opening",
+        ):
+            document = theirs.records[basename]
+            response = client.post(reverse(f"{basename}-cancel", args=[document.pk]))
+            assert response.status_code == 404, basename
+            assert error_code(response) == ErrorCode.NOT_FOUND.value
+            with system_context():
+                assert type(document).unscoped.get(pk=document.pk).cancelled_at is None
+
+        response = client.get(
+            reverse(
+                "ledger-cash-account-movements", args=[theirs.records["ledger-cash-account"].pk]
+            )
+        )
+        assert response.status_code == 404
+        assert error_code(response) == ErrorCode.NOT_FOUND.value
+
+        with company_context(ours.company.id):
+            our_movements = set(Movement.objects.values_list("pk", flat=True))
+        with system_context():
+            assert Movement.unscoped.exclude(pk__in=our_movements).exists()
+
+        # Both firms hold the same documents, so a leak would double every sum.
+        # Ours alone: the customer paid 100 and was charged 25, the supplier
+        # was paid 40.
+        totals = client.get(reverse("ledger-account-list")).data["totals"]
+        assert totals == {"receivables": "40.00", "payables": "75.00", "net": "-35.00"}
+        summary = client.get(reverse("ledger-finance-summary")).data
+        assert {row["name"] for row in summary["cash_accounts"]} == {"Merkez kasa", "Bank"}
+        their_bank = str(theirs.records["ledger-cash-account"].pk)
+        assert their_bank not in {str(row["id"]) for row in summary["cash_accounts"]}
+        assert (summary["money_in"], summary["money_out"]) == ("100.00", "40.00")
 
     def test_the_company_endpoint_answers_only_for_your_own(self, two_firms):
         ours, theirs = two_firms
@@ -1000,8 +1115,10 @@ class TestEveryModelIsScoped:
             # Over HTTP in the sweep above, and in tests/test_inspections.py.
             "inspections.Inspection",
             "inspections.NonConformity",
-            # F0. Not routed yet; isolated at the manager in tests/test_ledger.py
-            # until the ledger's routes join the sweep above.
+            # F0. Over HTTP in the sweep above (every routed document, account,
+            # cash account and supplier) and in TestRoutesWithoutADetailView
+            # (cancel, totals, the finance summary); the rest at the manager in
+            # tests/test_ledger.py.
             "ledger.Account",
             "ledger.CashAccount",
             "ledger.Collection",

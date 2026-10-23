@@ -3597,6 +3597,1150 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/ledger/accounts/:
+    get:
+      operationId: ledger_accounts_list
+      description: Every account with its balance; `totals` cover every row the filters
+        select.
+      parameters:
+      - in: query
+        name: has_balance
+        schema:
+          type: boolean
+        description: Whether the balance is anything but zero.
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - customer
+          - staff
+          - supplier
+        description: |-
+          * `customer` - Customer
+          * `supplier` - Supplier
+          * `staff` - Staff
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: overdue
+        schema:
+          type: boolean
+        description: Owes the firm, and has an issued invoice still unpaid that is
+          older than `overdue_days`.
+      - in: query
+        name: overdue_days
+        schema: {}
+        description: Days, for `overdue`. 30 when omitted.
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Part of the name.
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAccountReadList'
+          description: ''
+    post:
+      operationId: ledger_accounts_create
+      description: 'Open an account for a party that has none: a staff member, mostly.'
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AccountCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AccountCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRead'
+          description: ''
+  /api/v1/ledger/accounts/{id}/:
+    get:
+      operationId: ledger_accounts_retrieve
+      description: |-
+        Each party's account with the firm, and its balance.
+
+        No update and no delete: an account's balance is its movements, and an
+        account that is no longer wanted is made inactive by the party it names.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this account.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetail'
+          description: ''
+  /api/v1/ledger/cash-accounts/:
+    get:
+      operationId: ledger_cash_accounts_list
+      description: 'Where the firm''s money is: tills, bank accounts and card POS.'
+      parameters:
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - bank
+          - card
+          - cash
+        description: |-
+          * `cash` - Cash
+          * `bank` - Bank
+          * `card` - Card
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCashAccountReadList'
+          description: ''
+    post:
+      operationId: ledger_cash_accounts_create
+      description: 'Where the firm''s money is: tills, bank accounts and card POS.'
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashAccountWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CashAccountWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CashAccountWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashAccountRead'
+          description: ''
+  /api/v1/ledger/cash-accounts/{id}/:
+    get:
+      operationId: ledger_cash_accounts_retrieve
+      description: 'Where the firm''s money is: tills, bank accounts and card POS.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this cash account.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashAccountRead'
+          description: ''
+    patch:
+      operationId: ledger_cash_accounts_partial_update
+      description: Rename it, set its IBAN, or make it inactive. The currency is fixed
+        once used.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this cash account.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCashAccountWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCashAccountWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCashAccountWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashAccountRead'
+          description: ''
+  /api/v1/ledger/cash-accounts/{id}/movements/:
+    get:
+      operationId: ledger_cash_accounts_movements_list
+      description: Its movements, newest first.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this cash account.
+        required: true
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - bank
+          - card
+          - cash
+        description: |-
+          * `cash` - Cash
+          * `bank` - Bank
+          * `card` - Card
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMovementList'
+          description: ''
+  /api/v1/ledger/collections/:
+    get:
+      operationId: ledger_collections_list
+      description: 'Money received (tahsilat): a credit on the account, cash in.'
+      parameters:
+      - in: query
+        name: account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cash_account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: date_after
+        schema:
+          type: string
+          format: date
+        description: '`date_after` / `date_before`.'
+      - in: query
+        name: date_before
+        schema:
+          type: string
+          format: date
+        description: '`date_after` / `date_before`.'
+      - in: query
+        name: method
+        schema:
+          type: string
+          enum:
+          - card
+          - cash
+          - transfer
+        description: |-
+          * `cash` - Cash
+          * `transfer` - Transfer
+          * `card` - Card
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCollectionReadList'
+          description: ''
+    post:
+      operationId: ledger_collections_create
+      description: Record money received, and the invoices it pays.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CollectionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CollectionCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRead'
+          description: ''
+  /api/v1/ledger/collections/{id}/:
+    get:
+      operationId: ledger_collections_retrieve
+      description: 'Money received (tahsilat): a credit on the account, cash in.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this collection.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRead'
+          description: ''
+  /api/v1/ledger/collections/{id}/cancel/:
+    post:
+      operationId: ledger_collections_cancel_create
+      description: 'Post the reversal of each of its movements. Once: again is `409
+        ALREADY_REVERSED`.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this collection.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRead'
+          description: ''
+  /api/v1/ledger/finance/summary/:
+    get:
+      operationId: ledger_finance_summary_retrieve
+      description: '`period`: `today` (the default), `yesterday`, `week` (from Monday)
+        or `month`.'
+      parameters:
+      - in: query
+        name: period
+        schema:
+          enum:
+          - today
+          - yesterday
+          - week
+          - month
+          type: string
+          default: today
+          minLength: 1
+        description: |-
+          * `today` - today
+          * `yesterday` - yesterday
+          * `week` - week
+          * `month` - month
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceSummary'
+          description: ''
+  /api/v1/ledger/manual-entries/:
+    get:
+      operationId: ledger_manual_entries_list
+      description: A debit or credit with no cash behind it, and a reason. Owner and
+        accountant.
+      parameters:
+      - in: query
+        name: account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: direction
+        schema:
+          type: string
+          enum:
+          - credit
+          - debit
+        description: |-
+          * `debit` - Debit
+          * `credit` - Credit
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedManualEntryReadList'
+          description: ''
+    post:
+      operationId: ledger_manual_entries_create
+      description: A debit or credit with no cash behind it, and a reason. Owner and
+        accountant.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualEntryCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ManualEntryCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ManualEntryCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualEntryRead'
+          description: ''
+  /api/v1/ledger/manual-entries/{id}/:
+    get:
+      operationId: ledger_manual_entries_retrieve
+      description: A debit or credit with no cash behind it, and a reason. Owner and
+        accountant.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this manual entry.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualEntryRead'
+          description: ''
+  /api/v1/ledger/manual-entries/{id}/cancel/:
+    post:
+      operationId: ledger_manual_entries_cancel_create
+      description: 'Post the reversal of each of its movements. Once: again is `409
+        ALREADY_REVERSED`.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this manual entry.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualEntryRead'
+          description: ''
+  /api/v1/ledger/opening-balances/:
+    get:
+      operationId: ledger_opening_balances_list
+      description: A balance carried over at go-live (devir). Owner and accountant.
+      parameters:
+      - in: query
+        name: account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cash_account
+        schema:
+          type: string
+          format: uuid
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpeningBalanceReadList'
+          description: ''
+    post:
+      operationId: ledger_opening_balances_create
+      description: A balance carried over at go-live (devir). Owner and accountant.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningBalanceRead'
+          description: ''
+  /api/v1/ledger/opening-balances/{id}/:
+    get:
+      operationId: ledger_opening_balances_retrieve
+      description: A balance carried over at go-live (devir). Owner and accountant.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening balance.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningBalanceRead'
+          description: ''
+  /api/v1/ledger/opening-balances/{id}/cancel/:
+    post:
+      operationId: ledger_opening_balances_cancel_create
+      description: 'Post the reversal of each of its movements. Once: again is `409
+        ALREADY_REVERSED`.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening balance.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningBalanceRead'
+          description: ''
+  /api/v1/ledger/payments-out/:
+    get:
+      operationId: ledger_payments_out_list
+      description: 'Money paid out (tediye): a debit on the account, cash out.'
+      parameters:
+      - in: query
+        name: account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cash_account
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: date_after
+        schema:
+          type: string
+          format: date
+        description: '`date_after` / `date_before`.'
+      - in: query
+        name: date_before
+        schema:
+          type: string
+          format: date
+        description: '`date_after` / `date_before`.'
+      - in: query
+        name: method
+        schema:
+          type: string
+          enum:
+          - card
+          - cash
+          - transfer
+        description: |-
+          * `cash` - Cash
+          * `transfer` - Transfer
+          * `card` - Card
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPaymentOutReadList'
+          description: ''
+    post:
+      operationId: ledger_payments_out_create
+      description: 'Money paid out (tediye): a debit on the account, cash out.'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentOutCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PaymentOutCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentOutCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOutRead'
+          description: ''
+  /api/v1/ledger/payments-out/{id}/:
+    get:
+      operationId: ledger_payments_out_retrieve
+      description: 'Money paid out (tediye): a debit on the account, cash out.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this payment out.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOutRead'
+          description: ''
+  /api/v1/ledger/payments-out/{id}/cancel/:
+    post:
+      operationId: ledger_payments_out_cancel_create
+      description: 'Post the reversal of each of its movements. Once: again is `409
+        ALREADY_REVERSED`.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this payment out.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOutRead'
+          description: ''
+  /api/v1/ledger/suppliers/:
+    get:
+      operationId: ledger_suppliers_list
+      description: Whom the firm buys from. Each comes with its account.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSupplierReadList'
+          description: ''
+    post:
+      operationId: ledger_suppliers_create
+      description: Whom the firm buys from. Each comes with its account.
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupplierWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupplierWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierRead'
+          description: ''
+  /api/v1/ledger/suppliers/{id}/:
+    get:
+      operationId: ledger_suppliers_retrieve
+      description: Whom the firm buys from. Each comes with its account.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this supplier.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierRead'
+          description: ''
+    patch:
+      operationId: ledger_suppliers_partial_update
+      description: Whom the firm buys from. Each comes with its account.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this supplier.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSupplierWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSupplierWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSupplierWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierRead'
+          description: ''
+  /api/v1/ledger/transfers/:
+    get:
+      operationId: ledger_transfers_list
+      description: A transfer (virman), between two accounts or two cash accounts.
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - account
+          - cash
+        description: |-
+          * `account` - Between accounts
+          * `cash` - Between cash accounts
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTransferReadList'
+          description: ''
+    post:
+      operationId: ledger_transfers_create
+      description: A transfer (virman), between two accounts or two cash accounts.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: Required. The same key with the same body answers what the first
+          request did, and records nothing more.
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TransferCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TransferCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferRead'
+          description: ''
+  /api/v1/ledger/transfers/{id}/:
+    get:
+      operationId: ledger_transfers_retrieve
+      description: A transfer (virman), between two accounts or two cash accounts.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this transfer.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferRead'
+          description: ''
+  /api/v1/ledger/transfers/{id}/cancel/:
+    post:
+      operationId: ledger_transfers_cancel_create
+      description: 'Post the reversal of each of its movements. Once: again is `409
+        ALREADY_REVERSED`.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this transfer.
+        required: true
+      tags:
+      - ledger
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferRead'
+          description: ''
   /api/v1/maintenance-visits/:
     get:
       operationId: maintenance_visits_list
@@ -5398,6 +6542,153 @@ paths:
           description: ''
 components:
   schemas:
+    AccountCreateRequest:
+      type: object
+      description: |-
+        Open an account for a party that has none: a staff member, mostly.
+
+        A customer's account comes with the customer, and a supplier's with the
+        supplier; asking again for one that exists is `unique`.
+      properties:
+        kind:
+          $ref: '#/components/schemas/LedgerAccountKind'
+        customer:
+          type: string
+          format: uuid
+          description: For `customer`.
+        supplier:
+          type: string
+          format: uuid
+          description: For `supplier`.
+        user:
+          type: string
+          format: uuid
+          description: 'For `staff`: a member of the firm.'
+        currency:
+          type: string
+          minLength: 1
+          default: TRY
+          pattern: ^[A-Z]{3}$
+      required:
+      - kind
+    AccountDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/LedgerAccountKind'
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        supplier:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        user:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        currency:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+          description: 'Debits less credits. Positive: the party owes the firm.'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_movement:
+          allOf:
+          - $ref: '#/components/schemas/Movement'
+          nullable: true
+          readOnly: true
+      required:
+      - balance
+      - created_at
+      - currency
+      - customer
+      - id
+      - is_active
+      - kind
+      - last_movement
+      - name
+      - supplier
+      - user
+    AccountRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/LedgerAccountKind'
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        supplier:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        user:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        currency:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+          description: 'Debits less credits. Positive: the party owes the firm.'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - balance
+      - created_at
+      - currency
+      - customer
+      - id
+      - is_active
+      - kind
+      - name
+      - supplier
+      - user
     ActionEnum:
       enum:
       - create
@@ -5423,6 +6714,21 @@ components:
           nullable: true
       required:
       - elevator_ids
+    ApplyRequest:
+      type: object
+      properties:
+        invoice:
+          type: string
+          format: uuid
+          description: An issued invoice of the collection's customer.
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: What this collection pays of it.
+      required:
+      - amount
+      - invoice
     AssignRequest:
       type: object
       properties:
@@ -5879,6 +7185,217 @@ components:
           maxLength: 1000
       required:
       - reason
+    CashAccountKind:
+      enum:
+      - cash
+      - bank
+      - card
+      type: string
+      description: |-
+        * `cash` - Cash
+        * `bank` - Bank
+        * `card` - Card
+    CashAccountRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/CashAccountKind'
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/CashAccountRole'
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        iban:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+          description: What came in less what went out.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - balance
+      - created_at
+      - currency
+      - iban
+      - id
+      - is_active
+      - kind
+      - name
+      - role
+    CashAccountRole:
+      enum:
+      - default
+      - carried_over
+      type: string
+      description: |-
+        * `default` - Default till
+        * `carried_over` - Carried over from M7
+    CashAccountWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        kind:
+          $ref: '#/components/schemas/CashAccountKind'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        currency:
+          type: string
+          minLength: 1
+          pattern: ^[A-Z]{3}$
+        iban:
+          type: string
+          maxLength: 34
+        is_active:
+          type: boolean
+      required:
+      - kind
+      - name
+    CashDirection:
+      enum:
+      - in
+      - out
+      type: string
+      description: |-
+        * `in` - In
+        * `out` - Out
+    CollectionApplication:
+      type: object
+      properties:
+        invoice:
+          type: string
+          format: uuid
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - amount
+      - invoice
+    CollectionCreateRequest:
+      type: object
+      description: 'What every document takes: an amount and a business date.'
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Above zero, to the cent.
+        date:
+          type: string
+          format: date
+          description: 'The business date: not after today, nor in a closed period.
+            Today when omitted.'
+        account:
+          type: string
+          format: uuid
+          description: The party's account.
+        cash_account:
+          type: string
+          format: uuid
+          description: Where the money went.
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        note:
+          type: string
+          default: ''
+        applies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplyRequest'
+          description: 'The invoices it pays, each up to what it still owes. None:
+            an advance.'
+      required:
+      - account
+      - amount
+      - cash_account
+      - method
+    CollectionRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        number:
+          type: string
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          readOnly: true
+        cash_account:
+          type: string
+          format: uuid
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        method:
+          allOf:
+          - $ref: '#/components/schemas/PaymentMethod'
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        note:
+          type: string
+          readOnly: true
+        applies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionApplication'
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - amount
+      - applies
+      - cancelled_at
+      - cash_account
+      - created_at
+      - date
+      - id
+      - method
+      - note
+      - number
     Company:
       type: object
       properties:
@@ -7858,6 +9375,82 @@ components:
         * `resolved` - Resolved
         * `closed` - Closed
         * `cancelled` - Cancelled
+    FinanceCashLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/CashAccountKind'
+        currency:
+          type: string
+        balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        money_in:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+        money_out:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+      required:
+      - balance
+      - currency
+      - id
+      - kind
+      - money_in
+      - money_out
+      - name
+    FinanceSummary:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/PeriodEnum'
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        receivables:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          description: What the firm is owed, today.
+        payables:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          description: What the firm owes, today.
+        cash_accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinanceCashLine'
+        money_in:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          description: Cash in during the period; transfers between tills and openings
+            left out.
+        money_out:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+      required:
+      - cash_accounts
+      - date_from
+      - date_to
+      - money_in
+      - money_out
+      - payables
+      - period
+      - receivables
     GeocodeMatch:
       type: object
       description: One level of the address, resolved to a row the client can select.
@@ -8505,6 +10098,24 @@ components:
           maxItems: 240
       required:
       - elevator_ids
+    LedgerAccountKind:
+      enum:
+      - customer
+      - supplier
+      - staff
+      type: string
+      description: |-
+        * `customer` - Customer
+        * `supplier` - Supplier
+        * `staff` - Staff
+    LedgerDirection:
+      enum:
+      - debit
+      - credit
+      type: string
+      description: |-
+        * `debit` - Debit
+        * `credit` - Credit
     LoginRequest:
       type: object
       description: |-
@@ -8775,6 +10386,80 @@ components:
       - elevator
       - status
       - visit_date
+    ManualEntryCreateRequest:
+      type: object
+      description: 'What every document takes: an amount and a business date.'
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Above zero, to the cent.
+        date:
+          type: string
+          format: date
+          description: 'The business date: not after today, nor in a closed period.
+            Today when omitted.'
+        account:
+          type: string
+          format: uuid
+          description: The party's account.
+        direction:
+          $ref: '#/components/schemas/LedgerDirection'
+        reason:
+          type: string
+          minLength: 1
+          description: Why; shown on the statement.
+      required:
+      - account
+      - amount
+      - direction
+      - reason
+    ManualEntryRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          readOnly: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/LedgerDirection'
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - amount
+      - cancelled_at
+      - created_at
+      - date
+      - direction
+      - id
+      - reason
     MimeTypeEnum:
       enum:
       - application/pdf
@@ -8787,6 +10472,102 @@ components:
         * `image/jpeg` - image/jpeg
         * `image/png` - image/png
         * `image/webp` - image/webp
+    Movement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        cash_account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/LedgerDirection'
+          readOnly: true
+        cash_direction:
+          allOf:
+          - $ref: '#/components/schemas/CashDirection'
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        source:
+          allOf:
+          - $ref: '#/components/schemas/MovementSource'
+          readOnly: true
+        document_type:
+          type: string
+          readOnly: true
+        document_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        reverses:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        description:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - amount
+      - cash_account
+      - cash_direction
+      - created_at
+      - currency
+      - date
+      - description
+      - direction
+      - document_id
+      - document_type
+      - id
+      - reverses
+      - source
+    MovementSource:
+      enum:
+      - invoice
+      - invoice_cancel
+      - collection
+      - payment_out
+      - manual
+      - transfer
+      - opening
+      - reversal
+      type: string
+      description: |-
+        * `invoice` - Invoice
+        * `invoice_cancel` - Invoice cancelled
+        * `collection` - Collection
+        * `payment_out` - Payment out
+        * `manual` - Manual entry
+        * `transfer` - Transfer
+        * `opening` - Opening balance
+        * `reversal` - Reversal
     Neighborhood:
       type: object
       properties:
@@ -9010,6 +10791,140 @@ components:
     NullEnum:
       enum:
       - null
+    OpeningBalanceCreateRequest:
+      type: object
+      description: 'What every document takes: an amount and a business date.'
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Above zero, to the cent.
+        date:
+          type: string
+          format: date
+          description: 'The business date: not after today, nor in a closed period.
+            Today when omitted.'
+        account:
+          type: string
+          format: uuid
+          description: An account, or ...
+        cash_account:
+          type: string
+          format: uuid
+          description: '... a cash account.'
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/LedgerDirection'
+          description: |-
+            On a cash account, a debit is money in the till.
+
+            * `debit` - Debit
+            * `credit` - Credit
+      required:
+      - amount
+      - direction
+    OpeningBalanceRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        cash_account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/LedgerDirection'
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - amount
+      - cancelled_at
+      - cash_account
+      - created_at
+      - date
+      - direction
+      - id
+    PaginatedAccountReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      - totals
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+        totals:
+          type: object
+          required:
+          - receivables
+          - payables
+          - net
+          properties:
+            receivables:
+              type: string
+              format: decimal
+              pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+              description: The positive balances, summed.
+            payables:
+              type: string
+              format: decimal
+              pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+              description: The negative balances, summed, as a positive amount.
+            net:
+              type: string
+              format: decimal
+              pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+              description: Receivables less payables.
     PaginatedAttachmentList:
       type: object
       required:
@@ -9080,6 +10995,66 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BuildingRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedCashAccountReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CashAccountRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedCollectionReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionRead'
         pagination:
           type: object
           required:
@@ -9430,6 +11405,66 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedManualEntryReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualEntryRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedMovementList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movement'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedNotificationList:
       type: object
       required:
@@ -9440,6 +11475,66 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Notification'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedOpeningBalanceReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningBalanceRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPaymentOutReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentOutRead'
         pagination:
           type: object
           required:
@@ -9670,6 +11765,66 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedSupplierReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplierRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedTransferReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransferRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedUserList:
       type: object
       required:
@@ -9811,6 +11966,28 @@ components:
           minimum: -9223372036854775808
           format: int64
           nullable: true
+        is_active:
+          type: boolean
+    PatchedCashAccountWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        kind:
+          $ref: '#/components/schemas/CashAccountKind'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        currency:
+          type: string
+          minLength: 1
+          pattern: ^[A-Z]{3}$
+        iban:
+          type: string
+          maxLength: 34
         is_active:
           type: boolean
     PatchedCompanyRequest:
@@ -10317,6 +12494,37 @@ components:
           type: string
           format: date
           nullable: true
+    PatchedSupplierWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        address_note:
+          type: string
+        notes:
+          type: string
     PatchedUserUpdateRequest:
       type: object
       properties:
@@ -10350,6 +12558,104 @@ components:
         * `cash` - Cash
         * `transfer` - Transfer
         * `card` - Card
+    PaymentOutCreateRequest:
+      type: object
+      description: 'What every document takes: an amount and a business date.'
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Above zero, to the cent.
+        date:
+          type: string
+          format: date
+          description: 'The business date: not after today, nor in a closed period.
+            Today when omitted.'
+        account:
+          type: string
+          format: uuid
+          description: The party's account.
+        cash_account:
+          type: string
+          format: uuid
+          description: Where the money came from.
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        note:
+          type: string
+          default: ''
+      required:
+      - account
+      - amount
+      - cash_account
+      - method
+    PaymentOutRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        number:
+          type: string
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          readOnly: true
+        cash_account:
+          type: string
+          format: uuid
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        method:
+          allOf:
+          - $ref: '#/components/schemas/PaymentMethod'
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        note:
+          type: string
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - amount
+      - cancelled_at
+      - cash_account
+      - created_at
+      - date
+      - id
+      - method
+      - note
+      - number
+    PeriodEnum:
+      enum:
+      - today
+      - yesterday
+      - week
+      - month
+      type: string
+      description: |-
+        * `today` - today
+        * `yesterday` - yesterday
+        * `week` - week
+        * `month` - month
     PlanStatusCounts:
       type: object
       properties:
@@ -11622,6 +13928,89 @@ components:
         * `caretaker` - Caretaker
         * `staff` - Building staff
         * `other` - Other
+    SupplierRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        tax_office:
+          type: string
+          readOnly: true
+        tax_number:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        address_note:
+          type: string
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+        account:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+          description: The supplier's account.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - account
+      - address_note
+      - created_at
+      - email
+      - id
+      - name
+      - notes
+      - phone
+      - tax_number
+      - tax_office
+    SupplierWriteRequest:
+      type: object
+      description: |-
+        Rejects a field the client sent that this serializer does not declare.
+
+        Copied rather than imported, as in every other app.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tax_office:
+          type: string
+          maxLength: 100
+        tax_number:
+          type: string
+          maxLength: 11
+        phone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 150
+          - type: string
+            maxLength: 0
+        address_note:
+          type: string
+        notes:
+          type: string
+      required:
+      - name
     TechnicianOption:
       type: object
       description: One choice in the "who did the work" field — a name and nothing
@@ -11704,6 +14093,116 @@ components:
       required:
       - access
       - user
+    TransferCreateRequest:
+      type: object
+      description: 'What every document takes: an amount and a business date.'
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Above zero, to the cent.
+        date:
+          type: string
+          format: date
+          description: 'The business date: not after today, nor in a closed period.
+            Today when omitted.'
+        kind:
+          $ref: '#/components/schemas/TransferKind'
+        from_account:
+          type: string
+          format: uuid
+          description: 'For `account`: credited.'
+        to_account:
+          type: string
+          format: uuid
+          description: 'For `account`: debited.'
+        from_cash:
+          type: string
+          format: uuid
+          description: 'For `cash`: money out.'
+        to_cash:
+          type: string
+          format: uuid
+          description: 'For `cash`: money in.'
+        note:
+          type: string
+          default: ''
+      required:
+      - amount
+      - kind
+    TransferKind:
+      enum:
+      - account
+      - cash
+      type: string
+      description: |-
+        * `account` - Between accounts
+        * `cash` - Between cash accounts
+    TransferRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/TransferKind'
+          readOnly: true
+        from_account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        to_account:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        from_cash:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        to_cash:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        date:
+          type: string
+          format: date
+          readOnly: true
+        note:
+          type: string
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - cancelled_at
+      - created_at
+      - date
+      - from_account
+      - from_cash
+      - id
+      - kind
+      - note
+      - to_account
+      - to_cash
     UnmatchedEnum:
       enum:
       - province

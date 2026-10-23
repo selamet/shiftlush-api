@@ -22,6 +22,7 @@ from apps.billing.models import InvoiceDraft, InvoiceStatus
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.ledger.models import (
+    DEFAULT_CURRENCY,
     Account,
     AccountKind,
     CashAccount,
@@ -38,6 +39,7 @@ from apps.ledger.models import (
     OpeningBalance,
     PaymentMethod,
     PaymentOut,
+    Supplier,
     Transfer,
     TransferKind,
 )
@@ -712,3 +714,97 @@ def record_opening(
 
 def cancel_opening(o: OpeningBalance, *, by: User) -> OpeningBalance:
     return _cancel(o, by=by)
+
+
+# Parties ------------------------------------------------------------------------
+
+
+_PARTY_FIELD = {
+    AccountKind.CUSTOMER.value: "customer",
+    AccountKind.SUPPLIER.value: "supplier",
+    AccountKind.STAFF.value: "user",
+}
+
+
+def _party_name(party: Customer | Supplier | User) -> str:
+    if isinstance(party, Customer):
+        return party.legal_name
+    if isinstance(party, Supplier):
+        return party.name
+    return party.full_name or party.email
+
+
+def open_account(
+    *,
+    company_id: UUID,
+    kind: str,
+    by: User,
+    customer: Customer | None = None,
+    supplier: Supplier | None = None,
+    user: User | None = None,
+    currency: str = DEFAULT_CURRENCY,
+) -> Account:
+    """An account for a party that has none: a staff member above all, whose
+    account is opened the first time they are given one. Exactly the party
+    `kind` names, of this firm."""
+    if kind not in _PARTY_FIELD:
+        raise _invalid("kind", "Not an account kind.")
+    parties: dict[str, Customer | Supplier | User | None] = {
+        "customer": customer,
+        "supplier": supplier,
+        "user": user,
+    }
+    field = _PARTY_FIELD[kind]
+    for other, value in parties.items():
+        if other != field and value is not None:
+            raise _invalid(other, "An account names one party, the one its kind names.")
+    party = parties[field]
+    if party is None:
+        raise _invalid(field, "Required for this kind.", code="required")
+    _same_firm(company_id, **{field: party})
+    with transaction.atomic():
+        if Account.unscoped.filter(is_deleted=False, **{field: party}).exists():
+            raise _invalid(field, "This party already has an account.", code="unique")
+        return Account.objects.create(
+            company_id=company_id,
+            kind=kind,
+            customer=customer,
+            supplier=supplier,
+            user=user,
+            name=_party_name(party)[:200],
+            currency=currency,
+            created_by=by,
+            updated_by=by,
+        )
+
+
+def create_supplier(*, company_id: UUID, by: User, **fields: object) -> Supplier:
+    """A supplier and its account, together or not at all."""
+    with transaction.atomic():
+        supplier = Supplier.objects.create(
+            company_id=company_id, created_by=by, updated_by=by, **fields
+        )
+        Account.objects.create(
+            company_id=company_id,
+            kind=AccountKind.SUPPLIER,
+            supplier=supplier,
+            name=supplier.name,
+            created_by=by,
+            updated_by=by,
+        )
+    return supplier
+
+
+def update_supplier(supplier: Supplier, *, changes: dict[str, object], by: User) -> Supplier:
+    """Change a supplier; its account follows a rename, in the same write."""
+    with transaction.atomic():
+        for name, value in changes.items():
+            setattr(supplier, name, value)
+        supplier.updated_by = by
+        supplier.save()
+        for account in Account.objects.filter(supplier=supplier).exclude(name=supplier.name):
+            # Saved rather than updated in bulk, so the audit log records it.
+            account.name = supplier.name
+            account.updated_by = by
+            account.save(update_fields=["name", "updated_by", "updated_at"])
+    return supplier

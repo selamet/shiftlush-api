@@ -9,17 +9,21 @@ from __future__ import annotations
 
 import importlib
 import random
+import threading
+import unittest
 from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from django.apps import apps as global_apps
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
+from django.test import TransactionTestCase
 from django.urls import reverse
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
@@ -70,7 +74,7 @@ from apps.ledger.services import (
     record_payment_out,
     record_transfer,
 )
-from apps.users.models import User
+from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
 from core.exceptions import Conflict
@@ -1807,3 +1811,672 @@ class TestLockOrder:
         assert codes(error) == "INVOICE_HAS_COLLECTIONS"
         assert fresh(draft).status == InvoiceStatus.PAID
         assert len(movements_of(draft)) == 1
+
+
+# The API --------------------------------------------------------------------------
+
+
+def staff(company: Company, role: str, name: str | None = None) -> User:
+    with company_context(company.id):
+        return User.objects.create_user(
+            email=f"{name or role}-{company.pk.hex[:6]}@example.com",
+            password=PASSWORD,
+            company=company,
+            first_name=(name or role).title(),
+            last_name="Staff",
+            role=role,
+            is_email_verified=True,
+        )
+
+
+def keyed(client: APIClient, url: str, body: dict[str, Any], key: str | None = None) -> Any:
+    """POST with an Idempotency-Key, a fresh one unless `key` is given."""
+    return client.post(url, body, format="json", HTTP_IDEMPOTENCY_KEY=key or uuid4().hex)
+
+
+def error_of(response: Any) -> tuple[str, list[tuple[str, str]]]:
+    error = response.data["error"]
+    return error["code"], [(row.get("field", ""), row["code"]) for row in error.get("details", [])]
+
+
+def owed(books: SimpleNamespace, customer: Customer, total: str, days_ago: int) -> InvoiceDraft:
+    """An issued invoice of `customer`, `days_ago` old, posted to its account."""
+    draft = make_invoice(books, total, customer=customer)
+    draft.invoice_date = local_today() - timedelta(days=days_ago)
+    draft.save(update_fields=["invoice_date", "updated_at"])
+    ledger_services.post_invoice(draft, by=books.owner)
+    return draft
+
+
+def bank_of(books: SimpleNamespace, name: str = "Bank") -> CashAccount:
+    return CashAccount.objects.create(company=books.company, kind=CashKind.BANK, name=name)
+
+
+def _collection_body(books: SimpleNamespace) -> dict[str, Any]:
+    return {
+        "account": str(books.account.pk),
+        "cash_account": str(books.till.pk),
+        "amount": "100.00",
+        "method": "cash",
+    }
+
+
+def _payment_out_body(books: SimpleNamespace) -> dict[str, Any]:
+    return {
+        "account": str(supplier_account(books).pk),
+        "cash_account": str(books.till.pk),
+        "amount": "40.00",
+        "method": "transfer",
+    }
+
+
+def _manual_body(books: SimpleNamespace) -> dict[str, Any]:
+    return {
+        "account": str(books.account.pk),
+        "direction": "debit",
+        "amount": "25.00",
+        "reason": "Late fee",
+    }
+
+
+def _transfer_body(books: SimpleNamespace) -> dict[str, Any]:
+    return {
+        "kind": "cash",
+        "from_cash": str(books.till.pk),
+        "to_cash": str(bank_of(books).pk),
+        "amount": "10.00",
+    }
+
+
+def _opening_body(books: SimpleNamespace) -> dict[str, Any]:
+    return {"account": str(books.account.pk), "direction": "debit", "amount": "500.00"}
+
+
+DOCUMENTS: dict[str, Callable[[SimpleNamespace], dict[str, Any]]] = {
+    "ledger-collection": _collection_body,
+    "ledger-payment-out": _payment_out_body,
+    "ledger-manual-entry": _manual_body,
+    "ledger-transfer": _transfer_body,
+    "ledger-opening": _opening_body,
+}
+
+
+def all_balances(books: SimpleNamespace) -> dict[str, Decimal]:
+    rows = {f"account:{a.name}:{a.pk}": account_balance(a) for a in Account.objects.all()}
+    rows.update({f"cash:{c.name}:{c.pk}": cash_balance(c) for c in CashAccount.objects.all()})
+    return rows
+
+
+class TestApi:
+    def test_accounts_list_with_balance_and_totals_and_filters(self, books):
+        alpha, beta = books.customer, make_customer(books.company, "Beta Asansor")
+        idle = make_customer(books.company, "Idle Ltd")
+        owed(books, alpha, "1000.00", days_ago=45)
+        owed(books, beta, "500.00", days_ago=5)
+        parts = supplier_account(books, "Parts Co")
+        record_manual_entry(
+            account=parts,
+            direction=Direction.CREDIT,
+            amount=Decimal("300.00"),
+            date=local_today(),
+            reason="Invoice from Parts Co",
+            by=books.owner,
+        )
+        client = api_for(books.owner)
+        url = reverse("ledger-account-list")
+
+        def names(**params: Any) -> set[str]:
+            response = client.get(url, params)
+            assert response.status_code == 200, response.data
+            return {row["name"] for row in response.data["results"]}
+
+        listed = client.get(url).data
+        balances = {row["name"]: row["balance"] for row in listed["results"]}
+        assert balances == {
+            "Customer": "1000.00",
+            "Beta Asansor": "500.00",
+            "Idle Ltd": "0.00",
+            "Parts Co": "-300.00",
+        }
+        assert listed["totals"] == {
+            "receivables": "1500.00",
+            "payables": "300.00",
+            "net": "1200.00",
+        }
+        assert listed["pagination"]["total"] == 4
+
+        assert names(kind="supplier") == {"Parts Co"}
+        assert names(search="beta") == {"Beta Asansor"}
+        assert names(has_balance="true") == {"Customer", "Beta Asansor", "Parts Co"}
+        assert names(has_balance="false") == {idle.legal_name}
+        assert names(overdue="true", overdue_days=30) == {"Customer"}
+        assert names(overdue="true", overdue_days=3) == {"Customer", "Beta Asansor"}
+        # The totals follow the filters.
+        assert client.get(url, {"kind": "customer"}).data["totals"]["payables"] == "0.00"
+
+        detail = client.get(reverse("ledger-account-detail", args=[books.account.pk])).data
+        assert detail["balance"] == "1000.00"
+        assert str(detail["customer"]) == str(alpha.pk)
+        assert detail["last_movement"]["source"] == MovementSource.INVOICE
+        assert detail["last_movement"]["amount"] == "1000.00"
+
+    def test_an_account_is_opened_for_a_staff_member_once(self, books):
+        tech = staff(books.company, Role.TECHNICIAN)
+        client = api_for(books.owner)
+        url = reverse("ledger-account-list")
+
+        response = client.post(url, {"kind": "staff", "user": str(tech.pk)}, format="json")
+        assert response.status_code == 201, response.data
+        assert (response.data["kind"], response.data["name"], response.data["balance"]) == (
+            "staff",
+            tech.full_name,
+            "0.00",
+        )
+        again = client.post(url, {"kind": "staff", "user": str(tech.pk)}, format="json")
+        assert again.status_code == 400
+        assert error_of(again)[1] == [("user", "unique")]
+        # A customer's account came with the customer.
+        dup = client.post(url, {"kind": "customer", "customer": str(books.customer.pk)})
+        assert error_of(dup)[1] == [("customer", "unique")]
+
+    def test_a_supplier_comes_with_its_account_and_renames_it(self, books):
+        client = api_for(books.owner)
+        response = client.post(
+            reverse("ledger-supplier-list"), {"name": "Kabin Parca", "phone": ""}, format="json"
+        )
+        assert response.status_code == 201, response.data
+        account = Account.objects.get(pk=response.data["account"])
+        assert (account.kind, account.name) == (AccountKind.SUPPLIER, "Kabin Parca")
+
+        renamed = client.patch(
+            reverse("ledger-supplier-detail", args=[response.data["id"]]),
+            {"name": "Kabin Parca AS"},
+            format="json",
+        )
+        assert renamed.status_code == 200, renamed.data
+        account.refresh_from_db()
+        assert account.name == "Kabin Parca AS"
+
+    def test_a_retried_collection_posts_once(self, books):
+        client = api_for(books.owner)
+        url = reverse("ledger-collection-list")
+        body = _collection_body(books)
+
+        first = keyed(client, url, body, key="retry-1")
+        second = keyed(client, url, body, key="retry-1")
+
+        assert first.status_code == second.status_code == 201, first.data
+        assert str(first.data["id"]) == str(second.data["id"])
+        assert Collection.objects.count() == 1
+        assert Movement.objects.filter(source=MovementSource.COLLECTION).count() == 1
+        assert account_balance(books.account) == Decimal("-100.00")
+
+        # And without a key it is refused: the retry the key exists for would
+        # record the money twice.
+        bare = client.post(url, body, format="json")
+        assert bare.status_code == 400
+        assert error_of(bare)[0] == "IDEMPOTENCY_KEY_REQUIRED"
+        assert Collection.objects.count() == 1
+
+    def test_a_collection_pays_the_invoices_it_names(self, books):
+        draft = owed(books, books.customer, "1000.00", days_ago=10)
+        client = api_for(books.owner)
+        body = {**_collection_body(books), "amount": "1000.00"}
+        body["applies"] = [{"invoice": str(draft.pk), "amount": "600.00"}]
+
+        response = keyed(client, reverse("ledger-collection-list"), body)
+
+        assert response.status_code == 201, response.data
+        assert response.json()["applies"] == [{"invoice": str(draft.pk), "amount": "600.00"}]
+        assert response.data["number"] == "T-000001"
+        assert invoice_remaining(draft) == Decimal("400.00")
+
+        over = keyed(
+            client,
+            reverse("ledger-collection-list"),
+            {**body, "applies": [{"invoice": str(draft.pk), "amount": "400.01"}]},
+        )
+        assert over.status_code == 400
+        assert error_of(over)[1] == [("applies", "OVERPAYMENT_ON_INVOICE")]
+        assert Collection.objects.count() == 1
+
+    @pytest.mark.parametrize("basename", sorted(DOCUMENTS))
+    def test_document_create_and_cancel_round_trip(self, books, basename):
+        client = api_for(books.owner)
+        body = DOCUMENTS[basename](books)
+        before = all_balances(books)
+
+        created = keyed(client, reverse(f"{basename}-list"), body)
+        assert created.status_code == 201, created.data
+        assert created.data["cancelled_at"] is None
+        assert all_balances(books) != before
+        listed = client.get(reverse(f"{basename}-list")).data["results"]
+        assert [str(row["id"]) for row in listed] == [str(created.data["id"])]
+
+        cancel_url = reverse(f"{basename}-cancel", args=[created.data["id"]])
+        cancelled = client.post(cancel_url)
+        assert cancelled.status_code == 200, cancelled.data
+        assert cancelled.data["cancelled_at"] is not None
+        assert all_balances(books) == {key: before.get(key, Decimal("0.00")) for key in before} | {
+            key: Decimal("0.00") for key in set(all_balances(books)) - set(before)
+        }
+
+        again = client.post(cancel_url)
+        assert again.status_code == 409
+        assert error_of(again)[0] == "ALREADY_REVERSED"
+
+    def test_no_route_edits_or_deletes_a_document(self, books):
+        client = api_for(books.owner)
+        created = keyed(client, reverse("ledger-collection-list"), _collection_body(books))
+        url = reverse("ledger-collection-detail", args=[created.data["id"]])
+        assert client.patch(url, {"amount": "1.00"}, format="json").status_code == 405
+        assert client.delete(url).status_code == 405
+        assert Collection.objects.get().amount == Decimal("100.00")
+
+    def test_permissions(self, books):
+        roles = {role: staff(books.company, role) for role in Role.values if role != Role.OWNER}
+        roles[Role.OWNER] = books.owner
+        tech = api_for(roles[Role.TECHNICIAN])
+        reads = [
+            reverse("ledger-account-list"),
+            reverse("ledger-account-detail", args=[books.account.pk]),
+            reverse("ledger-cash-account-list"),
+            reverse("ledger-cash-account-movements", args=[books.till.pk]),
+            reverse("ledger-supplier-list"),
+            reverse("ledger-finance-summary"),
+            *(reverse(f"{basename}-list") for basename in DOCUMENTS),
+        ]
+        for url in reads:
+            assert tech.get(url).status_code == 403, url
+        for basename, body in DOCUMENTS.items():
+            response = keyed(tech, reverse(f"{basename}-list"), body(books))
+            assert response.status_code == 403, basename
+        assert (
+            tech.post(
+                reverse("ledger-cash-account-list"), {"kind": "cash", "name": "X"}
+            ).status_code
+            == 403
+        )
+
+        ops = api_for(roles[Role.OPERATIONS])
+        made = keyed(ops, reverse("ledger-collection-list"), _collection_body(books))
+        assert made.status_code == 201, made.data
+        assert (
+            keyed(ops, reverse("ledger-payment-out-list"), _payment_out_body(books)).status_code
+            == 201
+        )
+        assert (
+            keyed(ops, reverse("ledger-manual-entry-list"), _manual_body(books)).status_code == 403
+        )
+        assert keyed(ops, reverse("ledger-transfer-list"), _transfer_body(books)).status_code == 403
+        assert ops.get(reverse("ledger-account-list")).status_code == 403
+
+        admin = api_for(roles[Role.ADMIN])
+        assert keyed(admin, reverse("ledger-opening-list"), _opening_body(books)).status_code == 403
+        assert (
+            keyed(admin, reverse("ledger-manual-entry-list"), _manual_body(books)).status_code
+            == 403
+        )
+        assert (
+            keyed(admin, reverse("ledger-collection-list"), _collection_body(books)).status_code
+            == 201
+        )
+        assert admin.get(reverse("ledger-finance-summary")).status_code == 200
+
+        accountant = api_for(roles[Role.ACCOUNTANT])
+        for basename, body in DOCUMENTS.items():
+            response = keyed(accountant, reverse(f"{basename}-list"), body(books))
+            assert response.status_code == 201, (basename, response.data)
+            assert (
+                accountant.post(
+                    reverse(f"{basename}-cancel", args=[response.data["id"]])
+                ).status_code
+                == 200
+            )
+        for url in reads:
+            assert accountant.get(url).status_code == 200, url
+        made_cash = accountant.post(
+            reverse("ledger-cash-account-list"),
+            {"kind": "bank", "name": "Is Bankasi"},
+            format="json",
+        )
+        assert made_cash.status_code == 201, made_cash.data
+        assert (
+            accountant.post(
+                reverse("ledger-account-list"),
+                {"kind": "staff", "user": str(roles[Role.TECHNICIAN].pk)},
+                format="json",
+            ).status_code
+            == 201
+        )
+
+    def test_cash_account_movements_and_balance(self, books):
+        client = api_for(books.owner)
+        made = client.post(
+            reverse("ledger-cash-account-list"),
+            {"kind": "bank", "name": "Ziraat", "iban": "TR120001000000000000000001"},
+            format="json",
+        )
+        assert made.status_code == 201, made.data
+        assert made.data["balance"] == "0.00"
+        bank = CashAccount.objects.get(pk=made.data["id"])
+
+        receive(books, "250.00", cash_account=bank)
+        record_payment_out(
+            account=supplier_account(books),
+            cash_account=bank,
+            amount=Decimal("100.00"),
+            method=PaymentMethod.TRANSFER,
+            date=local_today(),
+            note="",
+            by=books.owner,
+        )
+
+        detail = client.get(reverse("ledger-cash-account-detail", args=[bank.pk])).data
+        assert detail["balance"] == "150.00"
+        listed = {
+            row["name"]: row["balance"]
+            for row in client.get(reverse("ledger-cash-account-list")).data["results"]
+        }
+        assert listed == {"Merkez kasa": "0.00", "Ziraat": "150.00"}
+
+        movements = client.get(reverse("ledger-cash-account-movements", args=[bank.pk])).data
+        assert [
+            (row["source"], row["cash_direction"], row["amount"]) for row in movements["results"]
+        ] == [
+            (MovementSource.PAYMENT_OUT, CashDirection.OUT, "100.00"),
+            (MovementSource.COLLECTION, CashDirection.IN, "250.00"),
+        ]
+
+        url = reverse("ledger-cash-account-detail", args=[bank.pk])
+        refused = client.patch(url, {"currency": "EUR"}, format="json")
+        assert refused.status_code == 400
+        assert error_of(refused)[1] == [("currency", "invalid")]
+        renamed = client.patch(url, {"name": "Ziraat TL"}, format="json")
+        assert (renamed.status_code, renamed.data["name"], renamed.data["balance"]) == (
+            200,
+            "Ziraat TL",
+            "150.00",
+        )
+
+    def test_finance_summary(self, books):
+        today = date(2026, 10, 15)
+        with (
+            patch("apps.ledger.posting.local_today", return_value=today),
+            patch("apps.ledger.api.v1.views.local_today", return_value=today),
+        ):
+            bank = bank_of(books, "Ziraat")
+            owed(books, books.customer, "1000.00", days_ago=20)
+            parts = supplier_account(books)
+            record_manual_entry(
+                account=parts,
+                direction=Direction.CREDIT,
+                amount=Decimal("700.00"),
+                date=date(2026, 10, 2),
+                reason="Parts bought",
+                by=books.owner,
+            )
+            receive(books, "300.00", date=today)
+            receive(books, "200.00", date=date(2026, 10, 3), cash_account=bank)
+            record_payment_out(
+                account=parts,
+                cash_account=books.till,
+                amount=Decimal("50.00"),
+                method=PaymentMethod.CASH,
+                date=date(2026, 10, 14),
+                note="",
+                by=books.owner,
+            )
+            # Moving the till to the bank is neither in nor out of the firm.
+            record_transfer(
+                kind=TransferKind.CASH,
+                from_cash=books.till,
+                to_cash=bank,
+                amount=Decimal("100.00"),
+                date=today,
+                note="",
+                by=books.owner,
+            )
+            client = api_for(books.owner)
+            url = reverse("ledger-finance-summary")
+            by_period = {
+                p: client.get(url, {"period": p}).data for p in ("today", "yesterday", "month")
+            }
+
+        today_view = by_period["today"]
+        assert (today_view["date_from"], today_view["date_to"]) == ("2026-10-15", "2026-10-15")
+        # 1000 - 300 - 200 owed by the customer; 700 - 50 owed to the supplier.
+        assert (today_view["receivables"], today_view["payables"]) == ("500.00", "650.00")
+        cash = {row["name"]: row for row in today_view["cash_accounts"]}
+        assert (cash["Merkez kasa"]["balance"], cash["Ziraat"]["balance"]) == ("150.00", "300.00")
+        assert (today_view["money_in"], today_view["money_out"]) == ("300.00", "0.00")
+        assert (cash["Merkez kasa"]["money_in"], cash["Ziraat"]["money_in"]) == ("300.00", "0.00")
+
+        assert (by_period["yesterday"]["money_in"], by_period["yesterday"]["money_out"]) == (
+            "0.00",
+            "50.00",
+        )
+        month = by_period["month"]
+        assert (month["date_from"], month["money_in"], month["money_out"]) == (
+            "2026-10-01",
+            "500.00",
+            "50.00",
+        )
+        assert api_for(books.owner).get(url, {"period": "decade"}).status_code == 400
+
+    @pytest.mark.parametrize(
+        ("basename", "field"),
+        [
+            ("ledger-collection", "account"),
+            ("ledger-collection", "cash_account"),
+            ("ledger-collection", "applies.0.invoice"),
+            ("ledger-payment-out", "account"),
+            ("ledger-payment-out", "cash_account"),
+            ("ledger-manual-entry", "account"),
+            ("ledger-transfer", "to_account"),
+            ("ledger-transfer", "from_account"),
+            ("ledger-transfer", "to_cash"),
+            ("ledger-opening", "account"),
+            ("ledger-opening", "cash_account"),
+            ("ledger-account", "customer"),
+            ("ledger-account", "supplier"),
+            ("ledger-account", "user"),
+        ],
+    )
+    def test_another_firms_records_are_refused(self, books, basename, field):
+        other, other_owner = make_firm("B")
+        theirs_customer = make_customer(other, "Theirs")
+        with company_context(other.id):
+            theirs = SimpleNamespace(
+                company=other,
+                owner=other_owner,
+                customer=theirs_customer,
+                account=Account.objects.get(customer=theirs_customer),
+                till=CashAccount.objects.get(),
+            )
+            their_supplier = supplier_account(theirs).supplier
+            assert their_supplier is not None
+            their_invoice = owed(theirs, theirs_customer, "100.00", days_ago=1)
+            their_ids = {
+                "account": theirs.account.pk,
+                "from_account": theirs.account.pk,
+                "to_account": theirs.account.pk,
+                "cash_account": theirs.till.pk,
+                "to_cash": theirs.till.pk,
+                "customer": theirs_customer.pk,
+                "supplier": their_supplier.pk,
+                "user": other_owner.pk,
+            }
+        mine_bank = bank_of(books)
+        mine_staff = staff(books.company, Role.TECHNICIAN)
+        bodies: dict[tuple[str, str], dict[str, Any]] = {
+            ("ledger-collection", "applies.0.invoice"): {
+                **_collection_body(books),
+                "applies": [{"invoice": str(their_invoice.pk), "amount": "10.00"}],
+            },
+            ("ledger-transfer", "to_account"): {
+                "kind": "account",
+                "from_account": str(books.account.pk),
+                "to_account": str(their_ids["to_account"]),
+                "amount": "10.00",
+            },
+            ("ledger-transfer", "from_account"): {
+                "kind": "account",
+                "from_account": str(their_ids["from_account"]),
+                "to_account": str(books.account.pk),
+                "amount": "10.00",
+            },
+            ("ledger-transfer", "to_cash"): {
+                "kind": "cash",
+                "from_cash": str(books.till.pk),
+                "to_cash": str(their_ids["to_cash"]),
+                "amount": "10.00",
+            },
+            ("ledger-opening", "cash_account"): {
+                "cash_account": str(their_ids["cash_account"]),
+                "direction": "debit",
+                "amount": "10.00",
+            },
+            ("ledger-account", "customer"): {
+                "kind": "customer",
+                "customer": str(their_ids["customer"]),
+            },
+            ("ledger-account", "supplier"): {
+                "kind": "supplier",
+                "supplier": str(their_ids["supplier"]),
+            },
+            ("ledger-account", "user"): {"kind": "staff", "user": str(their_ids["user"])},
+        }
+        if (basename, field) in bodies:
+            body = bodies[(basename, field)]
+        else:
+            body = {**DOCUMENTS[basename](books), field: str(their_ids[field])}
+        assert mine_staff  # a staff member of ours exists, so `user` is not refused for want of one
+        assert mine_bank
+        counts = (
+            Movement.unscoped.count(),
+            Collection.unscoped.count(),
+            Account.unscoped.count(),
+            OpeningBalance.unscoped.count(),
+            Transfer.unscoped.count(),
+        )
+
+        response = keyed(api_for(books.owner), reverse(f"{basename}-list"), body)
+
+        assert response.status_code == 400, response.data
+        assert error_of(response) == ("VALIDATION_ERROR", [(field, "does_not_exist")])
+        assert (
+            Movement.unscoped.count(),
+            Collection.unscoped.count(),
+            Account.unscoped.count(),
+            OpeningBalance.unscoped.count(),
+            Transfer.unscoped.count(),
+        ) == counts
+
+
+# Concurrency, on PostgreSQL ------------------------------------------------------
+#
+# SQLite has no row locks (it ignores FOR UPDATE and serialises whole
+# transactions), so these only mean something on PostgreSQL, where CI runs
+# them. Real threads, each on its own connection, released together by a
+# barrier; the services are called directly, as a view would.
+
+_JOIN_TIMEOUT = 30
+
+
+def _race(*calls: Callable[[], Any]) -> list[Any]:
+    """Run each call in its own thread at once; each result or the exception raised."""
+    barrier = threading.Barrier(len(calls))
+    results: list[Any] = [None] * len(calls)
+
+    def run(index: int, call: Callable[[], Any]) -> None:
+        close_old_connections()
+        try:
+            barrier.wait(timeout=_JOIN_TIMEOUT)
+            results[index] = call()
+        except BaseException as exc:  # reported to the test thread
+            results[index] = exc
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=run, args=(i, call)) for i, call in enumerate(calls)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=_JOIN_TIMEOUT)
+    assert not any(thread.is_alive() for thread in threads), "a thread is stuck: a deadlock?"
+    return results
+
+
+@unittest.skipUnless(connection.vendor == "postgresql", "row locks need PostgreSQL")
+class TestConcurrency(TransactionTestCase):
+    def setUp(self) -> None:
+        self.company, self.owner = make_firm("C")
+        self.customer = make_customer(self.company)
+        with company_context(self.company.id):
+            self.books = SimpleNamespace(
+                company=self.company,
+                owner=self.owner,
+                customer=self.customer,
+                account=Account.objects.get(customer=self.customer),
+                till=CashAccount.objects.get(),
+            )
+            self.invoice = owed(self.books, self.customer, "1000.00", days_ago=3)
+
+    def _in_firm(self, call: Callable[[], Any]) -> Callable[[], Any]:
+        def wrapped() -> Any:
+            with company_context(self.company.id):
+                return call()
+
+        return wrapped
+
+    def _collect(self, amount: str) -> Callable[[], Any]:
+        def call() -> Collection:
+            invoice = InvoiceDraft.objects.get(pk=self.invoice.pk)
+            return receive(self.books, amount, applies=[(invoice, Decimal(amount))])
+
+        return self._in_firm(call)
+
+    def test_two_full_collections_on_one_invoice_one_wins(self) -> None:
+        results = _race(self._collect("1000.00"), self._collect("1000.00"))
+
+        won = [r for r in results if isinstance(r, Collection)]
+        lost = [r for r in results if isinstance(r, ValidationError)]
+        assert (len(won), len(lost)) == (1, 1), results
+        assert lost[0].get_codes() == {"applies": "OVERPAYMENT_ON_INVOICE"}
+        with company_context(self.company.id):
+            assert invoice_remaining(InvoiceDraft.objects.get(pk=self.invoice.pk)) == Decimal(
+                "0.00"
+            )
+            assert Collection.objects.count() == 1
+            assert account_balance(self.books.account) == Decimal("0.00")
+
+    def test_a_cancel_racing_a_collection_neither_deadlocks_nor_loses_money(self) -> None:
+        with company_context(self.company.id):
+            standing = receive(self.books, "400.00", applies=[(self.invoice, Decimal("400.00"))])
+
+        results = _race(
+            self._in_firm(lambda: cancel_collection(standing, by=self.owner)),
+            self._collect("400.00"),
+        )
+
+        assert not [r for r in results if isinstance(r, BaseException)], results
+        with company_context(self.company.id):
+            movements = list(Movement.objects.all())
+            debits = sum(
+                (m.amount for m in movements if m.direction == Direction.DEBIT), Decimal(0)
+            )
+            credits = sum(
+                (m.amount for m in movements if m.direction == Direction.CREDIT), Decimal(0)
+            )
+            cash_in = sum(
+                (m.amount for m in movements if m.cash_direction == CashDirection.IN), Decimal(0)
+            )
+            cash_out = sum(
+                (m.amount for m in movements if m.cash_direction == CashDirection.OUT), Decimal(0)
+            )
+            assert account_balance(self.books.account) == debits - credits == Decimal("600.00")
+            assert cash_balance(self.books.till) == cash_in - cash_out == Decimal("400.00")
+            invoice = InvoiceDraft.objects.get(pk=self.invoice.pk)
+            assert invoice_remaining(invoice) == Decimal("600.00")
+            assert invoice.status == InvoiceStatus.ISSUED

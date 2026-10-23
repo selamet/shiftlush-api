@@ -513,6 +513,13 @@ SPECTACULAR_SETTINGS = {
         "InvoiceStatus": "apps.billing.models.InvoiceStatus.choices",
         "InvoiceLineKind": "apps.billing.models.InvoiceLineKind.choices",
         "NotificationKind": "apps.notifications.models.NotificationKind.choices",
+        "LedgerAccountKind": "apps.ledger.models.AccountKind.choices",
+        "CashAccountKind": "apps.ledger.models.CashKind.choices",
+        "CashAccountRole": "apps.ledger.models.CashAccountRole.choices",
+        "TransferKind": "apps.ledger.models.TransferKind.choices",
+        "LedgerDirection": "apps.ledger.models.Direction.choices",
+        "CashDirection": "apps.ledger.models.CashDirection.choices",
+        "MovementSource": "apps.ledger.models.MovementSource.choices",
     },
 }
 
