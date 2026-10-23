@@ -14,7 +14,7 @@ from datetime import date
 from functools import partial
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
@@ -60,8 +60,10 @@ def _filename(period: str) -> str:
     return f"maintenance-report-{period}.pdf"
 
 
-def _store_pdf(customer: Customer, data: ReportData) -> Attachment:
-    return save_bytes(
+def _store_pdf(customer: Customer, data: ReportData, stored: list[Attachment]) -> Attachment:
+    """Render and store the PDF. The object goes into `stored` at once, so a
+    caller whose transaction then rolls back can remove it from the bucket."""
+    attachment = save_bytes(
         company_id=customer.company_id,
         object_type=ObjectType.CUSTOMER,
         object_id=customer.pk,
@@ -71,6 +73,17 @@ def _store_pdf(customer: Customer, data: ReportData) -> Attachment:
         original_filename=_filename(data.period),
         uploaded_by=None,
     )
+    stored.append(attachment)
+    return attachment
+
+
+def _discard(stored: list[Attachment]) -> None:
+    """Remove objects whose rows were rolled back, so they are not orphaned."""
+    for attachment in stored:
+        try:
+            storage.delete(attachment.storage_backend, attachment.storage_key)
+        except Exception:
+            logger.exception("Could not remove the orphaned object %s", attachment.storage_key)
 
 
 def _summary(data: ReportData) -> dict[str, object]:
@@ -87,14 +100,29 @@ def recipients_of(customer: Customer) -> list[str]:
     return sorted({email for email in emails if email})
 
 
-@transaction.atomic
+def _report_exists(customer: Customer, period: str) -> bool:
+    return CustomerReport.objects.filter(customer=customer, period=period).exists()
+
+
 def generate_one(customer: Customer, period: str, *, today: date) -> CustomerReport | None:
     """Make and store the report of one customer's month.
 
     None when there is nothing to make: the customer had no covered lift in the
     month, or a live report for the month exists already.
     """
-    if CustomerReport.objects.filter(customer=customer, period=period).exists():
+    stored: list[Attachment] = []
+    try:
+        with transaction.atomic():
+            return _create(customer, period, today, stored)
+    except Exception:
+        _discard(stored)
+        raise
+
+
+def _create(
+    customer: Customer, period: str, today: date, stored: list[Attachment]
+) -> CustomerReport | None:
+    if _report_exists(customer, period):
         return None
     data = build_report(customer, period, today=today)
     if not data.lifts:
@@ -103,16 +131,36 @@ def generate_one(customer: Customer, period: str, *, today: date) -> CustomerRep
         company_id=customer.company_id,
         customer=customer,
         period=period,
-        file=_store_pdf(customer, data),
+        file=_store_pdf(customer, data, stored),
         generated_at=timezone.now(),
         summary=_summary(data),
     )
 
 
-def _mark_failed(report_id: uuid.UUID, reason: str) -> None:
+_FAILED_MARK = "failed: "
+
+
+def _mark_failed(report_id: uuid.UUID, address: str) -> None:
+    """Record that `address` did not get the mail, keeping the earlier ones."""
+    row = CustomerReport.unscoped.get(pk=report_id)
+    failed = row.error.split(_FAILED_MARK, 1)[1].split(", ") if _FAILED_MARK in row.error else []
+    if address not in failed:
+        failed.append(address)
+    lead = "Partially sent" if len(failed) < len(row.recipients) else "Not sent"
     CustomerReport.unscoped.filter(pk=report_id).update(
-        delivery=ReportDelivery.FAILED, error=reason
+        delivery=ReportDelivery.FAILED,
+        error=f"{lead}; {_FAILED_MARK}{', '.join(failed)}",
+        updated_at=timezone.now(),
     )
+
+
+def _record_failure(report_id: uuid.UUID, address: str, reason: str) -> None:
+    """The callback of a failed send. It runs on commit, among other sends, so
+    it must not raise: a record that cannot be written is logged instead."""
+    try:
+        _mark_failed(report_id, address)
+    except Exception:
+        logger.exception("Could not record that %s failed for report %s", address, report_id)
 
 
 def send_report(report: CustomerReport, *, by: User | None) -> CustomerReport:
@@ -146,8 +194,10 @@ def send_report(report: CustomerReport, *, by: User | None) -> CustomerReport:
             },
             pdf=pdf,
             filename=_filename(report.period),
-            on_failure=partial(_mark_failed, report.pk),
+            on_failure=partial(_record_failure, report.pk, email),
         )
+    # SENT is committed before the mails go out (on commit). If the process dies
+    # in between, the report reads SENT and nobody got it; the office can resend.
     report.delivery = ReportDelivery.SENT
     report.sent_at = timezone.now()
     report.recipients = emails
@@ -170,7 +220,12 @@ def regenerate(report: CustomerReport, *, today: date) -> CustomerReport:
     """
     data = build_report(report.customer, report.period, today=today)
     old = report.file
-    report.file = _store_pdf(report.customer, data)
+    stored: list[Attachment] = []
+    try:
+        report.file = _store_pdf(report.customer, data, stored)
+    except Exception:
+        _discard(stored)
+        raise
     report.generated_at = timezone.now()
     report.summary = _summary(data)
     report.save(update_fields=["file", "generated_at", "summary", "updated_at"])
@@ -202,14 +257,23 @@ def generate(company: Company, period: str, *, today: date, send: bool) -> RunRe
     """
     result = RunResult()
     for customer in Customer.objects.filter(company=company).order_by("id"):
+        stored: list[Attachment] = []
         try:
             with transaction.atomic():
-                report = generate_one(customer, period, today=today)
+                report = _create(customer, period, today, stored)
                 if report is None:
                     continue
                 _deliver(report, company, send=send, result=result)
                 result.created += 1
+        except IntegrityError:
+            _discard(stored)
+            if _report_exists(customer, period):
+                # Another run made it first; nothing for this one to do or report.
+                continue
+            logger.exception("Monthly report for customer %s, %s, failed", customer.pk, period)
+            result.failed += 1
         except Exception:
+            _discard(stored)
             logger.exception("Monthly report for customer %s, %s, failed", customer.pk, period)
             result.failed += 1
     if result.created or result.failed:

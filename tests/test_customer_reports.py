@@ -39,6 +39,7 @@ from apps.maintenance.models import (
 )
 from apps.notifications.models import Notification, NotificationKind
 from apps.properties.models import Building, BuildingType
+from apps.reports import services
 from apps.reports.content import (
     ComingItem,
     FaultLine,
@@ -1129,3 +1130,90 @@ class TestGeneration:
     def test_the_schedule_runs_the_job_at_eight(self):
         names = {s.name: s for s in get_schedules()}
         assert names["monthly_customer_reports"].at == time(8, 0)
+
+
+@pytest.mark.usefixtures("pdf")
+class TestGenerationFixes:
+    def test_a_lost_race_is_skipped_quietly(
+        self, month, monkeypatch, bucket, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a)
+        with system_context():
+            CustomerReport.objects.create(company=month.company, customer=month.a, period=OCT)
+        real = services._report_exists
+        missed: list[int] = []
+
+        def blind_once(customer, period):
+            if customer.pk == month.a.pk and not missed:
+                missed.append(1)
+                return False
+            return real(customer, period)
+
+        monkeypatch.setattr(services, "_report_exists", blind_once)
+        with django_capture_on_commit_callbacks(execute=True):
+            result = run_job(NEXT_MONTH, monkeypatch)
+        assert missed
+        assert (result["created"], result["failed"]) == (1, 0)
+        assert report_mails() == []
+        assert not any(str(month.a.pk) in key for _, key in bucket.objects)
+
+    def test_a_failure_after_storing_leaves_no_object(self, month, monkeypatch, bucket):
+        def boom(*args, **kwargs):
+            raise RuntimeError("after the store")
+
+        monkeypatch.setattr(services, "_deliver", boom)
+        result = run_job(NEXT_MONTH, monkeypatch)
+        assert result["failed"] == 2
+        assert bucket.objects == {}
+
+    def test_a_failing_failure_record_does_not_stop_the_other_mails(
+        self, month, monkeypatch, bucket, django_capture_on_commit_callbacks
+    ):
+        switch(month, True)
+        tick(month, month.a, "one@example.com")
+        tick(month, month.a, "two@example.com")
+        attempts: list[str] = []
+
+        def broken(self, fail_silently=False):
+            attempts.append(self.to[0])
+            raise OSError("smtp down")
+
+        def cannot_record(*args, **kwargs):
+            raise RuntimeError("database gone")
+
+        monkeypatch.setattr("django.core.mail.EmailMessage.send", broken)
+        monkeypatch.setattr(services, "_mark_failed", cannot_record)
+        with django_capture_on_commit_callbacks(execute=True):
+            result = run_job(NEXT_MONTH, monkeypatch)
+        assert [a for a in attempts if a != month.owner.email] == [
+            "one@example.com",
+            "two@example.com",
+        ]
+        assert result["failed"] == 0
+
+    def test_a_partial_failure_says_who_did_not_get_it(
+        self, month, monkeypatch, bucket, django_capture_on_commit_callbacks
+    ):
+        from django.core.mail import EmailMessage
+
+        switch(month, True)
+        tick(month, month.a, "good@example.com")
+        tick(month, month.a, "bad@example.com")
+        tick(month, month.a, "worse@example.com")
+        real = EmailMessage.send
+
+        def flaky(self, fail_silently=False):
+            if self.to[0] != "good@example.com":
+                raise OSError("smtp down")
+            return real(self, fail_silently=fail_silently)
+
+        monkeypatch.setattr(EmailMessage, "send", flaky)
+        with django_capture_on_commit_callbacks(execute=True):
+            run_job(NEXT_MONTH, monkeypatch)
+        report = CustomerReport.unscoped.get(customer=month.a)
+        assert report.delivery == ReportDelivery.FAILED
+        assert "Partially" in report.error
+        assert "bad@example.com" in report.error
+        assert "worse@example.com" in report.error
+        assert "good@example.com" not in report.error
