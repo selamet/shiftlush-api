@@ -11,11 +11,19 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db.models import DecimalField, OuterRef, Q, QuerySet, Subquery, Sum, Value
+from django.db.models import DecimalField, F, OuterRef, Q, QuerySet, Subquery, Sum, Value
 from django.db.models.expressions import CombinedExpression
 from django.db.models.functions import Coalesce, Round
 
-from apps.ledger.models import Account, CashAccount, CashDirection, Direction, Movement
+from apps.billing.models import InvoiceDraft
+from apps.ledger.models import (
+    Account,
+    CashAccount,
+    CashDirection,
+    CollectionApplication,
+    Direction,
+    Movement,
+)
 
 ZERO = Decimal("0.00")
 _MONEY = DecimalField(max_digits=16, decimal_places=2)
@@ -95,4 +103,31 @@ def with_cash_balance(qs: QuerySet[CashAccount]) -> QuerySet[CashAccount]:
             Value(ZERO, output_field=_MONEY),
             output_field=_MONEY,
         )
+    )
+
+
+def with_collected(qs: QuerySet[InvoiceDraft]) -> QuerySet[InvoiceDraft]:
+    """Annotate `collected` and `remaining` on each invoice draft.
+
+    The same sums as services.invoice_collected and invoice_remaining: what
+    collections still standing have paid of it, and its total less that.
+    """
+    per_invoice = (
+        CollectionApplication.objects.filter(
+            invoice=OuterRef("pk"),
+            collection__cancelled_at__isnull=True,
+            collection__is_deleted=False,
+        )
+        .order_by()
+        .values("invoice")
+        .annotate(total=Round(Sum("amount", output_field=_MONEY), 2, output_field=_MONEY))
+        .values("total")
+    )
+    collected = Coalesce(
+        Subquery(per_invoice, output_field=_MONEY),
+        Value(ZERO, output_field=_MONEY),
+        output_field=_MONEY,
+    )
+    return qs.annotate(collected=collected).annotate(
+        remaining=Round(F("total") - F("collected"), 2, output_field=_MONEY)
     )

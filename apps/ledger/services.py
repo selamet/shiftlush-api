@@ -14,7 +14,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
-from django.db.models import Min, Model, Sum
+from django.db.models import Max, Min, Model, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ErrorDetail, ValidationError
 
@@ -40,7 +40,7 @@ from apps.ledger.models import (
     Transfer,
     TransferKind,
 )
-from apps.ledger.posting import is_money, lock_sides, post, reverse_document
+from apps.ledger.posting import document_type, is_money, lock_sides, post, reverse_document
 from apps.users.models import User
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict, field_error
@@ -173,7 +173,7 @@ def _cancel[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](
 
 
 def _apply(
-    collection: Collection, applies: list[tuple[InvoiceDraft, Decimal]], *, by: User
+    collection: Collection, applies: list[tuple[InvoiceDraft, Decimal]], *, by: User | None
 ) -> None:
     """Pay invoices from a collection, each up to what it still owes."""
     per_invoice: dict[UUID, Decimal] = defaultdict(lambda: _ZERO)
@@ -239,7 +239,7 @@ def record_collection(
     date: Date,
     note: str,
     applies: list[tuple[InvoiceDraft, Decimal]],
-    by: User,
+    by: User | None,
 ) -> Collection:
     """Money in from a party: a credit on its account, cash in to the till."""
     _same_firm(account.company_id, cash_account=cash_account)
@@ -274,12 +274,151 @@ def record_collection(
             description=f"Tahsilat {collection.number}",
             by=by,
         )
+        # Each invoice it paid reads paid or issued by what it now owes; they
+        # were locked by _apply, in pk order.
+        for invoice_id in sorted({invoice.pk for invoice, _ in applies}):
+            sync_invoice_status(InvoiceDraft.objects.get(pk=invoice_id))
     return collection
 
 
 def cancel_collection(c: Collection, *, by: User) -> Collection:
     """Reverse a collection. The invoices it paid owe that amount again."""
-    return _cancel(c, by=by)
+    with transaction.atomic():
+        cancelled = _cancel(c, by=by)
+        paid = CollectionApplication.unscoped.filter(collection=cancelled, is_deleted=False)
+        for invoice_id in sorted(set(paid.values_list("invoice_id", flat=True))):
+            sync_invoice_status(InvoiceDraft.objects.get(pk=invoice_id))
+    return cancelled
+
+
+# Invoices (M7) ------------------------------------------------------------------
+
+
+def _invoice_movement(draft: InvoiceDraft) -> Movement | None:
+    return Movement.unscoped.filter(
+        source=MovementSource.INVOICE,
+        document_type=document_type(draft),
+        document_id=draft.pk,
+    ).first()
+
+
+def _invoice_description(draft: InvoiceDraft) -> str:
+    period = f"{draft.period_start:%d.%m.%Y}-{draft.period_end:%d.%m.%Y}"
+    return f"Fatura {draft.invoice_number} — {period}"[:500]
+
+
+def post_invoice(
+    draft: InvoiceDraft, *, by: User | None, date: Date | None = None
+) -> Movement | None:
+    """The issued invoice's debit on its customer's account, once.
+
+    Dated the invoice date (or `date`, which the carry-over migration passes
+    for an invoice dated after today), for the invoice total. None when it is
+    already posted (a retried issue, a re-run migration), and None for a zero
+    total, which owes nothing and is not a movement. The unique constraint on
+    (source, document) refuses a second debit even if two callers race.
+    """
+    with transaction.atomic():
+        locked = InvoiceDraft.objects.select_for_update(of=("self",)).get(pk=draft.pk)
+        if locked.status not in _PAYABLE_STATUSES or locked.cancelled_at is not None:
+            raise _invalid("invoice", "Only an issued invoice posts to the account.")
+        if locked.invoice_date is None:
+            raise _invalid("invoice_date", "An issued invoice has a date.", code="required")
+        if _invoice_movement(locked) is not None or Decimal(locked.total) == _ZERO:
+            return None
+        return post(
+            account=account_for_customer(locked.customer),
+            cash_account=None,
+            direction=Direction.DEBIT,
+            cash_direction=None,
+            amount=Decimal(locked.total),
+            currency=locked.currency,
+            date=date or locked.invoice_date,
+            source=MovementSource.INVOICE,
+            document=locked,
+            description=_invoice_description(locked),
+            by=by,
+        )
+
+
+def reverse_invoice(draft: InvoiceDraft, *, by: User) -> None:
+    """Cancel an issued invoice's debit, dated today, as `invoice_cancel`.
+
+    Refused while a standing collection pays any of it: the collection is
+    cancelled first (`409 INVOICE_HAS_COLLECTIONS`). An invoice that never
+    posted (a zero total) has nothing to reverse.
+    """
+    with transaction.atomic():
+        locked = InvoiceDraft.objects.select_for_update(of=("self",)).get(pk=draft.pk)
+        if invoice_collected(locked) > _ZERO:
+            raise Conflict(ErrorCode.INVOICE_HAS_COLLECTIONS)
+        if _invoice_movement(locked) is None:
+            return
+        reverse_document(locked, date=local_today(), by=by, source=MovementSource.INVOICE_CANCEL)
+
+
+def sync_invoice_status(draft: InvoiceDraft) -> InvoiceDraft:
+    """`paid` when standing collections cover the invoice, `issued` otherwise.
+
+    `paid_on` is the date of the collection that covered it: the latest of
+    those still applied. Called by every collection and cancellation that
+    touches the invoice, in the same transaction. A draft or a cancelled
+    invoice is left as it is.
+    """
+    locked = InvoiceDraft.objects.select_for_update(of=("self",)).get(pk=draft.pk)
+    if locked.status not in _PAYABLE_STATUSES or locked.cancelled_at is not None:
+        return locked
+    if invoice_remaining(locked) <= _ZERO:
+        status = InvoiceStatus.PAID
+        paid_on = CollectionApplication.unscoped.filter(
+            invoice_id=locked.pk,
+            is_deleted=False,
+            collection__cancelled_at__isnull=True,
+            collection__is_deleted=False,
+        ).aggregate(latest=Max("collection__date"))["latest"]
+    else:
+        status, paid_on = InvoiceStatus.ISSUED, None
+    if (locked.status, locked.paid_on) != (status, paid_on):
+        locked.status = status
+        locked.paid_on = paid_on
+        locked.save(update_fields=["status", "paid_on", "updated_at"])
+    return locked
+
+
+def default_cash_account(company_id: UUID) -> CashAccount:
+    """The firm's "Merkez kasa", where a payment with no till named goes."""
+    till = CashAccount.unscoped.filter(
+        company_id=company_id,
+        kind=CashKind.CASH,
+        name=DEFAULT_CASH_ACCOUNT_NAME,
+        is_deleted=False,
+    ).first()
+    if till is None:
+        till = create_default_cash_account(Company.objects.get(pk=company_id))
+    return till
+
+
+def collect_invoice(
+    draft: InvoiceDraft,
+    *,
+    date: Date,
+    by: User | None,
+    cash_account: CashAccount | None = None,
+    method: str = PaymentMethod.TRANSFER,
+    note: str = "",
+) -> Collection:
+    """A collection of everything the invoice still owes, applied to it."""
+    remaining = invoice_remaining(draft)
+    return record_collection(
+        account=account_for_customer(draft.customer),
+        cash_account=cash_account or default_cash_account(draft.company_id),
+        amount=remaining,
+        method=method,
+        date=date,
+        note=note,
+        applies=[(draft, remaining)],
+        by=by,
+    )
 
 
 def record_payment_out(
@@ -491,11 +630,9 @@ def record_opening(
         openings = OpeningBalance.unscoped.filter(is_deleted=False, **{field: side})
         if openings.filter(cancelled_at__isnull=True).exists():
             raise _invalid(field, "This side already has an opening balance.", code="unique")
-        earliest = (
-            Movement.unscoped.filter(reversed_by__isnull=True, **{field: side})
-            .exclude(source=MovementSource.REVERSAL)
-            .aggregate(earliest=Min("date"))["earliest"]
-        )
+        earliest = Movement.unscoped.filter(
+            reversed_by__isnull=True, reverses__isnull=True, **{field: side}
+        ).aggregate(earliest=Min("date"))["earliest"]
         if earliest is not None and date > earliest:
             raise _invalid("date", "Opening balance must come first")
 

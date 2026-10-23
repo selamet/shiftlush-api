@@ -25,6 +25,8 @@ from apps.billing.models import InvoiceDraft, InvoiceLine, InvoiceLineKind, Invo
 from apps.billing.periods import Period, overlap_days, periods
 from apps.contracts.models import Contract, ContractElevator, ContractStatus, PricingType
 from apps.faults.models import Fault, FaultStatus
+from apps.ledger import services as ledger
+from apps.ledger.models import CashAccount, PaymentMethod
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
 from apps.users.models import Role, User
@@ -444,6 +446,8 @@ def issue(
 
     Refused while any line waits for a price: an invoice with a zero for a
     repair nobody priced is the error this whole module exists to prevent.
+    The total posts as a debit on the customer's account in the same
+    transaction: a refused posting leaves the draft a draft.
     """
     draft = _editable(draft)
     if InvoiceLine.objects.filter(draft=draft, needs_price=True).exists():
@@ -467,18 +471,36 @@ def issue(
     draft.save(
         update_fields=["status", "invoice_number", "invoice_date", "updated_by", "updated_at"]
     )
+    ledger.post_invoice(draft, by=by)
     return draft
 
 
 @transaction.atomic
-def mark_paid(draft: InvoiceDraft, *, paid_on: date, by: User) -> InvoiceDraft:
-    draft = _locked(draft)
-    if draft.status != InvoiceStatus.ISSUED:
+def mark_paid(
+    draft: InvoiceDraft,
+    *,
+    paid_on: date,
+    by: User,
+    cash_account: CashAccount | None = None,
+    method: str = PaymentMethod.TRANSFER,
+) -> InvoiceDraft:
+    """Collect everything the issued invoice still owes, dated `paid_on`.
+
+    Deprecated in favour of a collection with `applies`; kept so the web works
+    until it moves. The collection goes into `cash_account`, the firm's
+    "Merkez kasa" when none is named, and the draft reads `paid` because the
+    collection covers it (ledger.sync_invoice_status), not because this says so.
+    """
+    # Not locked here: record_collection takes the document counter and then
+    # the invoice, and taking them in the other order would deadlock against a
+    # collection applied to this invoice at the same moment. It re-reads the
+    # invoice under its lock, so a payment racing this one is refused there
+    # (OVERPAYMENT_ON_INVOICE) rather than paid twice.
+    draft = InvoiceDraft.objects.get(pk=draft.pk)
+    if draft.status != InvoiceStatus.ISSUED or ledger.invoice_remaining(draft) <= 0:
         raise _refuse()
-    draft.status = InvoiceStatus.PAID
-    draft.paid_on = paid_on
-    draft.updated_by = by
-    draft.save(update_fields=["status", "paid_on", "updated_by", "updated_at"])
+    ledger.collect_invoice(draft, date=paid_on, by=by, cash_account=cash_account, method=method)
+    draft.refresh_from_db()
     return draft
 
 
@@ -489,11 +511,15 @@ def cancel(draft: InvoiceDraft, *, reason: str, by: User) -> InvoiceDraft:
     The period is given back too (the unique constraint ignores cancelled
     drafts), so the next run drafts it again and picks the faults up. A
     cancelled issued draft stays as the record; the credit note is the
-    e-invoicing system's business.
+    e-invoicing system's business. Its debit is reversed in the same
+    transaction, which is refused while a collection pays any of it
+    (`409 INVOICE_HAS_COLLECTIONS`).
     """
     draft = _locked(draft)
     if draft.status not in (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED):
         raise _refuse()
+    if draft.status == InvoiceStatus.ISSUED:
+        ledger.reverse_invoice(draft, by=by)
     draft.status = InvoiceStatus.CANCELLED
     draft.cancelled_at = timezone.now()
     draft.cancel_reason = reason

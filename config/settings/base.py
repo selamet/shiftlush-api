@@ -486,6 +486,7 @@ SPECTACULAR_SETTINGS = {
     # does. Naming them here keeps the generated client stable and readable.
     "ENUM_NAME_OVERRIDES": {
         "UserRole": "apps.users.models.Role.choices",
+        "PaymentMethod": "apps.ledger.models.PaymentMethod.choices",
         "ContactRole": "apps.customers.models.ContactRole.choices",
         "CustomerType": "apps.customers.models.CustomerType.choices",
         "BuildingType": "apps.properties.models.BuildingType.choices",

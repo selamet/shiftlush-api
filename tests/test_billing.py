@@ -877,14 +877,14 @@ class TestPaidAndCancelled:
     def test_paid_only_from_issued(self, drafted):
         firm, draft = drafted
         url = reverse("invoice-draft-mark-paid", args=[draft.pk])
-        early = api_for(firm.accountant).post(url, {"paid_on": "2026-10-25"})
+        early = api_for(firm.accountant).post(url, {"paid_on": "2026-10-21"})
         assert early.status_code == 409
         price(firm, draft)
         issue(firm, draft)
         assert api_for(firm.accountant).post(url, {}).status_code == 400
-        paid = api_for(firm.accountant).post(url, {"paid_on": "2026-10-25"})
+        paid = api_for(firm.accountant).post(url, {"paid_on": "2026-10-21"})
         assert paid.status_code == 200
-        assert (paid.data["status"], paid.data["paid_on"]) == (InvoiceStatus.PAID, "2026-10-25")
+        assert (paid.data["status"], paid.data["paid_on"]) == (InvoiceStatus.PAID, "2026-10-21")
 
     def test_cancel_needs_a_reason_and_not_from_paid(self, drafted):
         firm, draft = drafted
@@ -893,7 +893,7 @@ class TestPaidAndCancelled:
         price(firm, draft)
         issue(firm, draft)
         api_for(firm.accountant).post(
-            reverse("invoice-draft-mark-paid", args=[draft.pk]), {"paid_on": "2026-10-25"}
+            reverse("invoice-draft-mark-paid", args=[draft.pk]), {"paid_on": "2026-10-21"}
         )
         refused = api_for(firm.accountant).post(url, {"reason": "x"})
         assert refused.status_code == 409

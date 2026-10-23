@@ -3254,7 +3254,11 @@ paths:
   /api/v1/invoice-drafts/{id}/mark-paid/:
     post:
       operationId: invoice_drafts_mark_paid_create
-      description: Record the payment date. From `issued` only.
+      description: |-
+        Deprecated: record a collection with `applies` instead (POST /collections/).
+
+        Collects everything the issued invoice still owes, dated `paid_on`, into
+        `cash_account` (the firm's main till when omitted). From `issued` only.
       parameters:
       - in: path
         name: id
@@ -3279,6 +3283,7 @@ paths:
         required: true
       security:
       - jwtAuth: []
+      deprecated: true
       responses:
         '200':
           content:
@@ -7932,6 +7937,19 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
+        collected:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          description: What collections still standing have paid of this invoice.
+        remaining:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          description: 'The total less `collected`: what the customer still owes on
+            it.'
         needs_price:
           type: boolean
           readOnly: true
@@ -7977,6 +7995,7 @@ components:
       required:
       - cancel_reason
       - cancelled_at
+      - collected
       - contract
       - contract_number
       - created_at
@@ -7992,6 +8011,7 @@ components:
       - paid_on
       - period_end
       - period_start
+      - remaining
       - status
       - subtotal
       - total
@@ -8111,6 +8131,16 @@ components:
         paid_on:
           type: string
           format: date
+          description: The collection's date.
+        cash_account:
+          type: string
+          format: uuid
+          nullable: true
+          description: Where the money went. The firm's main till when omitted.
+        method:
+          allOf:
+          - $ref: '#/components/schemas/PaymentMethod'
+          default: transfer
       required:
       - paid_on
     InvoiceStatus:
@@ -9911,6 +9941,16 @@ components:
           type: string
           format: date
           nullable: true
+    PaymentMethod:
+      enum:
+      - cash
+      - transfer
+      - card
+      type: string
+      description: |-
+        * `cash` - Cash
+        * `transfer` - Transfer
+        * `card` - Card
     PlanStatusCounts:
       type: object
       properties:

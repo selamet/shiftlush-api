@@ -23,16 +23,19 @@ from django.urls import reverse
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
+from apps.billing import services as billing
 from apps.billing.models import InvoiceDraft, InvoiceStatus
 from apps.companies.models import Company
 from apps.contracts.models import BillingPeriod, Contract, ContractStatus, PricingType, Scope
 from apps.customers.models import Customer, CustomerType
 from apps.ledger import services as ledger_services
 from apps.ledger.balances import account_balance, cash_balance, with_balance, with_cash_balance
+from apps.ledger.migration_helpers import carry_over_invoices
 from apps.ledger.models import (
     Account,
     AccountKind,
     CashAccount,
+    CashAccountRole,
     CashDirection,
     CashKind,
     Collection,
@@ -1262,3 +1265,342 @@ class TestPostingGuards:
             receive(books, "100.00", applies=[(invoice, bad)])
         assert codes(error) == {"applies": "invalid"}
         assert Movement.objects.count() == 0
+
+
+# M7 invoices on the books ---------------------------------------------------------
+
+
+def issued_through_m7(books: SimpleNamespace, number: str = "GIB-1") -> InvoiceDraft:
+    """A draft with one priced line, issued through M7: 1000.00 + 20% VAT."""
+    draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+    billing.add_line(
+        draft,
+        description="Bakim",
+        quantity=Decimal("1"),
+        unit_price=Decimal("1000.00"),
+        by=books.owner,
+    )
+    return billing.issue(
+        draft,
+        invoice_number=number,
+        invoice_date=local_today() - timedelta(days=5),
+        by=books.owner,
+    )
+
+
+def fresh(draft: InvoiceDraft) -> InvoiceDraft:
+    return InvoiceDraft.objects.get(pk=draft.pk)
+
+
+class TestInvoices:
+    def test_issuing_posts_one_debit(self, books):
+        draft = issued_through_m7(books)
+
+        (debit,) = movements_of(draft)
+        assert debit.source == MovementSource.INVOICE
+        assert (debit.account, debit.direction) == (books.account, Direction.DEBIT)
+        assert debit.cash_account is None
+        assert debit.amount == Decimal("1200.00")
+        assert debit.date == draft.invoice_date
+        assert debit.description == "Fatura GIB-1 — 01.09.2026-30.09.2026"
+        assert account_balance(books.account) == Decimal("1200.00")
+
+    def test_reissue_or_retry_posts_nothing_more(self, books):
+        issued = issued_through_m7(books)
+        assert ledger_services.post_invoice(issued, by=books.owner) is None
+
+        # One issued before the ledger: the first call posts, the second does not.
+        legacy = make_invoice(books, "500.00")
+        assert ledger_services.post_invoice(legacy, by=books.owner) is not None
+        assert ledger_services.post_invoice(legacy, by=books.owner) is None
+
+        assert len(movements_of(issued)) == 1
+        assert len(movements_of(legacy)) == 1
+        assert account_balance(books.account) == Decimal("1700.00")
+
+    def test_cancelling_an_issued_invoice_reverses_it(self, books):
+        draft = issued_through_m7(books)
+
+        billing.cancel(draft, reason="Wrong amount", by=books.owner)
+
+        debit, credit = movements_of(draft)
+        assert credit.source == MovementSource.INVOICE_CANCEL
+        assert credit.reverses == debit
+        assert (credit.direction, credit.amount) == (Direction.CREDIT, Decimal("1200.00"))
+        assert credit.date == local_today()
+        assert account_balance(books.account) == Decimal("0.00")
+        assert fresh(draft).status == InvoiceStatus.CANCELLED
+
+        # Once only: the reversal is refused, and the database would refuse it too.
+        with pytest.raises(Conflict) as error:
+            ledger_services.reverse_invoice(draft, by=books.owner)
+        assert codes(error) == "ALREADY_REVERSED"
+        with pytest.raises(Conflict):
+            reverse_document(
+                draft, date=local_today(), by=books.owner, source=MovementSource.INVOICE_CANCEL
+            )
+        assert len(movements_of(draft)) == 2
+
+    def test_a_reversal_is_never_posted_directly(self, books):
+        for source in (MovementSource.REVERSAL, "nonsense"):
+            with pytest.raises(ValidationError) as error:
+                collect(books, source=source)
+            assert codes(error) == {"source": "invalid"}
+        with pytest.raises(ValidationError):
+            reverse_document(
+                books.customer, date=local_today(), by=books.owner, source=MovementSource.MANUAL
+            )
+
+    def test_cancelling_with_collections_is_refused(self, books):
+        draft = issued_through_m7(books)
+        receive(books, "200.00", applies=[(draft, Decimal("200.00"))])
+
+        with pytest.raises(Conflict) as error:
+            billing.cancel(draft, reason="Wrong amount", by=books.owner)
+
+        assert codes(error) == "INVOICE_HAS_COLLECTIONS"
+        assert fresh(draft).status == InvoiceStatus.ISSUED
+        assert len(movements_of(draft)) == 1
+
+    def test_partial_collection_leaves_it_issued_with_remaining(self, books):
+        draft = issued_through_m7(books)
+
+        receive(books, "500.00", applies=[(draft, Decimal("500.00"))])
+
+        draft = fresh(draft)
+        assert (draft.status, draft.paid_on) == (InvoiceStatus.ISSUED, None)
+        assert invoice_remaining(draft) == Decimal("700.00")
+        body = api_for(books.owner).get(reverse("invoice-draft-detail", args=[draft.pk])).data
+        assert (body["collected"], body["remaining"]) == ("500.00", "700.00")
+        listed = api_for(books.owner).get(reverse("invoice-draft-list")).data["results"]
+        assert [(row["collected"], row["remaining"]) for row in listed] == [("500.00", "700.00")]
+
+    def test_the_covering_collection_marks_it_paid(self, books):
+        draft = issued_through_m7(books)
+        covering_day = local_today() - timedelta(days=1)
+
+        receive(
+            books,
+            "500.00",
+            applies=[(draft, Decimal("500.00"))],
+            date=local_today() - timedelta(days=3),
+        )
+        receive(books, "700.00", applies=[(draft, Decimal("700.00"))], date=covering_day)
+
+        draft = fresh(draft)
+        assert (draft.status, draft.paid_on) == (InvoiceStatus.PAID, covering_day)
+        assert invoice_remaining(draft) == Decimal("0.00")
+
+    def test_cancelling_a_collection_reopens_the_invoice(self, books):
+        draft = issued_through_m7(books)
+        first = receive(books, "500.00", applies=[(draft, Decimal("500.00"))])
+        second = receive(
+            books,
+            "700.00",
+            applies=[(draft, Decimal("700.00"))],
+            date=local_today() - timedelta(days=1),
+        )
+
+        cancel_collection(first, by=books.owner)
+        draft = fresh(draft)
+        assert (draft.status, draft.paid_on) == (InvoiceStatus.ISSUED, None)
+        assert invoice_remaining(draft) == Decimal("500.00")
+
+        cancel_collection(second, by=books.owner)
+        draft = fresh(draft)
+        assert (draft.status, draft.paid_on) == (InvoiceStatus.ISSUED, None)
+        assert invoice_remaining(draft) == Decimal("1200.00")
+
+        # Paid in full again, then cancelled as an invoice: refused until the
+        # collection goes first, after which it reverses.
+        third = receive(books, "1200.00", applies=[(draft, Decimal("1200.00"))])
+        assert fresh(draft).status == InvoiceStatus.PAID
+        cancel_collection(third, by=books.owner)
+        billing.cancel(fresh(draft), reason="Wrong amount", by=books.owner)
+        assert account_balance(books.account) == Decimal("0.00")
+
+    def test_a_cancelled_invoice_is_never_touched(self, books):
+        draft = issued_through_m7(books)
+        before = fresh(draft)
+        billing.cancel(draft, reason="x", by=books.owner)
+        cancelled = fresh(draft)
+
+        assert ledger_services.sync_invoice_status(cancelled).status == InvoiceStatus.CANCELLED
+        assert fresh(draft).paid_on == before.paid_on
+
+    def test_mark_paid_is_a_full_collection_into_merkez_kasa(self, books):
+        draft = issued_through_m7(books)
+        receive(
+            books,
+            "200.00",
+            applies=[(draft, Decimal("200.00"))],
+            date=local_today() - timedelta(days=3),
+        )
+        paid_on = local_today() - timedelta(days=1)
+
+        draft = billing.mark_paid(draft, paid_on=paid_on, by=books.owner)
+
+        assert (draft.status, draft.paid_on) == (InvoiceStatus.PAID, paid_on)
+        collection = Collection.objects.order_by("-number").first()
+        assert collection is not None
+        assert collection.cash_account == books.till
+        assert books.till.name == DEFAULT_CASH_ACCOUNT_NAME
+        assert (collection.amount, collection.method, collection.date) == (
+            Decimal("1000.00"),
+            PaymentMethod.TRANSFER,
+            paid_on,
+        )
+        (application,) = CollectionApplication.objects.filter(collection=collection)
+        assert (application.invoice_id, application.amount) == (draft.pk, Decimal("1000.00"))
+        assert cash_balance(books.till) == Decimal("1200.00")
+        assert account_balance(books.account) == Decimal("0.00")
+
+        # Paid is paid: a second mark-paid is refused.
+        with pytest.raises(Conflict):
+            billing.mark_paid(draft, paid_on=paid_on, by=books.owner)
+
+    def test_the_deprecated_endpoint_collects_into_the_cash_account_given(self, books):
+        draft = issued_through_m7(books)
+        bank = CashAccount.objects.create(company=books.company, kind=CashKind.BANK, name="Bank")
+
+        response = api_for(books.owner).post(
+            reverse("invoice-draft-mark-paid", args=[draft.pk]),
+            {"paid_on": str(local_today()), "cash_account": str(bank.pk), "method": "card"},
+        )
+
+        assert response.status_code == 200, response.data
+        assert (response.data["status"], response.data["remaining"]) == (
+            InvoiceStatus.PAID,
+            "0.00",
+        )
+        (collection,) = Collection.objects.all()
+        assert (collection.cash_account, collection.method) == (bank, PaymentMethod.CARD)
+        assert cash_balance(bank) == Decimal("1200.00")
+
+    @pytest.mark.parametrize(
+        ("operation", "target"),
+        [
+            ("issue", "post"),
+            ("cancel", "reverse_document"),
+            ("mark_paid", "post"),
+            ("mark_paid", "sync_invoice_status"),
+        ],
+    )
+    def test_invoice_operations_are_all_or_nothing(self, books, operation, target):
+        issued = issued_through_m7(books)
+        # Something on the books already, so the counter row exists and a
+        # rolled-back increment would show.
+        receive(books, "50.00")
+        draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+        billing.add_line(
+            draft,
+            description="Bakim",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+            by=books.owner,
+        )
+        subject = draft if operation == "issue" else issued
+
+        def state() -> dict[str, Any]:
+            row = fresh(subject)
+            return {
+                "draft": (row.status, row.invoice_number, row.paid_on, row.cancelled_at),
+                "movements": Movement.objects.count(),
+                "collections": Collection.objects.count(),
+                "applications": CollectionApplication.objects.count(),
+                "counters": {
+                    c.prefix: c.last for c in DocumentCounter.unscoped.filter(company=books.company)
+                },
+            }
+
+        run = {
+            "issue": lambda: billing.issue(
+                subject, invoice_number="GIB-2", invoice_date=local_today(), by=books.owner
+            ),
+            "cancel": lambda: billing.cancel(subject, reason="x", by=books.owner),
+            "mark_paid": lambda: billing.mark_paid(subject, paid_on=local_today(), by=books.owner),
+        }[operation]
+        before = state()
+
+        with patch.object(ledger_services, target, side_effect=Boom), pytest.raises(Boom):
+            run()
+
+        assert state() == before
+        # And it goes through whole once the ledger answers.
+        run()
+        assert state() != before
+
+
+class TestInvoiceMigration:
+    def test_the_migration_posts_existing_drafts_once(self, books):
+        issued = make_invoice(books, "1000.00")
+        paid = make_invoice(books, "500.00", status=InvoiceStatus.PAID)
+        cancelled = make_invoice(books, "300.00", status=InvoiceStatus.CANCELLED)
+        draft = make_invoice(books, "200.00", status=InvoiceStatus.DRAFT)
+        with system_context():
+            other, _ = make_firm("B")
+        their_customer = make_customer(other, "Theirs")
+        theirs = make_invoice(books, "800.00", status=InvoiceStatus.PAID, customer=their_customer)
+        InvoiceDraft.unscoped.filter(pk=theirs.pk).update(paid_on=date(2026, 10, 3))
+
+        migration = importlib.import_module("apps.ledger.migrations.0005_carry_over_invoices")
+        with system_context():
+            migration.carry_over(global_apps, None)
+            first = carry_over_invoices()
+        assert (first.posted, first.collected) == (0, 0)
+
+        with system_context():
+            debits = Movement.unscoped.filter(source=MovementSource.INVOICE)
+            assert set(debits.values_list("document_id", flat=True)) == {
+                issued.pk,
+                paid.pk,
+                theirs.pk,
+            }
+            assert debits.count() == 3
+            assert not Movement.unscoped.filter(document_id__in=[cancelled.pk, draft.pk]).exists()
+
+            devir = CashAccount.unscoped.filter(role=CashAccountRole.CARRIED_OVER)
+            assert sorted(devir.values_list("company_id", "name", "kind")) == sorted(
+                [
+                    (books.company.id, "Devir (taşınan ödemeler)", CashKind.CASH),
+                    (other.id, "Devir (taşınan ödemeler)", CashKind.CASH),
+                ]
+            )
+            collections = Collection.unscoped.order_by("date")
+            assert [
+                (c.company_id, c.amount, c.date, c.method, c.note, c.cash_account.role)
+                for c in collections
+            ] == [
+                (
+                    books.company.id,
+                    Decimal("500.00"),
+                    date(2026, 10, 1),
+                    PaymentMethod.TRANSFER,
+                    "M7'den taşındı",
+                    CashAccountRole.CARRIED_OVER,
+                ),
+                (
+                    other.id,
+                    Decimal("800.00"),
+                    date(2026, 10, 3),
+                    PaymentMethod.TRANSFER,
+                    "M7'den taşındı",
+                    CashAccountRole.CARRIED_OVER,
+                ),
+            ]
+            assert sorted(
+                CollectionApplication.unscoped.values_list("invoice_id", "amount")
+            ) == sorted([(paid.pk, Decimal("500.00")), (theirs.pk, Decimal("800.00"))])
+            statuses = dict(
+                InvoiceDraft.unscoped.filter(pk__in=[issued.pk, paid.pk, theirs.pk]).values_list(
+                    "pk", "status"
+                )
+            )
+        assert statuses == {
+            issued.pk: InvoiceStatus.ISSUED,
+            paid.pk: InvoiceStatus.PAID,
+            theirs.pk: InvoiceStatus.PAID,
+        }
+        assert account_balance(books.account) == Decimal("1000.00")
+        assert invoice_remaining(fresh(paid)) == Decimal("0.00")
+        assert fresh(paid).paid_on == date(2026, 10, 1)

@@ -177,13 +177,25 @@ def post(
         )
 
 
-def reverse_document(document: Model, *, date: Date, by: User) -> list[Movement]:
+def reverse_document(
+    document: Model,
+    *,
+    date: Date,
+    by: User | None,
+    source: str = MovementSource.REVERSAL,
+) -> list[Movement]:
     """Cancel a document: post the mirror of each of its unreversed movements.
 
     A mirror keeps the amount, currency, sides and document and flips both
     directions, so every balance the document touched returns to where it was.
     A document with nothing left to reverse is `409 ALREADY_REVERSED`.
+
+    `source` is `reversal` for every document but an invoice, whose
+    cancellation is `invoice_cancel`: that source is in the unique constraint
+    on (source, document), so the database itself refuses a second one.
     """
+    if source not in (MovementSource.REVERSAL, MovementSource.INVOICE_CANCEL):
+        raise _invalid("source", "Not a source a reversal can have.")
     try:
         with transaction.atomic():
             originals = list(
@@ -192,8 +204,9 @@ def reverse_document(document: Model, *, date: Date, by: User) -> list[Movement]
                     document_type=document_type(document),
                     document_id=document.pk,
                     reversed_by__isnull=True,
+                    # A mirror is never an original, whatever its source.
+                    reverses__isnull=True,
                 )
-                .exclude(source=MovementSource.REVERSAL)
                 .order_by("date", "created_at", "id")
             )
             if not originals:
@@ -209,7 +222,7 @@ def reverse_document(document: Model, *, date: Date, by: User) -> list[Movement]
                     cash_direction=_MIRROR_CASH_DIRECTION[original.cash_direction],
                     amount=original.amount,
                     currency=original.currency,
-                    source=MovementSource.REVERSAL,
+                    source=source,
                     document_type=original.document_type,
                     document_id=original.document_id,
                     reverses=original,
@@ -221,5 +234,6 @@ def reverse_document(document: Model, *, date: Date, by: User) -> list[Movement]
             ]
     except IntegrityError as exc:
         # Another request reversed one of these between our read and our write;
-        # `reverses` is unique, so the database refused the second mirror.
+        # `reverses` is unique (and so is an invoice's cancellation), so the
+        # database refused the second mirror.
         raise Conflict(ErrorCode.ALREADY_REVERSED) from exc

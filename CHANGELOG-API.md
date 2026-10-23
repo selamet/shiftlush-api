@@ -303,6 +303,21 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed
 
+- **Invoices post to the customer's account (F0).** Issuing a draft posts its
+  total as a debit on the customer's account; cancelling an issued draft posts
+  the reversal, and is refused with `409 INVOICE_HAS_COLLECTIONS` while a
+  collection pays any of it (cancel the collection first). Drafts gain
+  `collected` and `remaining`. `status` follows the collections: `paid` once
+  they cover the total, with `paid_on` the date of the latest of them, and
+  back to `issued` when one is cancelled.
+  - `POST /invoice-drafts/{id}/mark-paid/` is **deprecated** in favour of a
+    collection with `applies`. It keeps working: it records a collection of
+    everything the invoice still owes, dated `paid_on`, into the optional
+    `cash_account` (the firm's main till when omitted) with the optional
+    `method` (`transfer` by default, enum `PaymentMethod`).
+  - An `invoice_date` or `paid_on` after today, or inside the firm's closed
+    period, is now refused with a `400` on `date`: no movement is dated in the
+    future or in a closed month.
 - **The customer portal has its own rate limit:** `PORTAL_RATE_LIMIT`,
   default `120/min` per portal account, instead of the staff user limit. Over
   it, the portal answers `429 THROTTLED` with the usual `RateLimit-*`

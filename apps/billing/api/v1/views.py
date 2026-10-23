@@ -32,6 +32,7 @@ from apps.billing.api.v1.serializers import (
     InvoiceMarkPaidSerializer,
 )
 from apps.billing.models import InvoiceDraft, InvoiceLine
+from apps.ledger.balances import with_collected
 from core.dates import add_months
 from core.exceptions import ServiceUnavailable
 from core.filters import TenantFilterSet
@@ -86,8 +87,10 @@ class InvoiceDraftViewSet(
     ordering_fields = ["period_start", "total", "invoice_date"]
 
     def get_queryset(self) -> QuerySet[InvoiceDraft]:
-        return InvoiceDraft.objects.select_related("contract", "customer").prefetch_related(
-            Prefetch("lines", queryset=InvoiceLine.objects.order_by("position", "id"))
+        return with_collected(
+            InvoiceDraft.objects.select_related("contract", "customer").prefetch_related(
+                Prefetch("lines", queryset=InvoiceLine.objects.order_by("position", "id"))
+            )
         )
 
     def _read(self, draft: InvoiceDraft) -> Response:
@@ -130,10 +133,18 @@ class InvoiceDraftViewSet(
         )
         return self._read(draft)
 
-    @extend_schema(request=InvoiceMarkPaidSerializer, responses={200: InvoiceDraftReadSerializer})
+    @extend_schema(
+        request=InvoiceMarkPaidSerializer,
+        responses={200: InvoiceDraftReadSerializer},
+        deprecated=True,
+    )
     @action(detail=True, methods=["post"], url_path="mark-paid")
     def mark_paid(self, request: Request, pk: str | None = None) -> Response:
-        """Record the payment date. From `issued` only."""
+        """Deprecated: record a collection with `applies` instead (POST /collections/).
+
+        Collects everything the issued invoice still owes, dated `paid_on`, into
+        `cash_account` (the firm's main till when omitted). From `issued` only.
+        """
         form = InvoiceMarkPaidSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         draft = services.mark_paid(

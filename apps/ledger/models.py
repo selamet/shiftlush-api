@@ -163,11 +163,21 @@ class Account(CompanyOwnedModel):
         return f"{self.name} ({self.kind})"
 
 
+class CashAccountRole(models.TextChoices):
+    #: Payments M7 recorded before the ledger existed ("Devir"), carried over
+    #: by the data migration (apps.ledger.migration_helpers).
+    CARRIED_OVER = "carried_over", "Carried over from M7"
+
+
 class CashAccount(CompanyOwnedModel):
     """Where the firm's money actually is: a till, a bank account, a card POS."""
 
     kind = models.CharField(max_length=20, choices=CashKind.choices)
     name = models.CharField(max_length=200)
+    #: Set on a cash account the system made and looks up again, so it is found
+    #: by what it is for rather than by a name the firm may change. Blank for
+    #: every cash account a person creates.
+    role = models.CharField(max_length=20, choices=CashAccountRole.choices, blank=True)
     #: ISO 4217. Fixed once used.
     currency = models.CharField(max_length=3, default=DEFAULT_CURRENCY)
     #: Optional, for `bank`.
@@ -180,6 +190,12 @@ class CashAccount(CompanyOwnedModel):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(kind__in=CashKind.values), name="ledger_cash_account_kind_valid"
+            ),
+            # One of each system cash account per firm.
+            models.UniqueConstraint(
+                fields=["company", "role"],
+                condition=models.Q(is_deleted=False) & ~models.Q(role=""),
+                name="uq_ledger_cash_account_role",
             ),
         ]
 
