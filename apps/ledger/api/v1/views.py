@@ -14,7 +14,6 @@ from datetime import date, timedelta
 from typing import Any, cast
 
 import django_filters
-from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
@@ -313,10 +312,8 @@ class AccountViewSet(
         responses={200: StatementSentSerializer},
     )
     @action(detail=True, methods=["post"], url_path="statement/send", url_name="statement-send")
-    # One transaction around the key and the send, so the mails (queued on
-    # commit) go only once both are committed: a retry replays the stored
-    # answer and mails nobody twice, and a send that failed stores no key.
-    @transaction.atomic
+    # replay_protected owns the transaction around the send and its key, so the
+    # mails (queued on commit) go only once both are committed.
     @replay_protected
     def statement_send(self, request: Request, pk: str | None = None) -> Response:
         """E-mail the statement's PDF to the customer's contacts who receive reports.
