@@ -38,6 +38,7 @@ from apps.maintenance.models import (
     VisitStatus,
 )
 from apps.notifications.models import Notification, NotificationKind
+from apps.portal import services as portal_services
 from apps.properties.models import Building, BuildingType
 from apps.reports import services
 from apps.reports.content import (
@@ -1217,3 +1218,178 @@ class TestGenerationFixes:
         assert "bad@example.com" in report.error
         assert "worse@example.com" in report.error
         assert "good@example.com" not in report.error
+
+
+# The API: the office and the portal ---------------------------------------------
+
+
+def staff(month: Month, role: str) -> User:
+    with system_context():
+        return User.objects.create_user(
+            email=f"{role}-api@example.com",
+            password=PASSWORD,
+            company=month.company,
+            first_name="S",
+            last_name=role,
+            role=role,
+        )
+
+
+def made(month: Month, customer: Customer, period: str = OCT) -> CustomerReport:
+    with system_context():
+        report = generate_one(customer, period, today=NEXT_MONTH)
+    assert report is not None
+    return report
+
+
+KEY = {"Idempotency-Key": "k-1"}
+
+
+@pytest.mark.usefixtures("pdf", "bucket")
+class TestApi:
+    def test_office_lists_and_filters(self, month):
+        mine = made(month, month.a)
+        made(month, month.b)
+        made(month, month.a, SEP)
+        client = api_for(month.owner)
+        url = reverse("customer-report-list")
+        assert len(client.get(url).data["results"]) == 3
+        by_customer = client.get(url, {"customer": str(month.a.pk)}).data["results"]
+        assert {str(row["customer"]) for row in by_customer} == {str(month.a.pk)}
+        assert [
+            r["id"]
+            for r in client.get(url, {"period": OCT, "customer": str(month.a.pk)}).data["results"]
+        ] == [str(mine.pk)]
+        assert client.get(url, {"delivery": "sent"}).data["results"] == []
+        assert len(client.get(url, {"delivery": "pending"}).data["results"]) == 3
+        detail = client.get(reverse("customer-report-detail", args=[mine.pk]))
+        assert detail.status_code == 200
+        assert str(detail.data["file"]) == str(mine.file_id)
+        assert detail.data["customer_name"] == "A Sitesi"
+        assert api_for(staff(month, Role.ACCOUNTANT)).get(url).status_code == 200
+        assert api_for(month.tech).get(url).status_code == 403
+
+    def test_send_needs_a_key_and_a_recipient(self, month, django_capture_on_commit_callbacks):
+        report = made(month, month.a)
+        client = api_for(month.owner)
+        url = reverse("customer-report-send", args=[report.pk])
+        missing = client.post(url, {}, format="json")
+        assert missing.status_code == 400
+        assert missing.data["error"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+        nobody = client.post(url, {}, format="json", headers=KEY)
+        assert nobody.status_code == 409
+        assert nobody.data["error"]["code"] == "REPORT_NO_RECIPIENT"
+        tick(month, month.a)
+        with django_capture_on_commit_callbacks(execute=True):
+            sent = client.post(url, {}, format="json", headers=KEY)
+        assert sent.status_code == 200
+        assert sent.data["delivery"] == "sent"
+        assert len(report_mails()) == 1
+
+    def test_resend_goes_to_current_recipients(self, month, django_capture_on_commit_callbacks):
+        report = made(month, month.a)
+        first = tick(month, month.a, "a@example.com")
+        client = api_for(month.owner)
+        url = reverse("customer-report-send", args=[report.pk])
+        with django_capture_on_commit_callbacks(execute=True):
+            assert (
+                client.post(url, {}, format="json", headers={"Idempotency-Key": "one"}).status_code
+                == 200
+            )
+        with company_context(month.company.id):
+            CustomerContact.objects.filter(pk=first.pk).update(receives_monthly_report=False)
+        tick(month, month.a, "b@example.com")
+        with django_capture_on_commit_callbacks(execute=True):
+            again = client.post(url, {}, format="json", headers={"Idempotency-Key": "two"})
+        assert again.status_code == 200
+        assert again.data["recipients"] == ["b@example.com"]
+        assert [m.to for m in report_mails()] == [["a@example.com"], ["b@example.com"]]
+
+    def test_a_failed_send_reads_failed_afterwards(
+        self, month, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        report = made(month, month.a)
+        tick(month, month.a)
+
+        def broken(self, fail_silently=False):
+            raise OSError("smtp down")
+
+        monkeypatch.setattr("django.core.mail.EmailMessage.send", broken)
+        with django_capture_on_commit_callbacks(execute=True):
+            api_for(month.owner).post(
+                reverse("customer-report-send", args=[report.pk]), {}, format="json", headers=KEY
+            )
+        stored = CustomerReport.unscoped.get(pk=report.pk)
+        assert stored.delivery == ReportDelivery.FAILED
+        assert stored.error
+
+    def test_send_is_not_for_the_accountant(self, month):
+        report = made(month, month.a)
+        client = api_for(staff(month, Role.ACCOUNTANT))
+        url = reverse("customer-report-send", args=[report.pk])
+        assert client.post(url, {}, format="json", headers=KEY).status_code == 403
+
+    def test_preview_renders_without_storing(self, month):
+        before = (CustomerReport.unscoped.count(), Attachment.unscoped.count())
+        client = api_for(month.owner)
+        for period in (OCT, "2026-11"):
+            response = client.post(
+                reverse("customer-report-preview"),
+                {"customer": str(month.a.pk), "period": period},
+                format="json",
+            )
+            assert response.status_code == 200, response.data
+            assert response["Content-Type"] == "application/pdf"
+            assert response.content == PDF
+        assert (CustomerReport.unscoped.count(), Attachment.unscoped.count()) == before
+
+    def test_preview_without_a_renderer_is_unavailable(self, month, monkeypatch):
+        def missing(data):
+            raise PdfRenderingUnavailable("no")
+
+        monkeypatch.setattr("apps.reports.documents.render_pdf", missing)
+        response = api_for(month.owner).post(
+            reverse("customer-report-preview"),
+            {"customer": str(month.a.pk), "period": OCT},
+            format="json",
+        )
+        assert response.status_code == 503
+
+    def test_preview_refuses_a_bad_period(self, month):
+        response = api_for(month.owner).post(
+            reverse("customer-report-preview"),
+            {"customer": str(month.a.pk), "period": "2026-13"},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_regenerate_is_owner_or_admin(self, month):
+        report = made(month, month.a)
+        url = reverse("customer-report-regenerate", args=[report.pk])
+        assert api_for(staff(month, Role.OPERATIONS)).post(url).status_code == 403
+        assert api_for(month.tech).post(url).status_code == 403
+        response = api_for(staff(month, Role.ADMIN)).post(url)
+        assert response.status_code == 200
+        assert str(response.data["file"]) != str(report.file_id)
+
+    def test_portal_lists_its_own_customers_reports_and_downloads_them(self, month):
+        mine = made(month, month.a)
+        theirs = made(month, month.b)
+        with company_context(month.company.id):
+            contact = CustomerContact.objects.create(
+                company=month.company, customer=month.a, full_name="C", email="c@example.com"
+            )
+            _, token = portal_services.invite(customer=month.a, contact=contact)
+        account = portal_services.accept(token=token, password=PASSWORD)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {portal_services.issue_tokens(account).access}"
+        )
+        rows = client.get(reverse("portal-report-list")).data["results"]
+        assert [row["id"] for row in rows] == [str(mine.pk)]
+        assert "error" not in rows[0] and "recipients" not in rows[0]
+        own = client.get(reverse("portal-file-download-url", args=[mine.file_id]))
+        assert own.status_code == 200
+        other = client.get(reverse("portal-file-download-url", args=[theirs.file_id]))
+        assert other.status_code == 404
+        assert client.get(reverse("portal-report-detail", args=[theirs.pk])).status_code == 404

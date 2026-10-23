@@ -1531,6 +1531,163 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/customer-reports/:
+    get:
+      operationId: customer_reports_list
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: delivery
+        schema:
+          type: string
+          enum:
+          - failed
+          - no_recipient
+          - not_enabled
+          - pending
+          - sent
+        description: |-
+          * `pending` - Pending
+          * `sent` - Sent
+          * `not_enabled` - Not enabled
+          * `no_recipient` - No recipient
+          * `failed` - Failed
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: period
+        schema:
+          type: string
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerReportReadList'
+          description: ''
+  /api/v1/customer-reports/{id}/:
+    get:
+      operationId: customer_reports_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/{id}/regenerate/:
+    post:
+      operationId: customer_reports_regenerate_create
+      description: Render it again from the current record. The old file is kept,
+        soft-deleted.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/{id}/send/:
+    post:
+      operationId: customer_reports_send_create
+      description: Send it, or send it again, to the customer's current recipients
+        now.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/preview/:
+    post:
+      operationId: customer_reports_preview_create
+      description: The PDF of any month, the current one to date included. Stores
+        nothing.
+      tags:
+      - customer-reports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/customers/:
     get:
       operationId: customers_list
@@ -4781,6 +4938,69 @@ paths:
               schema:
                 $ref: '#/components/schemas/PortalMe'
           description: ''
+  /api/v1/portal/reports/:
+    get:
+      operationId: portal_reports_list
+      description: |-
+        The monthly reports of the contact's own customer, newest first.
+
+        The PDF downloads through the portal files endpoint.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalReportList'
+          description: ''
+  /api/v1/portal/reports/{id}/:
+    get:
+      operationId: portal_reports_retrieve
+      description: |-
+        The monthly reports of the contact's own customer, newest first.
+
+        The PDF downloads through the portal files endpoint.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalReport'
+          description: ''
   /api/v1/portal/visits/:
     get:
       operationId: portal_visits_list
@@ -6494,6 +6714,62 @@ components:
       - type
       - unit_number
       - updated_at
+    CustomerReportRead:
+      type: object
+      description: The office's view. The PDF downloads through the attachments' `download-url`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        file:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        summary:
+          readOnly: true
+        delivery:
+          allOf:
+          - $ref: '#/components/schemas/DeliveryEnum'
+          readOnly: true
+        sent_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        recipients:
+          readOnly: true
+        error:
+          type: string
+          readOnly: true
+      required:
+      - customer
+      - customer_name
+      - delivery
+      - error
+      - file
+      - generated_at
+      - id
+      - period
+      - recipients
+      - sent_at
+      - summary
     CustomerType:
       enum:
       - complex_management
@@ -6564,6 +6840,20 @@ components:
       required:
       - legal_name
       - type
+    DeliveryEnum:
+      enum:
+      - pending
+      - sent
+      - not_enabled
+      - no_recipient
+      - failed
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `sent` - Sent
+        * `not_enabled` - Not enabled
+        * `no_recipient` - No recipient
+        * `failed` - Failed
     District:
       type: object
       properties:
@@ -8873,6 +9163,36 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedCustomerReportReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerReportRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedElevatorListList:
       type: object
       required:
@@ -9213,6 +9533,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PortalInspection'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedPortalReportList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalReport'
         pagination:
           type: object
           required:
@@ -10604,6 +10954,36 @@ components:
           minLength: 1
       required:
       - email
+    PortalReport:
+      type: object
+      description: 'The contact''s view: no delivery state, recipients or errors,
+        which are the office''s.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        file:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        summary:
+          readOnly: true
+      required:
+      - file
+      - generated_at
+      - id
+      - period
+      - summary
     PortalTokenResponse:
       type: object
       properties:
@@ -10824,6 +11204,26 @@ components:
       required:
       - end_date
       - start_date
+    ReportPreviewRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        period:
+          type: string
+          minLength: 1
+          description: A month, "YYYY-MM".
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      required:
+      - customer
+      - period
     ResolveRequest:
       type: object
       properties:

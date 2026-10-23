@@ -9,6 +9,7 @@ router.register("portal/visits", views.PortalVisitViewSet, basename="portal-visi
 router.register("portal/inspections", views.PortalInspectionViewSet, basename="portal-inspection")
 router.register("portal/faults", views.PortalFaultViewSet, basename="portal-fault")
 router.register("portal/files", views.PortalFileViewSet, basename="portal-file")
+router.register("portal/reports", views.PortalReportViewSet, basename="portal-report")
 # The office's side, on staff authentication.
 router.register("portal-accounts", views.PortalAccountViewSet, basename="portal-account")
 
