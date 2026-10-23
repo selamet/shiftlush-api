@@ -942,52 +942,61 @@ class TestDocuments:
         assert Movement.objects.count() == 0
 
     def test_opening_only_before_other_movements(self, books):
-        opening = record_opening(
-            account=books.account,
-            direction=Direction.DEBIT,
-            amount=Decimal("900.00"),
-            date=local_today(),
-            by=books.owner,
-        )
-        [movement] = movements_of(opening)
-        assert movement.source == "opening"
-        assert account_balance(books.account) == Decimal("900.00")
+        today = local_today()
+        yesterday = today - timedelta(days=1)
+        last_week = today - timedelta(days=7)
 
-        # One live opening per account.
-        with pytest.raises(ValidationError) as error:
-            record_opening(
-                account=books.account,
+        def open_on(day: date, amount: str = "900.00", **side: Any) -> OpeningBalance:
+            return record_opening(
+                **(side or {"account": books.account}),
                 direction=Direction.DEBIT,
-                amount=Decimal("1.00"),
-                date=local_today(),
+                amount=Decimal(amount),
+                date=day,
                 by=books.owner,
             )
+
+        # An invoice already posted yesterday: an opening dated before it is
+        # accepted, which is what the M7 migration's invoices need.
+        collect(
+            books,
+            "1000.00",
+            cash_account=None,
+            cash_direction=None,
+            direction=Direction.DEBIT,
+            source=MovementSource.INVOICE,
+            date=yesterday,
+        )
+        opening = open_on(last_week)
+        [movement] = movements_of(opening)
+        assert movement.source == "opening"
+        assert account_balance(books.account) == Decimal("1900.00")
+
+        # One live opening per side.
+        with pytest.raises(ValidationError) as error:
+            open_on(last_week, "1.00")
         assert codes(error) == {"account": "unique"}
 
-        # Reversed and entered again, before anything else happened.
-        cancel_opening(opening, by=books.owner)
-        record_opening(
-            account=books.account,
-            direction=Direction.DEBIT,
-            amount=Decimal("950.00"),
-            date=local_today(),
-            by=books.owner,
-        )
-        assert account_balance(books.account) == Decimal("950.00")
-
-        # After another movement, an opening is refused, on either side.
-        receive(books, "10.00")
-        till_opening = {
-            "cash_account": books.till,
-            "direction": Direction.DEBIT,
-            "amount": Decimal("5.00"),
-            "date": local_today(),
-            "by": books.owner,
-        }
+        # Once open, nothing is dated before the opening, by any writer.
         with pytest.raises(ValidationError) as error:
-            record_opening(**till_opening)
+            receive(books, "10.00", date=last_week - timedelta(days=1))
+        assert codes(error) == {"date": "invalid"}
+        assert "Earlier than the opening balance" in str(error.value)
+        receive(books, "10.00", date=last_week)  # the same day is fine
+
+        # Reversed, it can be entered again, on or before the earliest
+        # movement still standing, and not after it.
+        cancel_opening(opening, by=books.owner)
+        with pytest.raises(ValidationError) as error:
+            open_on(today)
         assert codes(error) == {"date": "invalid"}
         assert "Opening balance must come first" in str(error.value)
+        open_on(last_week, "950.00")
+        assert account_balance(books.account) == Decimal("1940.00")
+
+        # The same on a cash account: after the till's first movement, refused.
+        with pytest.raises(ValidationError) as error:
+            open_on(today, "5.00", cash_account=books.till)
+        assert codes(error) == {"date": "invalid"}
         assert OpeningBalance.objects.filter(cash_account=books.till).count() == 0
 
     def test_a_cash_opening_debit_fills_the_till(self, books):
@@ -1192,3 +1201,64 @@ class TestAtomicity:
         # And the document can still be cancelled, whole.
         cancel_transfer(transfer, by=books.owner)
         assert Movement.objects.filter(source=MovementSource.REVERSAL).count() == 2
+
+
+class TestPostingGuards:
+    def test_post_locks_its_sides(self, books):
+        locked: list[tuple[type, Any]] = []
+        for model in (Account, CashAccount):
+            manager = model.unscoped
+            real = manager.select_for_update
+
+            def spy(*args: Any, _model: type = model, _real: Any = real, **kwargs: Any) -> Any:
+                queryset = _real(*args, **kwargs)
+                locked.append((_model, queryset))
+                return queryset
+
+            patcher = patch.object(manager, "select_for_update", side_effect=spy)
+            patcher.start()
+        try:
+            collect(books)
+        finally:
+            patch.stopall()
+
+        locked_rows = {(model, row.pk) for model, queryset in locked for row in queryset}
+        assert (Account, books.account.pk) in locked_rows
+        assert (CashAccount, books.till.pk) in locked_rows
+
+    @pytest.mark.parametrize("amount", ["NaN", "sNaN", "Infinity", "-Infinity"])
+    def test_amounts_that_are_not_numbers_are_a_field_error(self, books, amount):
+        invoice = make_invoice(books)
+        bad = Decimal(amount)
+        attempts: list[Callable[[], Any]] = [
+            lambda: post(
+                account=books.account,
+                cash_account=books.till,
+                direction=Direction.CREDIT,
+                cash_direction=CashDirection.IN,
+                amount=bad,
+                currency="TRY",
+                date=local_today(),
+                source=MovementSource.COLLECTION,
+                document=None,
+                description="",
+                by=books.owner,
+            ),
+            lambda: receive(books, amount=amount),
+            lambda: record_manual_entry(
+                account=books.account,
+                direction=Direction.DEBIT,
+                amount=bad,
+                date=local_today(),
+                reason="Fee",
+                by=books.owner,
+            ),
+        ]
+        for attempt in attempts:
+            with pytest.raises(ValidationError) as error:
+                attempt()
+            assert codes(error) == {"amount": "invalid"}
+        with pytest.raises(ValidationError) as error:
+            receive(books, "100.00", applies=[(invoice, bad)])
+        assert codes(error) == {"applies": "invalid"}
+        assert Movement.objects.count() == 0

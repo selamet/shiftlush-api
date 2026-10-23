@@ -14,7 +14,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
-from django.db.models import Model, Sum
+from django.db.models import Min, Model, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ErrorDetail, ValidationError
 
@@ -40,7 +40,7 @@ from apps.ledger.models import (
     Transfer,
     TransferKind,
 )
-from apps.ledger.posting import document_type, post, reverse_document
+from apps.ledger.posting import is_money, lock_sides, post, reverse_document
 from apps.users.models import User
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict, field_error
@@ -179,7 +179,7 @@ def _apply(
     per_invoice: dict[UUID, Decimal] = defaultdict(lambda: _ZERO)
     for invoice, amount in applies:
         _same_firm(collection.company_id, applies=invoice)
-        if amount <= 0 or amount != amount.quantize(_ZERO):
+        if not is_money(amount):
             raise _invalid("applies", "An amount applied is positive, to two decimal places.")
         per_invoice[invoice.pk] += amount
     if sum(per_invoice.values(), _ZERO) > collection.amount:
@@ -221,7 +221,7 @@ def _apply(
 def _check_amount(amount: Decimal) -> None:
     # posting checks this too, but only after the document row is written,
     # where the database's own check would answer first and less clearly.
-    if amount <= 0 or amount != amount.quantize(_ZERO):
+    if not is_money(amount):
         raise _invalid("amount", "An amount is positive, to two decimal places.")
 
 
@@ -413,6 +413,9 @@ def record_transfer(
     _check_amount(amount)
 
     with transaction.atomic():
+        # Both sides up front, in lock_sides' order: the legs below lock one
+        # side each, and two opposite transfers must not take them crosswise.
+        lock_sides(source, target)
         transfer = Transfer.objects.create(
             company_id=source.company_id,
             kind=kind,
@@ -467,7 +470,8 @@ def record_opening(
     account: Account | None = None,
     cash_account: CashAccount | None = None,
 ) -> OpeningBalance:
-    """A balance carried over at go-live, before anything else on that side.
+    """A balance carried over at go-live, dated on or before anything else on
+    that side. Once it stands, posting refuses anything dated before it.
 
     On a cash account a debit is money in the till and a credit money out.
     """
@@ -480,15 +484,19 @@ def record_opening(
     field = "account" if account is not None else "cash_account"
 
     with transaction.atomic():
-        # Lock the side, so a movement and an opening cannot both be first.
-        type(side).unscoped.select_for_update().filter(pk=side.pk).first()
+        # The same lock every posting takes (posting.lock_sides): a movement
+        # committing now either finished before this read, and is seen, or
+        # waits for this opening and is then held to its date.
+        lock_sides(side)
         openings = OpeningBalance.unscoped.filter(is_deleted=False, **{field: side})
         if openings.filter(cancelled_at__isnull=True).exists():
             raise _invalid(field, "This side already has an opening balance.", code="unique")
-        others = Movement.unscoped.filter(**{field: side}).exclude(
-            document_type=document_type(OpeningBalance())
+        earliest = (
+            Movement.unscoped.filter(reversed_by__isnull=True, **{field: side})
+            .exclude(source=MovementSource.REVERSAL)
+            .aggregate(earliest=Min("date"))["earliest"]
         )
-        if others.exists():
+        if earliest is not None and date > earliest:
             raise _invalid("date", "Opening balance must come first")
 
         opening = OpeningBalance.objects.create(

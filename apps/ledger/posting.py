@@ -25,6 +25,7 @@ from apps.ledger.models import (
     Direction,
     Movement,
     MovementSource,
+    OpeningBalance,
 )
 from apps.users.models import User
 from core.error_codes import ErrorCode
@@ -75,6 +76,41 @@ def check_date(company: Company, day: Date) -> None:
         raise field_error("date", ErrorCode.PERIOD_CLOSED)
 
 
+def is_money(amount: Decimal) -> bool:
+    """A finite amount above zero, to the cent. NaN and infinity are not money,
+    and checked first: comparing a NaN raises rather than answering."""
+    return amount.is_finite() and amount > 0 and amount == amount.quantize(_CENT)
+
+
+def lock_sides(*sides: Account | CashAccount | None) -> None:
+    """Lock the account and cash-account rows a write is about to touch.
+
+    Every posting takes these locks, and so does record_opening, so the
+    opening-first rule is checked by one writer at a time per side. Accounts
+    first, then cash accounts, each in primary-key order, so two writers
+    locking the same rows (two transfers in opposite directions, say) take
+    them in the same order and never wait on each other in a cycle.
+    """
+    for model in (Account, CashAccount):
+        pks = sorted({side.pk for side in sides if isinstance(side, model)})
+        if pks:
+            list(model.unscoped.select_for_update().filter(pk__in=pks).order_by("pk"))
+
+
+def _check_after_opening(
+    *, account: Account | None, cash_account: CashAccount | None, day: Date
+) -> None:
+    """Nothing is dated before a live opening balance on the side it touches."""
+    for field, side in (("account", account), ("cash_account", cash_account)):
+        if side is None:
+            continue
+        later_opening = OpeningBalance.unscoped.filter(
+            is_deleted=False, cancelled_at__isnull=True, date__gt=day, **{field: side}
+        )
+        if later_opening.exists():
+            raise _invalid("date", "Earlier than the opening balance")
+
+
 def post(
     *,
     account: Account | None,
@@ -92,7 +128,9 @@ def post(
     """Write one movement, on a party's account, a cash account, or both.
 
     Every rule is checked before anything is written, so a refused posting
-    leaves the books as they were.
+    leaves the books as they were. The sides are locked first (`lock_sides`),
+    so a posting and an opening balance on the same side never pass their
+    checks at the same time.
     """
     if source not in MovementSource.values or source == MovementSource.REVERSAL:
         # A reversal names the movement it cancels; reverse_document writes it.
@@ -107,7 +145,7 @@ def post(
         raise _invalid(
             "cash_direction", "A cash direction is required with a cash account, and only then."
         )
-    if amount <= 0 or amount != amount.quantize(_CENT):
+    if not is_money(amount):
         raise _invalid("amount", "An amount is positive, to two decimal places.")
 
     sides = [side for side in (account, cash_account) if side is not None]
@@ -117,22 +155,26 @@ def post(
         raise field_error("currency", ErrorCode.CURRENCY_MISMATCH)
     check_date(_fresh_company(sides[0].company_id), date)
 
-    return Movement.objects.create(
-        company_id=sides[0].company_id,
-        account=account,
-        cash_account=cash_account,
-        date=date,
-        direction=direction or "",
-        cash_direction=cash_direction or "",
-        amount=amount,
-        currency=currency,
-        source=source,
-        document_type=document_type(document) if document is not None else "",
-        document_id=document.pk if document is not None else None,
-        description=description,
-        created_by=by,
-        updated_by=by,
-    )
+    with transaction.atomic():
+        lock_sides(account, cash_account)
+        if source != MovementSource.OPENING:
+            _check_after_opening(account=account, cash_account=cash_account, day=date)
+        return Movement.objects.create(
+            company_id=sides[0].company_id,
+            account=account,
+            cash_account=cash_account,
+            date=date,
+            direction=direction or "",
+            cash_direction=cash_direction or "",
+            amount=amount,
+            currency=currency,
+            source=source,
+            document_type=document_type(document) if document is not None else "",
+            document_id=document.pk if document is not None else None,
+            description=description,
+            created_by=by,
+            updated_by=by,
+        )
 
 
 def reverse_document(document: Model, *, date: Date, by: User) -> list[Movement]:
