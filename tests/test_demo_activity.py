@@ -579,3 +579,42 @@ class TestSignatures:
             completed = MaintenanceVisit.objects.filter(status=VisitStatus.COMPLETED)
             assert not completed.filter(signature_status="").exists()
             assert not completed.filter(signature_status="signed").exists()
+
+
+class TestReports:
+    """The demo has last month's reports when the files can be stored."""
+
+    @pytest.fixture
+    def bucket(self, monkeypatch) -> Any:
+        from core import storage
+        from tests.test_attachments import FakeS3
+
+        fake = FakeS3()
+        monkeypatch.setattr(storage, "_client", lambda backend: fake)
+        monkeypatch.setattr("apps.reports.documents.render_pdf", lambda data: b"%PDF-fake")
+        return fake
+
+    def test_with_storage_last_month_has_reports_and_a_rerun_adds_none(self, bucket, db, settings):
+        settings.DEMO_SIGNATURE_IMAGES = True
+        from apps.reports.models import CustomerReport
+        from core.scheduling import local_today
+
+        call_command("load_address_data", path=SAMPLE_DATA)
+        call_command("seed_demo_data", stdout=StringIO())
+        with system_context():
+            company = Company.objects.get()
+        last = local_today().replace(day=1) - timedelta(days=1)
+        period = f"{last.year:04d}-{last.month:02d}"
+        with company_context(company.id):
+            assert CustomerReport.objects.filter(period=period).exists()
+        again = demo_activity.populate_activity(company, staff_domain=demo.STAFF_DOMAIN)
+        assert again.reports == 0
+
+    def test_without_storage_no_reports_and_a_note(self, seeded):
+        from apps.reports.models import CustomerReport
+
+        with company_context(seeded.id):
+            assert not CustomerReport.objects.exists()
+        again = demo_activity.populate_activity(seeded, staff_domain=demo.STAFF_DOMAIN)
+        assert again.reports == 0
+        assert any("report" in note for note in again.notes)

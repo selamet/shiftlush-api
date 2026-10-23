@@ -47,6 +47,7 @@ class CompanySerializer(serializers.ModelSerializer[Company]):
             "longitude",
             "logo",
             "logo_url",
+            "monthly_reports_enabled",
             "is_active",
             "created_at",
         ]

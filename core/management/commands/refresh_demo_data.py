@@ -66,7 +66,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"{company.display_name}: visits +{added.visits}  planned visits "
             f"+{added.planned_visits}  planned days +{added.planned_days}  signatures "
-            f"+{added.signatures}  faults "
+            f"+{added.signatures}  reports +{added.reports}  faults "
             f"+{added.faults}  inspections "
             f"+{added.inspections}  portal accounts +{added.portal_accounts}  drafts "
             f"+{added.drafts} (issued {added.issued})  notifications "

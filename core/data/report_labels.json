@@ -1,0 +1,44 @@
+{
+  "_note": "items and roles are copied verbatim from shiftlush-web messages/tr.json (visit.checklistItem, visit.signerRole), the source of truth for these words; change them there first.",
+  "roles": {
+    "manager": "Yönetici",
+    "caretaker": "Kapıcı",
+    "staff": "Site/bina görevlisi",
+    "other": "Diğer"
+  },
+  "items": {
+    "brake_system": "Fren sistemi",
+    "hoisting_ropes": "Halatlar ve kablolar",
+    "landing_doors": "Kat kapıları ve kilitleri",
+    "car_door_safety_edge": "Kabin kapısı ve fotosel/güvenlik kenarı",
+    "limit_switches": "Limit şalterleri",
+    "guide_rail_lubrication": "Ray yağlaması",
+    "car_lighting": "Kabin aydınlatması",
+    "emergency_lighting": "Acil aydınlatma",
+    "emergency_alarm_intercom": "Acil alarm / interkom",
+    "control_panel_buttons": "Kumanda paneli ve çağrı butonları",
+    "leveling_accuracy": "Kat seviyeleme hassasiyeti",
+    "overload_device": "Aşırı yük sensörü",
+    "automatic_rescue_device": "Otomatik kurtarma (ARD) testi",
+    "pit_condition": "Kuyu dibi durumu ve temizliği",
+    "machine_room_condition": "Makine dairesi durumu ve havalandırma",
+    "earthing_grounding": "Topraklama"
+  },
+  "visit_status": {
+    "completed": "Tamamlandı",
+    "incomplete": "Eksik kaldı",
+    "access_denied": "Erişim sağlanamadı"
+  },
+  "fault_status": {
+    "open": "Açık",
+    "assigned": "Atandı",
+    "on_site": "Sahada",
+    "resolved": "Çözüldü",
+    "closed": "Kapandı"
+  },
+  "nonconformity_status": {
+    "open": "Açık",
+    "fixed": "Düzeltildi",
+    "waived": "Muaf tutuldu"
+  }
+}

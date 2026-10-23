@@ -18,7 +18,7 @@ fourth, the e-mail copy of an in-app notification. That shapes the rules here:
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
@@ -56,7 +56,21 @@ def is_suppressed() -> bool:
     return _suppressed.get()
 
 
-def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) -> None:
+def _send(
+    *,
+    template: str,
+    subject_key: str,
+    to: str,
+    context: dict[str, Any],
+    attachments: Sequence[tuple[str, bytes, str]] = (),
+    on_failure: Callable[[str], None] | None = None,
+) -> None:
+    """Render and send one message.
+
+    `attachments` are (filename, content, mime type). `on_failure` hears the
+    reason when the send fails, for a caller that keeps a record of it: the
+    failure is still never raised.
+    """
     # These three renders used to sit inside `translation.override("tr")`, so
     # that a recipient got Turkish regardless of what a management command had
     # last activated. There is nothing for it to act on: the templates hold
@@ -76,6 +90,8 @@ def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) 
         to=[to],
     )
     message.attach_alternative(html_body, "text/html")
+    for filename, content, mime_type in attachments:
+        message.attach(filename, content, mime_type)
 
     try:
         message.send(fail_silently=False)
@@ -84,6 +100,8 @@ def _send(*, template: str, subject_key: str, to: str, context: dict[str, Any]) 
         # 500 here would make an administrator create a second invitation for
         # the same seat, leaving two live tokens.
         logger.exception("Could not send %s to %s", template, to, extra={"subject": subject_key})
+        if on_failure is not None:
+            on_failure(f"Could not send to {to}")
 
 
 def send_after_commit(**kwargs: object) -> None:
@@ -177,6 +195,29 @@ def send_portal_password_reset(*, to: str, full_name: str, token: str) -> None:
     )
 
 
+def send_monthly_report(
+    *,
+    to: str,
+    context: dict[str, Any],
+    pdf: bytes,
+    filename: str,
+    on_failure: Callable[[str], None] | None = None,
+) -> None:
+    """E-mail one customer's monthly report with the PDF attached (SL-176).
+
+    `context` carries company_name, customer_name, period, lead, summary and
+    portal_url (None when the recipient has no portal account).
+    """
+    send_after_commit(
+        template="monthly_report",
+        subject_key="monthly_report",
+        to=to,
+        context=context,
+        attachments=[(filename, pdf, "application/pdf")],
+        on_failure=on_failure,
+    )
+
+
 #: Where a notification's button leads, by its subject type. A type missing here
 #: still gets a working link — to the notification list — rather than a guess.
 NOTIFICATION_SUBJECT_PATHS = {
@@ -192,6 +233,8 @@ NOTIFICATION_SUBJECT_SCREENS = {
     "plan": "",
     # The invoice drafts (M7), which is where the accountant works.
     "billing": "billing",
+    # The monthly customer reports (SL-176), listed per customer.
+    "reports": "reports",
 }
 
 

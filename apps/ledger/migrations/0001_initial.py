@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("companies", "0005_company_ledger_closed_through"),
+        ("companies", "0006_company_ledger_closed_through"),
         ("customers", "0005_alter_customer_options_alter_customercontact_options"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

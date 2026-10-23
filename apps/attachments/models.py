@@ -27,6 +27,8 @@ class AttachmentCategory(models.TextChoices):
     LOGO = "logo", "Logo"
     #: The building's signature on a maintenance visit; one per visit.
     SIGNATURE = "signature", "Signature"
+    #: A customer's monthly maintenance report, kept as the PDF that was sent.
+    MONTHLY_REPORT = "monthly_report", "Monthly report"
     OTHER = "other", "Other"
 
 

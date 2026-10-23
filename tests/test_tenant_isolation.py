@@ -50,6 +50,7 @@ from apps.maintenance.models import MaintenanceVisit, PlannedVisit, VisitStatus
 from apps.notifications.models import Notification, NotificationKind
 from apps.portal.authentication import PortalJWTAuthentication
 from apps.properties.models import Building, BuildingType, Complex
+from apps.reports.models import CustomerReport
 from apps.users import services
 from apps.users.models import Invitation, Role, User, UserCustomer
 from core.context import company_context, system_context
@@ -394,6 +395,9 @@ def _build_firm(letter: str, seed: int) -> Firm:
             due_date=TODAY,
             technician=colleague,
         )
+        report = CustomerReport.objects.create(
+            company=company, customer=customer, period=f"{TODAY:%Y-%m}"
+        )
 
     return Firm(
         company=company,
@@ -415,6 +419,7 @@ def _build_firm(letter: str, seed: int) -> Firm:
             "nonconformity": nonconformity,
             "invoice-draft": draft,
             "invoice-line": line,
+            "customer-report": report,
         },
     )
 
@@ -1020,6 +1025,9 @@ class TestEveryModelIsScoped:
             "portal.PortalAccount",
             "properties.Building",
             "properties.Complex",
+            # Not routed yet; its tenant boundary is tested in
+            # tests/test_customer_reports.py and the endpoints come with it.
+            "reports.CustomerReport",
             "users.Invitation",
             "users.User",
             "users.UserCustomer",

@@ -1,0 +1,1 @@
+{% load email_format %}{{ period|tr_month }} raporları hazır: {{ sent }} gönderildi{% if no_recipient %}, {{ no_recipient }} alıcısız{% endif %}{% if not_enabled %}, {{ not_enabled }} gönderim kapalı{% endif %}{% if failed %}, {{ failed }} başarısız{% endif %}.

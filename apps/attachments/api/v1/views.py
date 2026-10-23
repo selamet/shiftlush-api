@@ -62,6 +62,10 @@ class AttachmentViewSet(
         # as before.
         if instance.category == AttachmentCategory.SIGNATURE:
             raise Conflict(ErrorCode.SIGNATURE_CANNOT_BE_DELETED)
+        # A monthly report's PDF is the report: without it the report can be
+        # neither sent nor read. It is replaced only by rendering it again.
+        if instance.category == AttachmentCategory.MONTHLY_REPORT:
+            raise Conflict(ErrorCode.REPORT_FILE_CANNOT_BE_DELETED)
         super().perform_destroy(instance)
 
     def get_queryset(self) -> QuerySet[Attachment]:
@@ -88,7 +92,9 @@ class AttachmentViewSet(
         from apps.properties.models import Building
 
         assigned = user.customer_assignments.values_list("customer_id", flat=True)  # type: ignore[attr-defined]
-        return (
+        # The monthly report is the office's account to the customer, not a
+        # field document: it stays out of a technician's reach entirely.
+        return ~Q(category=AttachmentCategory.MONTHLY_REPORT) & (
             Q(object_type=ObjectType.CUSTOMER, object_id__in=assigned)
             | Q(
                 object_type=ObjectType.BUILDING,
@@ -168,12 +174,16 @@ class AttachmentViewSet(
         The bucket is never public. Every read is a fresh signature, which is
         also why these URLs are not worth caching or embedding anywhere.
         """
-        attachment = self.get_object()
-        return Response(
-            DownloadUrlSerializer(
-                {
-                    "download_url": download_url(attachment),
-                    "expires_in": settings.DOWNLOAD_URL_TTL_SECONDS,
-                }
-            ).data
-        )
+        return download_url_response(self.get_object())
+
+
+def download_url_response(attachment: Attachment) -> Response:
+    """The answer of every endpoint that hands out one file's download URL."""
+    return Response(
+        DownloadUrlSerializer(
+            {
+                "download_url": download_url(attachment),
+                "expires_in": settings.DOWNLOAD_URL_TTL_SECONDS,
+            }
+        ).data
+    )

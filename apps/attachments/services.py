@@ -29,7 +29,7 @@ from uuid_utils.compat import uuid7
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from core import storage
 from core.error_codes import ErrorCode
-from core.exceptions import BusinessRuleError, Conflict
+from core.exceptions import BusinessRuleError, Conflict, field_error
 
 #: Accepted types and the extension each one gets. Photographs of an installation
 #: and scanned paperwork are the whole of phase 1; anything executable, archived
@@ -43,6 +43,10 @@ ALLOWED_TYPES: dict[str, str] = {
 }
 
 MAX_SIZE_BYTES = 10 * 1024 * 1024
+
+#: Categories only the server writes, through `save_bytes`. A person never
+#: uploads one: a monthly report is the PDF the server rendered and sent.
+SERVER_ONLY_CATEGORIES = frozenset({AttachmentCategory.MONTHLY_REPORT})
 
 #: Which model each polymorphic `object_type` refers to. A plain map rather than
 #: contenttypes: the join buys nothing and complicates the tenant filter.
@@ -109,6 +113,8 @@ def prepare_upload(
     upload over a mobile connection, and `confirm_upload` measures the real
     thing afterwards.
     """
+    if category in SERVER_ONLY_CATEGORIES:
+        raise field_error("category", ErrorCode.CATEGORY_NOT_UPLOADABLE)
     if mime_type not in ALLOWED_TYPES:
         raise BusinessRuleError(ErrorCode.UNSUPPORTED_MIME_TYPE)
     if size_bytes <= 0 or size_bytes > MAX_SIZE_BYTES:
@@ -197,6 +203,14 @@ def confirm_upload(
     one that uploaded 40 MB has it deleted here rather than kept forever.
     """
     object_type, object_id, category = _parse_key(company_id, storage_key)
+    if category in SERVER_ONLY_CATEGORIES:
+        # Refused before the retry shortcut below, which would otherwise hand a
+        # server-made file's record to whoever names its key. An object nobody
+        # recorded is removed, as every refused upload's is; one with a row is
+        # the server's own and stays.
+        if not Attachment.unscoped.filter(company_id=company_id, storage_key=storage_key).exists():
+            storage.delete(_backend_for(category), storage_key)
+        raise field_error("category", ErrorCode.CATEGORY_NOT_UPLOADABLE)
 
     existing = Attachment.unscoped.filter(
         company_id=company_id, storage_key=storage_key, is_deleted=False

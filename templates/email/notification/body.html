@@ -22,6 +22,8 @@ HTML part (escaped here) and the text part (body.txt, unescaped).
     {% include "email/_button.html" with label="Arızayı görüntüle" %}
   {% elif subject_type == "billing" %}
     {% include "email/_button.html" with label="Fatura taslaklarını aç" %}
+  {% elif subject_type == "reports" %}
+    {% include "email/_button.html" with label="Raporları aç" %}
   {% elif subject_type == "plan" %}
     {% include "email/_button.html" with label="Bakım listemi aç" %}
   {% else %}

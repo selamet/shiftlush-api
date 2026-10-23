@@ -62,6 +62,10 @@ class Company(SoftDeleteModel):
 
     is_active = models.BooleanField(default=True)
 
+    # Off until the owner turns it on: reports are generated and stored either
+    # way, and this is the one switch that lets an e-mail leave.
+    monthly_reports_enabled = models.BooleanField(default=False)
+
     class Meta:
         db_table = "company"
         ordering = ["display_name", "id"]

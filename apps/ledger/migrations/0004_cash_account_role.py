@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("companies", "0005_company_ledger_closed_through"),
+        ("companies", "0006_company_ledger_closed_through"),
         ("ledger", "0003_documents"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
