@@ -151,6 +151,14 @@ SAMPLE_DATA.update(
             "period_end": date(2026, 10, 14),
         },
         NotificationKind.INVOICE_DRAFTS_READY: {"count": 12, "needs_price": 3, "period": "2026-10"},
+        NotificationKind.MONTHLY_REPORTS_READY: {
+            "period": "2026-10",
+            "count": 16,
+            "sent": 14,
+            "no_recipient": 2,
+            "not_enabled": 0,
+            "failed": 0,
+        },
     }
 )
 
@@ -177,6 +185,8 @@ SUBJECT_OF = {
     if kind in FAULT_KINDS
     else ("billing", CONTRACT_ID)
     if kind == NotificationKind.INVOICE_DRAFTS_READY
+    else ("reports", CONTRACT_ID)
+    if kind == NotificationKind.MONTHLY_REPORTS_READY
     else ("contract", CONTRACT_ID)
     for kind in NotificationKind.values
 }

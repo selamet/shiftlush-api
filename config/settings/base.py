@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.inspections",
     "apps.portal",
     "apps.billing",
+    "apps.reports",
     "apps.notifications",
     # The queue for django.tasks: PostgreSQL, not a broker. See TASKS below.
     "django_tasks_db",

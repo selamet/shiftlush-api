@@ -56,6 +56,8 @@ from apps.portal.api.v1.serializers import (
 )
 from apps.portal.models import PortalAccount
 from apps.portal.viewsets import PortalContextMixin, PortalViewSet, portal_account
+from apps.reports.api.v1.serializers import PortalReportSerializer
+from apps.reports.models import CustomerReport
 from core.client_ip import client_ip
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
@@ -341,6 +343,23 @@ class PortalFaultViewSet(
         )
 
 
+class PortalReportViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, PortalViewSet[CustomerReport]
+):
+    """The monthly reports of the contact's own customer, newest first.
+
+    The PDF downloads through the portal files endpoint.
+    """
+
+    queryset = CustomerReport.objects.none()
+    serializer_class = PortalReportSerializer
+    customer_path = "customer_id"
+    ordering = ["-period", "id"]
+
+    def get_base_queryset(self) -> QuerySet[CustomerReport]:
+        return CustomerReport.objects.all()
+
+
 def files_of_customer(customer_id: Any) -> Q:
     """The files a contact may download: the customer's visit photos and
     signatures, inspection reports and fault photos. Nothing filed on the lift
@@ -364,6 +383,12 @@ def files_of_customer(customer_id: Any) -> Q:
             object_type=ObjectType.FAULT,
             category=AttachmentCategory.PHOTO,
             object_id__in=faults.values("id"),
+        )
+        | Q(
+            # The monthly report is filed on the customer itself.
+            object_type=ObjectType.CUSTOMER,
+            category=AttachmentCategory.MONTHLY_REPORT,
+            object_id=customer_id,
         )
     )
 

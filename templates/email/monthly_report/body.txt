@@ -1,0 +1,16 @@
+{% load email_format %}{% autoescape off %}Merhaba,
+
+{{ company_name }}, {{ customer_name }} için {{ period|tr_month }} bakım raporunu hazırladı. Rapor bu e-postaya PDF olarak eklidir.
+
+{% include "email/monthly_report/_lead.txt" %}
+
+Kapsanan asansör: {{ summary.lifts }}
+Tamamlanan bakım: {{ summary.visits_completed }} / {{ summary.visits_planned }}
+Açılan arıza: {{ summary.faults_opened }}
+{% if portal_url %}
+Önceki raporlara müşteri portalından ulaşabilirsiniz:
+{{ portal_url }}
+{% endif %}
+--
+ShiftLush · Asansör bakım ve muayene yönetimi
+{% endautoescape %}

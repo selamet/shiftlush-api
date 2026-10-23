@@ -124,6 +124,9 @@ class CustomerContact(CompanyOwnedModel):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(max_length=150, blank=True)
     is_primary = models.BooleanField(default=False)
+    #: Who the monthly report is e-mailed to. Needs an e-mail address, which the
+    #: serializer enforces and unticks when the address is cleared.
+    receives_monthly_report = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
 
     class Meta:

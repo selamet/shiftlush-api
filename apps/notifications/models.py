@@ -52,6 +52,9 @@ class NotificationKind(models.TextChoices):
     - ``invoice_drafts_ready`` — count, needs_price (how many of them have a
       line without a price), period ("YYYY-MM" of the latest period). Subject
       "billing", with the company's id; the link is the billing screen.
+    - ``monthly_reports_ready`` — period ("YYYY-MM"), count (reports made),
+      sent, no_recipient, not_enabled, failed. Subject "reports", with the
+      company's id; the link is the reports screen.
 
     Adding a kind is a backwards-compatible change to the contract; it also
     needs an entry in EMAIL_DEFAULTS below and two template partials.
@@ -76,6 +79,7 @@ class NotificationKind(models.TextChoices):
     INSPECTION_RED_LABEL = "inspection_red_label", "Red inspection label"
     BILLING_VAT_MISSING = "billing_vat_missing", "Contract not drafted: VAT rate missing"
     INVOICE_DRAFTS_READY = "invoice_drafts_ready", "Invoice drafts ready"
+    MONTHLY_REPORTS_READY = "monthly_reports_ready", "Monthly reports ready"
 
 
 #: Whether a kind is e-mailed to somebody who has never said otherwise. A
@@ -109,6 +113,8 @@ EMAIL_DEFAULTS: dict[str, bool] = {
     # check. Both are the accountant's next task.
     NotificationKind.BILLING_VAT_MISSING: True,
     NotificationKind.INVOICE_DRAFTS_READY: True,
+    # Once a month, and it says which customers have nobody to receive theirs.
+    NotificationKind.MONTHLY_REPORTS_READY: True,
 }
 
 #: Kinds that are e-mailed whatever the recipient's preference says. A trapped

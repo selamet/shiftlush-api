@@ -22,6 +22,7 @@ paths:
           - declaration_of_conformity
           - inspection_report
           - logo
+          - monthly_report
           - other
           - permit
           - photo
@@ -36,6 +37,7 @@ paths:
           * `inspection_report` - Inspection report
           * `logo` - Logo
           * `signature` - Signature
+          * `monthly_report` - Monthly report
           * `other` - Other
       - in: query
         name: object_id
@@ -1529,6 +1531,190 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/customer-reports/:
+    get:
+      operationId: customer_reports_list
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: delivery
+        schema:
+          type: string
+          enum:
+          - failed
+          - no_recipient
+          - not_enabled
+          - pending
+          - sent
+        description: |-
+          * `pending` - Pending
+          * `sent` - Sent
+          * `not_enabled` - Not enabled
+          * `no_recipient` - No recipient
+          * `failed` - Failed
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: period
+        schema:
+          type: string
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerReportReadList'
+          description: ''
+  /api/v1/customer-reports/{id}/:
+    get:
+      operationId: customer_reports_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/{id}/download-url/:
+    get:
+      operationId: customer_reports_download_url_retrieve
+      description: |-
+        A short-lived URL for the report's PDF, as the attachments endpoint gives.
+
+        Here so that whoever may read reports may read their file, without
+        needing to read every attachment in the firm.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+          description: ''
+  /api/v1/customer-reports/{id}/regenerate/:
+    post:
+      operationId: customer_reports_regenerate_create
+      description: Render it again from the current record. The old file is kept,
+        soft-deleted.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/{id}/send/:
+    post:
+      operationId: customer_reports_send_create
+      description: Send it, or send it again, to the customer's current recipients
+        now.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - customer-reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerReportRead'
+          description: ''
+  /api/v1/customer-reports/preview/:
+    post:
+      operationId: customer_reports_preview_create
+      description: The PDF of any month, the current one to date included. Stores
+        nothing.
+      tags:
+      - customer-reports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReportPreviewRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/customers/:
     get:
       operationId: customers_list
@@ -3894,6 +4080,7 @@ paths:
           - inspection_red_label
           - invoice_drafts_ready
           - maintenance_overdue
+          - monthly_reports_ready
           - visit_assigned
         description: |-
           * `contract_renewal_due` - Contract renewal due
@@ -3912,6 +4099,7 @@ paths:
           * `inspection_red_label` - Red inspection label
           * `billing_vat_missing` - Contract not drafted: VAT rate missing
           * `invoice_drafts_ready` - Invoice drafts ready
+          * `monthly_reports_ready` - Monthly reports ready
       - name: ordering
         required: false
         in: query
@@ -4777,6 +4965,69 @@ paths:
               schema:
                 $ref: '#/components/schemas/PortalMe'
           description: ''
+  /api/v1/portal/reports/:
+    get:
+      operationId: portal_reports_list
+      description: |-
+        The monthly reports of the contact's own customer, newest first.
+
+        The PDF downloads through the portal files endpoint.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPortalReportList'
+          description: ''
+  /api/v1/portal/reports/{id}/:
+    get:
+      operationId: portal_reports_retrieve
+      description: |-
+        The monthly reports of the contact's own customer, newest first.
+
+        The PDF downloads through the portal files endpoint.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer report.
+        required: true
+      tags:
+      - portal
+      security:
+      - portalJwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalReport'
+          description: ''
   /api/v1/portal/visits/:
     get:
       operationId: portal_visits_list
@@ -5253,6 +5504,7 @@ components:
       - inspection_report
       - logo
       - signature
+      - monthly_report
       - other
       type: string
       description: |-
@@ -5264,6 +5516,7 @@ components:
         * `inspection_report` - Inspection report
         * `logo` - Logo
         * `signature` - Signature
+        * `monthly_report` - Monthly report
         * `other` - Other
     AttachmentConfirmRequest:
       type: object
@@ -5691,6 +5944,8 @@ components:
         logo_url:
           type: string
           readOnly: true
+        monthly_reports_enabled:
+          type: boolean
         is_active:
           type: boolean
           readOnly: true
@@ -6276,6 +6531,8 @@ components:
             maxLength: 0
         is_primary:
           type: boolean
+        receives_monthly_report:
+          type: boolean
         notes:
           type: string
       required:
@@ -6308,6 +6565,9 @@ components:
         is_primary:
           type: boolean
           readOnly: true
+        receives_monthly_report:
+          type: boolean
+          readOnly: true
         notes:
           type: string
           readOnly: true
@@ -6328,6 +6588,7 @@ components:
       - is_primary
       - notes
       - phone
+      - receives_monthly_report
       - role
       - updated_at
     CustomerContactWriteRequest:
@@ -6360,6 +6621,8 @@ components:
           - type: string
             maxLength: 0
         is_primary:
+          type: boolean
+        receives_monthly_report:
           type: boolean
         notes:
           type: string
@@ -6478,6 +6741,62 @@ components:
       - type
       - unit_number
       - updated_at
+    CustomerReportRead:
+      type: object
+      description: The office's view. The PDF downloads through the attachments' `download-url`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_name:
+          type: string
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        file:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        summary:
+          readOnly: true
+        delivery:
+          allOf:
+          - $ref: '#/components/schemas/DeliveryEnum'
+          readOnly: true
+        sent_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        recipients:
+          readOnly: true
+        error:
+          type: string
+          readOnly: true
+      required:
+      - customer
+      - customer_name
+      - delivery
+      - error
+      - file
+      - generated_at
+      - id
+      - period
+      - recipients
+      - sent_at
+      - summary
     CustomerType:
       enum:
       - complex_management
@@ -6548,6 +6867,20 @@ components:
       required:
       - legal_name
       - type
+    DeliveryEnum:
+      enum:
+      - pending
+      - sent
+      - not_enabled
+      - no_recipient
+      - failed
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `sent` - Sent
+        * `not_enabled` - Not enabled
+        * `no_recipient` - No recipient
+        * `failed` - Failed
     District:
       type: object
       properties:
@@ -8598,6 +8931,7 @@ components:
       - inspection_red_label
       - billing_vat_missing
       - invoice_drafts_ready
+      - monthly_reports_ready
       type: string
       description: |-
         * `contract_renewal_due` - Contract renewal due
@@ -8616,6 +8950,7 @@ components:
         * `inspection_red_label` - Red inspection label
         * `billing_vat_missing` - Contract not drafted: VAT rate missing
         * `invoice_drafts_ready` - Invoice drafts ready
+        * `monthly_reports_ready` - Monthly reports ready
     NotificationPreference:
       type: object
       properties:
@@ -8835,6 +9170,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
+    PaginatedCustomerReportReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerReportRead'
         pagination:
           type: object
           required:
@@ -9215,6 +9580,36 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedPortalReportList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalReport'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedPortalVisitList:
       type: object
       required:
@@ -9453,6 +9848,8 @@ components:
           type: string
           format: uuid
           nullable: true
+        monthly_reports_enabled:
+          type: boolean
     PatchedComplexWriteRequest:
       type: object
       properties:
@@ -9563,6 +9960,8 @@ components:
           - type: string
             maxLength: 0
         is_primary:
+          type: boolean
+        receives_monthly_report:
           type: boolean
         notes:
           type: string
@@ -10582,6 +10981,36 @@ components:
           minLength: 1
       required:
       - email
+    PortalReport:
+      type: object
+      description: 'The contact''s view: no delivery state, recipients or errors,
+        which are the office''s.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        period:
+          type: string
+          readOnly: true
+        file:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        summary:
+          readOnly: true
+      required:
+      - file
+      - generated_at
+      - id
+      - period
+      - summary
     PortalTokenResponse:
       type: object
       properties:
@@ -10802,6 +11231,26 @@ components:
       required:
       - end_date
       - start_date
+    ReportPreviewRequest:
+      type: object
+      description: |-
+        Rejects fields it does not know about.
+
+        DRF ignores unknown keys by default, which silently swallows a typo: the
+        client sends `emial`, gets a 200, and the value never arrives. Failing is
+        the kinder answer.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        period:
+          type: string
+          minLength: 1
+          description: A month, "YYYY-MM".
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      required:
+      - customer
+      - period
     ResolveRequest:
       type: object
       properties:
@@ -11465,6 +11914,10 @@ components:
       - SIGNATURE_NOT_EXPECTED
       - SIGNATURE_CANNOT_BE_DELETED
       - INVOICE_LINES_NEED_PRICE
+      - MONTHLY_REPORT_NEEDS_EMAIL
+      - REPORT_NO_RECIPIENT
+      - REPORT_FILE_CANNOT_BE_DELETED
+      - CATEGORY_NOT_UPLOADABLE
       - DUPLICATE_INVOICE_NUMBER
       - FAULT_TRANSITION_NOT_ALLOWED
       - PLAN_ROW_CLOSED
@@ -11526,6 +11979,10 @@ components:
         * `SIGNATURE_NOT_EXPECTED` - The visit was not recorded as signed, so it takes no signature
         * `SIGNATURE_CANNOT_BE_DELETED` - A visit's signature is kept for good and cannot be deleted
         * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
+        * `MONTHLY_REPORT_NEEDS_EMAIL` - A contact without an e-mail address cannot receive the monthly report
+        * `REPORT_NO_RECIPIENT` - Nobody on this customer is set to receive the monthly report
+        * `REPORT_FILE_CANNOT_BE_DELETED` - A monthly report's file belongs to the report and cannot be deleted
+        * `CATEGORY_NOT_UPLOADABLE` - Files of this category are made by the server and cannot be uploaded
         * `DUPLICATE_INVOICE_NUMBER` - Another issued invoice of this company already has this number
         * `FAULT_TRANSITION_NOT_ALLOWED` - The fault is not in a state this action can be taken from
         * `PLAN_ROW_CLOSED` - The planned visit is done or cancelled; its day can no longer change
