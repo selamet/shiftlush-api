@@ -301,7 +301,27 @@ carried as compatibility shims nobody will ever remove.
   - New notification kinds `billing_vat_missing` and `invoice_drafts_ready`.
   - New enums `InvoiceStatus` and `InvoiceLineKind`; `NotificationKind` grows.
 
+- **Monthly customer report** — on the 1st, last month's PDF per customer,
+  stored as a `monthly_report` attachment and mailed to the contacts with
+  `receives_monthly_report`.
+  - `GET /customer-reports/`, `GET /customer-reports/{id}/`,
+    `POST /customer-reports/{id}/send/` (`Idempotency-Key` required),
+    `POST /customer-reports/preview/` (PDF, nothing stored),
+    `POST /customer-reports/{id}/regenerate/` (owner, admin) and
+    `GET /customer-reports/{id}/download-url/`.
+  - The portal lists a customer's own reports among its files.
+  - `monthly_report` attachments cannot be uploaded (`400
+    CATEGORY_NOT_UPLOADABLE` on `category`) or deleted
+    (`409 REPORT_FILE_CANNOT_BE_DELETED`), and technicians do not see them.
+  - New notification kind `monthly_reports_ready`; `AttachmentCategory` gains
+    `monthly_report`.
+
 ### Changed
+
+- **The notification kind enum grew** (`monthly_reports_ready`) and so did
+  `AttachmentCategory` (`monthly_report`). A client that switches on either must
+  handle values it does not know; `oasdiff` reports each addition as a
+  breaking response change.
 
 - **The customer portal has its own rate limit:** `PORTAL_RATE_LIMIT`,
   default `120/min` per portal account, instead of the staff user limit. Over
