@@ -322,9 +322,11 @@ carried as compatibility shims nobody will ever remove.
     still running is refused with this code, and nothing is done.
   - Before this, both requests ran: a timed-out report send that was retried
     mailed every recipient twice.
-  - A failed request (any non-2xx, or a crash) releases its key, so the retry
+  - A request's work and its stored answer commit together. A failed request
+    (any non-2xx, or a crash) is rolled back and releases its key, so the retry
     runs. A reservation left by a request that never finished is released after
-    60 seconds.
+    60 seconds; if that request was in fact still working, its work is rolled
+    back and it answers `409 IDEMPOTENCY_KEY_IN_FLIGHT` too.
   - Backwards compatible: a new code on a status the endpoints already return.
 
 ### Changed

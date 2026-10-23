@@ -178,13 +178,15 @@ def _reserve(
     Returns the reservation, or the stored response to replay. Raises 409 for a
     key reused with another body, or one whose first request is still running.
     """
-    for _ in range(_RESERVE_ATTEMPTS):
+    for attempt in range(_RESERVE_ATTEMPTS):
         now = timezone.now()
         try:
             # Its own transaction, committed before the handler starts, so an
             # overlapping request sees the row. The unique constraint decides
-            # which of two simultaneous inserts wins.
-            with transaction.atomic():
+            # which of two simultaneous inserts wins. Durable, so that inside
+            # someone else's transaction it fails loudly instead of becoming a
+            # savepoint nobody else can see until that transaction commits.
+            with transaction.atomic(durable=True):
                 row = IdempotencyKey.objects.create(
                     company_id=company_id,
                     key=key,
@@ -196,14 +198,18 @@ def _reserve(
                     expires_at=now + retention,
                 )
             return _Reservation(row.pk, row.created_at)
-        except IntegrityError:
-            pass
+        except IntegrityError as error:
+            conflict = error
 
         existing = IdempotencyKey.objects.filter(company_id=company_id, key=key, **owner).first()
         if existing is None:
-            # Released between the insert and the read: the first request
-            # failed, so this one may run. Insert again.
-            continue
+            # Once, this is the race where the first request failed and released
+            # the key between our insert and our read: insert again. Twice, the
+            # insert is failing on something other than the unique key, and that
+            # error is the answer, not "in flight".
+            if attempt == 0:
+                continue
+            raise conflict
 
         taken: _Reservation | None
         if existing.expires_at <= now:
@@ -247,13 +253,49 @@ def _reserve(
 def _release(reservation: _Reservation) -> None:
     """Drop the reservation of a request that did not succeed.
 
-    A failure on the way out must not mask the handler's own error; the row is
-    then abandoned and taken over after `PENDING_TIMEOUT`.
+    Runs after the handler's transaction has rolled back, in its own. A failure
+    here must not mask the handler's own error; the row is then abandoned and
+    taken over after `PENDING_TIMEOUT` — safe, because the work it guarded was
+    rolled back with it.
     """
     try:
-        reservation.mine().delete()
+        with transaction.atomic(durable=True):
+            reservation.mine().delete()
     except Exception:
         logger.exception("Could not release idempotency key %s", reservation.pk)
+
+
+class _NotSuccessful(Exception):
+    """Carries a non-2xx answer out of the transaction, rolling its work back."""
+
+    def __init__(self, response: Response) -> None:
+        super().__init__(response.status_code)
+        self.response = response
+
+
+class _ReservationLost(Exception):
+    """The key was taken over while this request worked; its work must not stand."""
+
+
+def _complete(reservation: _Reservation, response: Response, retention: timedelta) -> None:
+    """Store the answer, inside the transaction that holds the work.
+
+    Fenced on the reservation: zero rows means another request decided this one
+    was abandoned and took the key over, so it is doing the work now and this
+    request's copy is rolled back.
+
+    A response with no `.data` (a plain HttpResponse or FileResponse) completes
+    the key without a body: the work is guarded all the same, and a replay
+    answers with the stored status and an empty body.
+    """
+    data = getattr(response, "data", None)
+    updated = reservation.mine().update(
+        response_status=response.status_code,
+        response_body=None if data is None else json.loads(json.dumps(data, default=str)),
+        expires_at=timezone.now() + retention,
+    )
+    if updated != 1:
+        raise _ReservationLost
 
 
 def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response]:
@@ -264,8 +306,12 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
     would reply to a question that was never asked, and that is one of the
     hardest classes of bug to trace afterwards.
 
-    The handler's own transaction is untouched: the reservation commits before
-    it opens, and the answer is written after it closes.
+    Never done twice, never half done: the handler runs inside one transaction
+    with the write that completes its key, so the work and its answer commit
+    together or not at all. The handler's own atomic blocks become savepoints
+    of it, and its on-commit hooks (the mails) fire only once the key is
+    complete. The reservation commits before, and a release after a rollback,
+    each in a transaction of its own.
     """
 
     @functools.wraps(handler)
@@ -301,25 +347,24 @@ def replay_protected(handler: Callable[..., Response]) -> Callable[..., Response
             return reserved
 
         try:
-            response = handler(self, request, *args, **kwargs)
+            with transaction.atomic():
+                response = handler(self, request, *args, **kwargs)
+                # Only successful creates are worth replaying. Storing a failure
+                # would make a transient error permanent for the next
+                # twenty-four hours, and keeping the reservation would refuse
+                # the retry that fixes it.
+                if not 200 <= response.status_code < 300:
+                    raise _NotSuccessful(response)
+                _complete(reserved, response, retention)
+        except _NotSuccessful as outcome:
+            _release(reserved)
+            return outcome.response
+        except _ReservationLost:
+            # Not released: the key is the new owner's now.
+            raise Conflict(ErrorCode.IDEMPOTENCY_KEY_IN_FLIGHT) from None
         except BaseException:
             _release(reserved)
             raise
-
-        # Only successful creates are worth replaying. Storing a failure would
-        # make a transient error permanent for the next twenty-four hours, and
-        # keeping the reservation would refuse the retry that fixes it.
-        if not 200 <= response.status_code < 300:
-            _release(reserved)
-            return response
-
-        # Zero rows when the reservation was taken over after PENDING_TIMEOUT:
-        # the request that took it stores its own answer.
-        reserved.mine().update(
-            response_status=response.status_code,
-            response_body=json.loads(json.dumps(response.data, default=str)),
-            expires_at=timezone.now() + retention,
-        )
         return response
 
     # Read back by ReplayProtectedCreate below, and by the test that walks the
