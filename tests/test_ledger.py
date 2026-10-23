@@ -3069,6 +3069,32 @@ class TestConcurrency(TransactionTestCase):
             assert invoice_remaining(invoice) == Decimal("600.00")
             assert invoice.status == InvoiceStatus.ISSUED
 
+    def test_a_cancel_racing_an_apply_neither_deadlocks_nor_leaves_it_paid(self) -> None:
+        for _ in range(3):
+            with company_context(self.company.id):
+                advance = receive(self.books, "1000.00")
+
+            def apply(advance: Collection = advance) -> Collection:
+                invoice = InvoiceDraft.objects.get(pk=self.invoice.pk)
+                return ledger_services.apply_collection(
+                    advance, applies=[(invoice, Decimal("1000.00"))], by=self.owner
+                )
+
+            def cancel(advance: Collection = advance) -> Collection:
+                return cancel_collection(advance, by=self.owner)
+
+            results = _race(self._in_firm(cancel), self._in_firm(apply))
+
+            errors = [r for r in results if isinstance(r, BaseException)]
+            # Either the apply landed first and the cancel undid it, or the
+            # cancel did and the apply found the collection reversed.
+            assert all(isinstance(e, Conflict) for e in errors), results
+            with company_context(self.company.id):
+                invoice = InvoiceDraft.objects.get(pk=self.invoice.pk)
+                assert invoice_remaining(invoice) == Decimal("1000.00")
+                assert invoice.status == InvoiceStatus.ISSUED
+                assert account_balance(self.books.account) == Decimal("1000.00")
+
     def test_a_concurrent_retried_collection_posts_once(self) -> None:
         # A device that retries before its first request has answered: the
         # same key, the same body, both in flight together. The key is
