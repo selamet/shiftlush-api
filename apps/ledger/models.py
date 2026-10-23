@@ -164,6 +164,9 @@ class Account(CompanyOwnedModel):
 
 
 class CashAccountRole(models.TextChoices):
+    #: The firm's main till, "Merkez kasa", made at registration. Where a
+    #: payment with no cash account named goes, whatever the firm renames it.
+    DEFAULT = "default", "Default till"
     #: Payments M7 recorded before the ledger existed ("Devir"), carried over
     #: by the data migration (apps.ledger.migration_helpers).
     CARRIED_OVER = "carried_over", "Carried over from M7"

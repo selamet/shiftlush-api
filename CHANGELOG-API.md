@@ -309,7 +309,9 @@ carried as compatibility shims nobody will ever remove.
   collection pays any of it (cancel the collection first). Drafts gain
   `collected` and `remaining`. `status` follows the collections: `paid` once
   they cover the total, with `paid_on` the date of the latest of them, and
-  back to `issued` when one is cancelled.
+  back to `issued` when one is cancelled. A draft issued for a zero total owes
+  nothing: it reads `paid` at once, with `paid_on` its `invoice_date`, and
+  posts no movement.
   - `POST /invoice-drafts/{id}/mark-paid/` is **deprecated** in favour of a
     collection with `applies`. It keeps working: it records a collection of
     everything the invoice still owes, dated `paid_on`, into the optional

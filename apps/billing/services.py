@@ -472,7 +472,8 @@ def issue(
         update_fields=["status", "invoice_number", "invoice_date", "updated_by", "updated_at"]
     )
     ledger.post_invoice(draft, by=by)
-    return draft
+    # A zero total owes nothing: it is paid the moment it is issued.
+    return ledger.sync_invoice_status(draft)
 
 
 @transaction.atomic
@@ -491,12 +492,12 @@ def mark_paid(
     "Merkez kasa" when none is named, and the draft reads `paid` because the
     collection covers it (ledger.sync_invoice_status), not because this says so.
     """
-    # Not locked here: record_collection takes the document counter and then
-    # the invoice, and taking them in the other order would deadlock against a
-    # collection applied to this invoice at the same moment. It re-reads the
-    # invoice under its lock, so a payment racing this one is refused there
-    # (OVERPAYMENT_ON_INVOICE) rather than paid twice.
-    draft = InvoiceDraft.objects.get(pk=draft.pk)
+    # Locked first, and the balance read under the lock: a payment that
+    # covered it a moment ago has committed by now, and this answers the same
+    # 409 a second call in sequence gets rather than an overpayment. The lock
+    # order (invoice, then record_collection's number counter) is the one
+    # record_collection itself takes.
+    draft = _locked(draft)
     if draft.status != InvoiceStatus.ISSUED or ledger.invoice_remaining(draft) <= 0:
         raise _refuse()
     ledger.collect_invoice(draft, date=paid_on, by=by, cash_account=cash_account, method=method)

@@ -1604,3 +1604,121 @@ class TestInvoiceMigration:
         assert account_balance(books.account) == Decimal("1000.00")
         assert invoice_remaining(fresh(paid)) == Decimal("0.00")
         assert fresh(paid).paid_on == date(2026, 10, 1)
+
+
+class TestInvoiceGuarantees:
+    """Fix round 1: every invoice path is all or nothing, the default till is
+    found by role, a zero invoice is paid, and a raced mark-paid is a 409."""
+
+    def test_a_cancel_failing_after_its_reversal_leaves_nothing(self, books):
+        draft = issued_through_m7(books)
+        before = (fresh(draft).status, account_balance(books.account))
+
+        # The mirror is written, then the draft's own save fails.
+        with patch.object(InvoiceDraft, "save", side_effect=Boom), pytest.raises(Boom):
+            billing.cancel(draft, reason="x", by=books.owner)
+
+        assert not Movement.objects.filter(source=MovementSource.INVOICE_CANCEL).exists()
+        assert (fresh(draft).status, account_balance(books.account)) == before
+        # And it cancels whole on the next try.
+        billing.cancel(draft, reason="x", by=books.owner)
+        assert Movement.objects.filter(source=MovementSource.INVOICE_CANCEL).count() == 1
+
+    @pytest.mark.parametrize("amount", ["1200.00", "500.00"], ids=["covering", "partial"])
+    def test_a_collection_cancel_failing_after_its_reversal_leaves_nothing(self, books, amount):
+        draft = issued_through_m7(books)
+        collection = receive(
+            books,
+            amount,
+            applies=[(draft, Decimal(amount))],
+            date=local_today() - timedelta(days=1),
+        )
+        paid_state = (fresh(draft).status, fresh(draft).paid_on)
+        balances = (account_balance(books.account), cash_balance(books.till))
+
+        with (
+            patch.object(ledger_services, "sync_invoice_status", side_effect=Boom),
+            pytest.raises(Boom),
+        ):
+            cancel_collection(collection, by=books.owner)
+
+        assert not Movement.objects.filter(source=MovementSource.REVERSAL).exists()
+        assert Collection.objects.get(pk=collection.pk).cancelled_at is None
+        assert (fresh(draft).status, fresh(draft).paid_on) == paid_state
+        assert (account_balance(books.account), cash_balance(books.till)) == balances
+
+    def test_a_zero_invoice_is_paid_on_issue(self, books):
+        draft = make_invoice(books, status=InvoiceStatus.DRAFT)
+        billing.add_line(
+            draft,
+            description="Ucretsiz",
+            quantity=Decimal("1"),
+            unit_price=Decimal("0.00"),
+            by=books.owner,
+        )
+        invoice_date = local_today() - timedelta(days=2)
+
+        issued = billing.issue(
+            draft, invoice_number="GIB-0", invoice_date=invoice_date, by=books.owner
+        )
+
+        assert (issued.status, issued.paid_on) == (InvoiceStatus.PAID, invoice_date)
+        assert fresh(draft).status == InvoiceStatus.PAID
+        assert movements_of(draft) == []
+        with pytest.raises(Conflict) as error:
+            billing.mark_paid(draft, paid_on=local_today(), by=books.owner)
+        assert codes(error) == "INVOICE_TRANSITION_NOT_ALLOWED"
+
+    def test_mark_paid_uses_the_renamed_default_till(self, books):
+        books.till.name = "Ana kasa"
+        books.till.save()
+        draft = issued_through_m7(books)
+
+        billing.mark_paid(draft, paid_on=local_today(), by=books.owner)
+
+        assert CashAccount.objects.count() == 1
+        (collection,) = Collection.objects.all()
+        assert collection.cash_account == books.till
+        assert books.till.role == CashAccountRole.DEFAULT
+        assert ledger_services.create_default_cash_account(books.company) == books.till
+        assert CashAccount.objects.count() == 1
+
+    def test_the_migration_marks_existing_merkez_kasa_as_default(self, firm):
+        company, _ = firm
+        other, _ = make_firm("B")
+        with system_context():
+            # As 0002 left them: found by name, with no role.
+            CashAccount.unscoped.update(role="")
+            CashAccount.objects.create(company=company, kind=CashKind.BANK, name="Bank")
+        migration = importlib.import_module("apps.ledger.migrations.0006_default_till_role")
+
+        with system_context():
+            migration.mark_default_tills(global_apps, None)
+            migration.mark_default_tills(global_apps, None)
+            defaults = sorted(
+                CashAccount.unscoped.filter(role=CashAccountRole.DEFAULT).values_list(
+                    "company_id", "name"
+                )
+            )
+        assert defaults == sorted([(company.id, "Merkez kasa"), (other.id, "Merkez kasa")])
+
+    def test_mark_paid_after_a_payment_raced_in_is_a_409(self, books):
+        draft = issued_through_m7(books)
+        real_locked = billing._locked
+
+        def another_payment_commits_first(d: InvoiceDraft) -> InvoiceDraft:
+            # What a concurrent POST /collections/ looks like from here: it
+            # covered the invoice and committed before this request's lock.
+            receive(books, "1200.00", applies=[(draft, Decimal("1200.00"))])
+            return real_locked(d)
+
+        with (
+            patch.object(billing, "_locked", side_effect=another_payment_commits_first),
+            pytest.raises(Conflict) as error,
+        ):
+            billing.mark_paid(draft, paid_on=local_today(), by=books.owner)
+
+        # Not `400 {"applies": OVERPAYMENT_ON_INVOICE}`: the same answer a
+        # second mark-paid in sequence gets. (The injected payment ran inside
+        # this request's transaction here, so it rolled back with it.)
+        assert codes(error) == "INVOICE_TRANSITION_NOT_ALLOWED"

@@ -25,6 +25,7 @@ from apps.ledger.models import (
     Account,
     AccountKind,
     CashAccount,
+    CashAccountRole,
     CashDirection,
     CashKind,
     Collection,
@@ -74,15 +75,22 @@ def account_for_customer(customer: Customer) -> Account:
 
 
 def create_default_cash_account(company: Company) -> CashAccount:
-    """The firm's first till, "Merkez kasa". Idempotent."""
+    """The firm's first till, "Merkez kasa". Idempotent.
+
+    Found by its role, not its name: a firm that renames its till still has
+    one, and gets no second.
+    """
     # Unscoped for the same reason as above: registration has no company in
     # context until this company exists.
     till = CashAccount.unscoped.filter(
-        company=company, kind=CashKind.CASH, name=DEFAULT_CASH_ACCOUNT_NAME, is_deleted=False
+        company=company, role=CashAccountRole.DEFAULT, is_deleted=False
     ).first()
     if till is None:
         till = CashAccount.objects.create(
-            company=company, kind=CashKind.CASH, name=DEFAULT_CASH_ACCOUNT_NAME
+            company=company,
+            kind=CashKind.CASH,
+            role=CashAccountRole.DEFAULT,
+            name=DEFAULT_CASH_ACCOUNT_NAME,
         )
     return till
 
@@ -172,6 +180,11 @@ def _cancel[D: (Collection, PaymentOut, ManualEntry, Transfer, OpeningBalance)](
     return locked
 
 
+def _lock_invoices(pks: set[UUID]) -> None:
+    if pks:
+        list(InvoiceDraft.objects.select_for_update(of=("self",)).filter(pk__in=pks).order_by("pk"))
+
+
 def _apply(
     collection: Collection, applies: list[tuple[InvoiceDraft, Decimal]], *, by: User | None
 ) -> None:
@@ -246,6 +259,10 @@ def record_collection(
     _check_method(method)
     _check_amount(amount)
     with transaction.atomic():
+        # The invoices first, in pk order, and only then the number counter:
+        # the same order as mark_paid (invoice, then this), so the two never
+        # hold one each and wait for the other.
+        _lock_invoices({invoice.pk for invoice, _ in applies})
         collection = Collection.objects.create(
             company_id=account.company_id,
             number=next_number(account.company, COLLECTION_PREFIX),
@@ -361,21 +378,27 @@ def sync_invoice_status(draft: InvoiceDraft) -> InvoiceDraft:
     """`paid` when standing collections cover the invoice, `issued` otherwise.
 
     `paid_on` is the date of the collection that covered it: the latest of
-    those still applied. Called by every collection and cancellation that
-    touches the invoice, in the same transaction. A draft or a cancelled
-    invoice is left as it is.
+    those still applied. An invoice for nothing (a zero total) owes nothing
+    from the moment it is issued, so it is `paid` on its invoice date. Called
+    at issue, and by every collection and cancellation that touches the
+    invoice, in the same transaction. A draft or a cancelled invoice is left as
+    it is.
     """
     locked = InvoiceDraft.objects.select_for_update(of=("self",)).get(pk=draft.pk)
     if locked.status not in _PAYABLE_STATUSES or locked.cancelled_at is not None:
         return locked
-    if invoice_remaining(locked) <= _ZERO:
-        status = InvoiceStatus.PAID
-        paid_on = CollectionApplication.unscoped.filter(
+    status: str
+    paid_on: Date | None
+    if Decimal(locked.total) == _ZERO:
+        status, paid_on = InvoiceStatus.PAID, locked.invoice_date
+    elif invoice_remaining(locked) <= _ZERO:
+        latest = CollectionApplication.unscoped.filter(
             invoice_id=locked.pk,
             is_deleted=False,
             collection__cancelled_at__isnull=True,
             collection__is_deleted=False,
         ).aggregate(latest=Max("collection__date"))["latest"]
+        status, paid_on = InvoiceStatus.PAID, latest or locked.invoice_date
     else:
         status, paid_on = InvoiceStatus.ISSUED, None
     if (locked.status, locked.paid_on) != (status, paid_on):
@@ -386,16 +409,8 @@ def sync_invoice_status(draft: InvoiceDraft) -> InvoiceDraft:
 
 
 def default_cash_account(company_id: UUID) -> CashAccount:
-    """The firm's "Merkez kasa", where a payment with no till named goes."""
-    till = CashAccount.unscoped.filter(
-        company_id=company_id,
-        kind=CashKind.CASH,
-        name=DEFAULT_CASH_ACCOUNT_NAME,
-        is_deleted=False,
-    ).first()
-    if till is None:
-        till = create_default_cash_account(Company.objects.get(pk=company_id))
-    return till
+    """The firm's default till, where a payment with no till named goes."""
+    return create_default_cash_account(Company.objects.get(pk=company_id))
 
 
 def collect_invoice(
