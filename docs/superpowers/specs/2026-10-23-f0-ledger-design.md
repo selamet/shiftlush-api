@@ -204,7 +204,7 @@ transfer.
 |---|---|
 | `GET /accounts/` | Filters: `kind`, `search`, `has_balance` and `overdue` (owes and has an issued invoice older than N days). Each row has its balance, and the list carries totals. |
 | `GET /accounts/{id}/` | The party, the balance, and the last movement. |
-| `GET /accounts/{id}/statement/?from=&to=` | Dated movements with a running balance and the opening balance at `from`. The same data is available as `.pdf` and `.csv`, and through `POST …/statement/send/`, which e-mails the PDF to the customer's contacts who receive reports. |
+| `GET /accounts/{id}/statement/?start=&end=` | Dated movements with a running balance and the opening balance at `start` (`end` inclusive). The same data is available as `.pdf` and `.csv`, and through `POST …/statement/send/`, which e-mails the PDF to the customer's contacts who receive reports. |
 | `GET/POST /collections/`, `POST /collections/{id}/cancel/` | Create takes an `Idempotency-Key`. Its body is account, cash account, amount, method, date, note, and `applies: [{invoice, amount}]`. |
 | `GET/POST /payments-out/`, `POST /payments-out/{id}/cancel/` | |
 | `POST /manual-entries/`, `POST /transfers/`, `POST /opening-balances/` (and cancel on each) | |
