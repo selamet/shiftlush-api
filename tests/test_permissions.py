@@ -54,6 +54,15 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("invoice", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
     ("fault_office", READ): set(),
     ("fault_office", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    # F0: the ledger. Read by the office's money roles; collections and
+    # payments out recorded by operations too; the books themselves (manual,
+    # transfer, opening, closed-through) by the owner and the accountant.
+    ("ledger", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    ("ledger", WRITE): set(),
+    ("ledger_document", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    ("ledger_document", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+    ("ledger_admin", READ): {Role.OWNER, Role.ACCOUNTANT},
+    ("ledger_admin", WRITE): {Role.OWNER, Role.ACCOUNTANT},
 }
 
 

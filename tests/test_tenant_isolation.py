@@ -995,6 +995,12 @@ class TestEveryModelIsScoped:
             # Over HTTP in the sweep above, and in tests/test_inspections.py.
             "inspections.Inspection",
             "inspections.NonConformity",
+            # F0. Not routed yet; isolated at the manager in tests/test_ledger.py
+            # until the ledger's routes join the sweep above.
+            "ledger.Account",
+            "ledger.CashAccount",
+            "ledger.Movement",
+            "ledger.Supplier",
             "maintenance.MaintenanceVisit",
             "maintenance.MaintenanceVisitItem",
             # Over HTTP in the sweep above, and in tests/test_planned_visits.py.

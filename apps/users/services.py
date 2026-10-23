@@ -19,6 +19,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.companies.models import Company
+from apps.ledger.services import create_default_cash_account
 from apps.users import lockout
 from apps.users.models import (
     Invitation,
@@ -134,6 +135,8 @@ def register_company(
             last_name=last_name,
             role=Role.OWNER,
         )
+        # Every firm has a till from its first day (F0).
+        create_default_cash_account(company)
 
     # After the transaction, not inside it. A mail server that is briefly
     # unreachable must not roll back a firm's registration — the account exists

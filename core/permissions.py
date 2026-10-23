@@ -162,6 +162,26 @@ MATRIX: dict[str, dict[str, set[str]]] = {
         READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
         WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
     },
+    # The ledger (F0). Reading accounts, cash accounts, statements and the
+    # summary. Operations sees a customer's balance only, through the customer
+    # read, not here; the technician has no part in money until F1. Nothing is
+    # written through this resource: every write is a document, below.
+    "ledger": {
+        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+        WRITE: set(),
+    },
+    # Collections and payments out. Operations takes the money at the door, so
+    # it records them, but reads the ledger no further than above.
+    "ledger_document": {
+        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+    },
+    # Manual entries, transfers, opening balances and the closed-through date:
+    # the books themselves, the owner's and the accountant's alone.
+    "ledger_admin": {
+        READ: {Role.OWNER, Role.ACCOUNTANT},
+        WRITE: {Role.OWNER, Role.ACCOUNTANT},
+    },
 }
 
 

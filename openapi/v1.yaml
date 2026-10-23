@@ -11478,6 +11478,11 @@ components:
       - FIELD_REQUIRED_FOR_CUSTOMER_TYPE
       - FIELD_NOT_VALID_FOR_CUSTOMER_TYPE
       - STATUS_NOT_USER_SELECTABLE
+      - CURRENCY_MISMATCH
+      - PERIOD_CLOSED
+      - ALREADY_REVERSED
+      - INVOICE_HAS_COLLECTIONS
+      - OVERPAYMENT_ON_INVOICE
       - INVALID_CREDENTIALS
       - ACCOUNT_LOCKED
       - ACCOUNT_INACTIVE
@@ -11539,6 +11544,11 @@ components:
         * `FIELD_REQUIRED_FOR_CUSTOMER_TYPE` - This customer type requires this field
         * `FIELD_NOT_VALID_FOR_CUSTOMER_TYPE` - This field does not apply to this customer type
         * `STATUS_NOT_USER_SELECTABLE` - This status is assigned by the system
+        * `CURRENCY_MISMATCH` - The amount's currency differs from its account's or its cash account's
+        * `PERIOD_CLOSED` - The date falls in a period the firm has closed
+        * `ALREADY_REVERSED` - This document has already been cancelled
+        * `INVOICE_HAS_COLLECTIONS` - Collections are applied to this invoice; cancel them first
+        * `OVERPAYMENT_ON_INVOICE` - The amount applied exceeds the invoice's remaining balance
         * `INVALID_CREDENTIALS` - E-mail or password is incorrect
         * `ACCOUNT_LOCKED` - Too many failed attempts from this address; try again later
         * `ACCOUNT_INACTIVE` - Account is not active
