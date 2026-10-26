@@ -183,3 +183,11 @@ def test_the_plain_text_part_names_the_product(template: str) -> None:
     # The HTML half says ShiftLush in the band and the footer. A client showing
     # the text half would otherwise get an unsigned message about a password.
     assert "ShiftLush" in rendered
+
+
+@pytest.mark.parametrize("template", [*TEMPLATES, "monthly_report", "statement"])
+def test_the_subject_is_not_html_escaped(template: str) -> None:
+    # A subject is a header, not HTML: `&` escaped arrives as `&amp;`.
+    names = {"company_name": "Ak & Kar", "customer_name": "A & B", "account_name": "A & B"}
+    rendered = render_to_string(f"email/{template}/subject.txt", {**CONTEXT, **names})
+    assert "&amp;" not in rendered

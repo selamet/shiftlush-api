@@ -242,6 +242,22 @@
         "İbrahim Öztürk",
         "caretaker"
       ]
-    ]
+    ],
+    "ledger": {
+      "bank": "Ziraat Bankası işletme hesabı",
+      "transfer_note": "Kasadan bankaya yatırılan",
+      "partial_note": "Kısmi ödeme",
+      "purchase_reason": "Malzeme alımı, vadeli",
+      "suppliers": [
+        {
+          "name": "Anadolu Asansör Parça Ltd. Şti.",
+          "payment_note": "Kapı kilidi ve askı halatı"
+        },
+        {
+          "name": "Palandöken Elektrik Malzemeleri",
+          "payment_note": "Kumanda panosu malzemesi"
+        }
+      ]
+    }
   }
 }

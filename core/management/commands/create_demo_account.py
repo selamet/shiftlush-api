@@ -52,6 +52,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.companies.models import Company
+from apps.ledger.services import create_default_cash_account
 from apps.users.models import Role, User
 from core import demo, demo_activity
 from core.context import company_context, system_context
@@ -147,6 +148,8 @@ class Command(BaseCommand):
                 role=Role.OWNER,
                 is_email_verified=True,
             )
+            # Every firm has a till from its first day (F0), this one included.
+            create_default_cash_account(company)
             return company, True
 
     def _fill(self, company: Company) -> None:

@@ -1,0 +1,1 @@
+{% load email_format %}{% if start and end %}{{ start|tr_date }} – {{ end|tr_date }} dönemi{% elif start %}{{ start|tr_date }} tarihinden bugüne{% elif end %}{{ end|tr_date }} tarihine kadar{% else %}tüm hareketleri kapsayan{% endif %}

@@ -70,9 +70,9 @@ happened.
 |---|---|
 | `company` | Tenant. |
 | `kind` | `customer`, `supplier` or `staff`. |
-| `customer` | FK, set for `customer`. Unique: one account per customer. |
-| `supplier` | FK to a new `Supplier`, set for `supplier`. Unique. |
-| `user` | FK, set for `staff`. Unique. |
+| `customer` | FK, set for `customer`. Unique per currency: one account per customer and currency. |
+| `supplier` | FK to a new `Supplier`, set for `supplier`. Unique per currency. |
+| `user` | FK, set for `staff`. Unique per currency. |
 | `name` | Copied from the party at creation, and kept in step when it is renamed. |
 | `currency` | ISO code, default `TRY`. Fixed once the account has a movement. |
 | `is_active` | Inactive accounts are hidden from pickers, never deleted. |
@@ -82,6 +82,9 @@ happened.
 - **A customer's account is created with the customer** (service plus data
   migration for existing customers). Supplier and staff accounts are created
   when the supplier is created or a staff member is first given one.
+- **One account per currency.** A customer's TRY account comes with the
+  customer; one in another currency comes with its first invoice in that
+  currency (final review, C1).
 - The **balance** is computed: the sum of debits minus the sum of credits. A
   positive balance means they owe the firm. The list reads it through one
   annotated query, and there is no stored balance column in F0.
@@ -204,8 +207,9 @@ transfer.
 |---|---|
 | `GET /accounts/` | Filters: `kind`, `search`, `has_balance` and `overdue` (owes and has an issued invoice older than N days). Each row has its balance, and the list carries totals. |
 | `GET /accounts/{id}/` | The party, the balance, and the last movement. |
-| `GET /accounts/{id}/statement/?from=&to=` | Dated movements with a running balance and the opening balance at `from`. The same data is available as `.pdf` and `.csv`, and through `POST …/statement/send/`, which e-mails the PDF to the customer's contacts who receive reports. |
+| `GET /accounts/{id}/statement/?start=&end=` | Dated movements with a running balance and the opening balance at `start` (`end` inclusive). The same data is available as `.pdf` and `.csv`, and through `POST …/statement/send/`, which e-mails the PDF to the customer's contacts who receive reports. |
 | `GET/POST /collections/`, `POST /collections/{id}/cancel/` | Create takes an `Idempotency-Key`. Its body is account, cash account, amount, method, date, note, and `applies: [{invoice, amount}]`. |
+| `POST /collections/{id}/apply/`, `GET /accounts/{id}/open-invoices/` | Apply a standing collection's unallocated part (an advance) to invoices, with an `Idempotency-Key`; the picker lists the account's open invoices, for operations too. Allocation only, no movement. |
 | `GET/POST /payments-out/`, `POST /payments-out/{id}/cancel/` | |
 | `POST /manual-entries/`, `POST /transfers/`, `POST /opening-balances/` (and cancel on each) | |
 | `GET/POST/PATCH /cash-accounts/`, `GET /cash-accounts/{id}/movements/` | |

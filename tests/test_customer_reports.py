@@ -59,7 +59,7 @@ from apps.reports.services import generate_one, regenerate, send_report
 from apps.reports.tasks import monthly_customer_reports
 from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
-from core import storage
+from core import mail, storage
 from core.context import company_context, system_context
 from core.exceptions import Conflict
 from core.scheduling import LOCAL_TZ, get_schedules
@@ -1499,3 +1499,26 @@ class TestReportFiles:
         assert confirmed.data["error"]["details"] == refused
         assert not Attachment.unscoped.filter(storage_key=key).exists()
         assert ("shiftlush-dev", key) not in bucket.objects
+
+
+@pytest.mark.django_db
+def test_the_report_subject_reads_as_written(django_capture_on_commit_callbacks):
+    # Escaped, `&` arrived as `&amp;`; a newline in a name raised BadHeaderError,
+    # which the sender swallows, so the mail silently never went.
+    django_mail.outbox.clear()
+    with django_capture_on_commit_callbacks(execute=True):
+        mail.send_monthly_report(
+            to="c@example.com",
+            context={
+                "company_name": "Ak & Kar",
+                "customer_name": "Yılmaz & Oğlu\nX",
+                "period": "2026-10",
+                "lead": {},
+                "summary": {},
+                "portal_url": None,
+            },
+            pdf=b"%PDF-1",
+            filename="rapor.pdf",
+        )
+    (message,) = django_mail.outbox
+    assert message.subject == "Ak & Kar — Ekim 2026 bakım raporu (Yılmaz & Oğlu X)"

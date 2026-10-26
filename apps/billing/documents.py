@@ -21,6 +21,7 @@ from typing import Any
 from django.template.loader import render_to_string
 
 from apps.billing.models import InvoiceDraft, InvoiceStatus
+from core.csv_cells import safe_cell
 
 BOM = "﻿"
 
@@ -59,8 +60,9 @@ def export_csv(drafts: Iterable[InvoiceDraft]) -> str:
             ).strip()
         writer.writerow(
             [
-                draft.customer.legal_name,
-                draft.contract.contract_number,
+                # Typed by a person: never a formula (core.csv_cells).
+                safe_cell(draft.customer.legal_name),
+                safe_cell(draft.contract.contract_number),
                 _date(draft.period_start),
                 _date(draft.period_end),
                 _decimal(draft.subtotal),
@@ -68,7 +70,7 @@ def export_csv(drafts: Iterable[InvoiceDraft]) -> str:
                 _decimal(draft.total),
                 draft.currency,
                 labels[draft.status],
-                draft.invoice_number,
+                safe_cell(draft.invoice_number),
             ]
         )
     return buffer.getvalue()

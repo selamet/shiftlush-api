@@ -45,6 +45,7 @@ urlpatterns = [
                 path("", include("apps.portal.api.v1.urls")),
                 path("", include("apps.billing.api.v1.urls")),
                 path("", include("apps.reports.api.v1.urls")),
+                path("ledger/", include("apps.ledger.api.v1.urls")),
                 path("", include("apps.notifications.api.v1.urls")),
                 path("", include("apps.audit.api.v1.urls")),
             ]

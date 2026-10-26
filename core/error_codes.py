@@ -191,6 +191,27 @@ class ErrorCode(models.TextChoices):
         "STATUS_NOT_USER_SELECTABLE",
         "This status is assigned by the system",
     )
+    # The ledger (F0).
+    CURRENCY_MISMATCH = (
+        "CURRENCY_MISMATCH",
+        "The amount's currency differs from its account's or its cash account's",
+    )
+    PERIOD_CLOSED = (
+        "PERIOD_CLOSED",
+        "The date falls in a period the firm has closed",
+    )
+    ALREADY_REVERSED = (
+        "ALREADY_REVERSED",
+        "This document has already been cancelled",
+    )
+    INVOICE_HAS_COLLECTIONS = (
+        "INVOICE_HAS_COLLECTIONS",
+        "Collections are applied to this invoice; cancel them first",
+    )
+    OVERPAYMENT_ON_INVOICE = (
+        "OVERPAYMENT_ON_INVOICE",
+        "The amount applied exceeds the invoice's remaining balance",
+    )
 
     # Authentication --------------------------------------------------------
     INVALID_CREDENTIALS = "INVALID_CREDENTIALS", "E-mail or password is incorrect"

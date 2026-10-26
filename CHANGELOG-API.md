@@ -329,12 +329,153 @@ carried as compatibility shims nobody will ever remove.
     back and it answers `409 IDEMPOTENCY_KEY_IN_FLIGHT` too.
   - Backwards compatible: a new code on a status the endpoints already return.
 
+- **The ledger (F0)** — under `/ledger/`: each party's account, the firm's
+  cash accounts, suppliers, the documents that move money, and the finance
+  summary. A balance is never stored or typed in: it is the sum of the
+  movements. Reading is owner, admin and accountant; collections and payments
+  out are also recorded by operations, which reads the cash-account and
+  supplier lists to pick from and a customer's balance on the customer page,
+  and nothing else of the ledger; manual entries, transfers, opening balances
+  and the closed-through date are the owner's and the accountant's alone. The
+  technician has no access (`403`).
+  - `GET /ledger/accounts/` — each account with its `balance` (debits less
+    credits; positive means the party owes the firm), and `totals`
+    (`receivables`, `payables`, `net`) beside the usual envelope, summed over
+    every row the filters select. Filters: `kind`, `is_active`, `search`
+    (name), `has_balance`, and `overdue` (owes, and has an issued invoice
+    still unpaid older than `overdue_days`, 30 by default).
+    `GET /ledger/accounts/{id}/` adds `last_movement`. `POST /ledger/accounts/`
+    (owner, accountant) opens an account for a party that has none in the
+    given `currency` — a staff member, mostly; a party that has one in that
+    currency is `400 unique`.
+  - **One account per party and currency.** A contract, and so an invoice, can
+    be in any currency, and amounts in two currencies are never added. A
+    customer's TRY account is made with the customer; its account in another
+    currency is made by the first invoice in that currency, which posts there.
+    A rename renames every account of the customer. Collections pay invoices
+    of the account's own currency only (`400 CURRENCY_MISMATCH` on
+    `applies`), and `overdue` looks at invoices in the account's currency.
+  - `GET/POST /ledger/collections/`, `POST /ledger/collections/{id}/cancel/`.
+    The body is `account`, `cash_account`, `amount`, `method`, `date` (today
+    when omitted), `note` and `applies: [{invoice, amount}]`; none applied is
+    an advance. Numbered `T-000001` per firm. An inactive account or cash
+    account takes no new document (`400 does_not_exist`).
+  - `POST /ledger/collections/{id}/apply/` with `{applies: [{invoice,
+    amount}]}` settles invoices from a standing collection — an advance
+    operations took at the door, say. It **requires** `Idempotency-Key`.
+    Each invoice up to what it still owes (`400 OVERPAYMENT_ON_INVOICE` on
+    `applies`), all together up to the collection's unallocated amount, its
+    amount less what it already applies (`400 invalid` on `applies`, as for
+    a create that applies more than it brought in); an invoice this
+    collection already pays is `400 unique` on `applies`. The collection's own
+    customer and currency only; a cancelled collection is
+    `409 ALREADY_REVERSED`. It moves no money — the collection posted when it
+    was recorded — and answers the collection with its `applies`. Owner,
+    admin, accountant and operations.
+  - `GET /ledger/accounts/{id}/open-invoices/` — what `apply` (and a create's
+    `applies`) can pay on this account: its customer's issued invoices in its
+    currency with something left, oldest first, as `[{id, invoice_number,
+    invoice_date, total, remaining}]`, unpaginated; empty for a supplier or
+    staff account. Readable by operations too, which sees no balance here.
+  - `GET/POST /ledger/payments-out/` (numbered `O-…`), `/manual-entries/`
+    (with a required `reason`), `/transfers/` (`kind` `account` or `cash`)
+    and `/opening-balances/` (on an account or a cash account), each with
+    `POST …/{id}/cancel/`, which posts the reversal; a second cancel is
+    `409 ALREADY_REVERSED`. No document is ever edited or deleted.
+  - Every document create **requires** `Idempotency-Key` (`400
+    IDEMPOTENCY_KEY_REQUIRED` without it); a retry with the same key and body
+    answers the first response and records nothing more.
+  - `GET/POST/PATCH /ledger/cash-accounts/` with `balance`, and
+    `GET /ledger/cash-accounts/{id}/movements/`, newest first. A cash
+    account's `currency` cannot change once it has a movement. The list and
+    detail are readable by operations too, in a picker shape (`id`, `name`,
+    `kind`, `currency`, `is_active`; schema `CashAccountListItem`, a oneOf of
+    `CashAccountRead` and `CashAccountPicker`) with no `balance` or `iban`, and
+    `?ordering=balance` ignored; the movements are not readable by operations.
+  - `GET/POST/PATCH /ledger/suppliers/`. A supplier is created with its
+    account, which follows a rename.
+  - `GET /ledger/finance/summary/?period=today|yesterday|week|month` — a
+    `currencies` list, one entry per currency (amounts in two currencies are
+    never added): `receivables` and `payables` today, `cash_accounts` (every
+    cash account that is active, holds money or moved in the period, with
+    `is_active`, its `balance` today and its `money_in` and `money_out` in the
+    period), and `money_in`/`money_out`, which are those lines added up.
+    Transfers between cash accounts and opening balances are neither in nor
+    out, and a document cancelled within the period contributes nothing. Each
+    cash line carries `role`: `default` for the main till, `carried_over` for
+    a "Devir" till, blank otherwise. A Devir till holds the invoices M7 marked
+    paid before the ledger existed, carried over as collections because
+    nobody recorded which till they went to: on the first day its balance is
+    historical money, not cash on hand, and the web labels it so. The
+    accountant empties it into the real tills with transfers.
+  - The default till and the Devir tills cannot be made inactive
+    (`PATCH … {is_active: false}` is `400 invalid` on `is_active`).
+  - `GET /ledger/accounts/{id}/statement/?start=&end=` — the account's
+    statement: `opening` (the balance before `start`, 0 without one), `rows`
+    (`movement_id`, `date`, `description`, `debit`, `credit`, the running
+    `balance`, `document_type`, `document_id`, `is_reversal`; a cancelled
+    document is two rows that net to zero), `total_debit`, `total_credit` and
+    `closing`. Both dates are optional and inclusive; `start` after `end` is
+    `400 END_DATE_BEFORE_START_DATE` on `start`. The same as
+    `…/statement.csv/` (UTF-8 with a BOM, `;`, decimal comma) and
+    `…/statement.pdf/` (`503` without the renderer). `POST
+    …/statement/send/` with `{start, end}` **requires** `Idempotency-Key` and
+    e-mails the PDF to the customer's contacts who receive reports, after the
+    request commits; it answers `{recipients}`, and none is
+    `409 REPORT_NO_RECIPIENT`. Owner, admin and accountant; operations gets
+    `403`.
+  - `GET/PATCH /ledger/settings/` (owner, accountant) —
+    `{closed_through: date|null}`. Nothing can be dated on or before it
+    (`400 PERIOD_CLOSED`); a date after today is `400 invalid`; moving it back
+    or clearing it reopens the books. Every change is on the audit trail.
+  - `GET /customers/` and `GET /customers/{id}/` gain `accounts`
+    (`[{id, balance, currency}]`, one per currency, TRY first) for the roles
+    that may see balances (owner, admin, accountant, operations). It is absent
+    for the technician, and so optional in the contract.
+  - Every id in a request is looked up in the requesting firm only; another
+    firm's is `400 does_not_exist` on that field, as an unknown id is.
+  - Errors: `400 CURRENCY_MISMATCH`, `400 PERIOD_CLOSED`,
+    `400 OVERPAYMENT_ON_INVOICE`, `409 ALREADY_REVERSED`.
+  - New enums `LedgerAccountKind`, `CashAccountKind`, `CashAccountRole`,
+    `TransferKind`, `LedgerDirection`, `CashDirection` and `MovementSource`.
+
 ### Changed
 
 - **The notification kind enum grew** (`monthly_reports_ready`) and so did
   `AttachmentCategory` (`monthly_report`). A client that switches on either must
   handle values it does not know; `oasdiff` reports each addition as a
   breaking response change.
+
+- **Invoices post to the customer's account (F0).** Issuing a draft posts its
+  total as a debit on the customer's account; cancelling an issued draft posts
+  the reversal, and is refused with `409 INVOICE_HAS_COLLECTIONS` while a
+  collection pays any of it (cancel the collection first). Drafts gain
+  `collected` and `remaining`. `status` follows the collections: `paid` once
+  they cover the total, with `paid_on` the date of the latest of them, and
+  back to `issued` when one is cancelled. A draft issued for a zero total owes
+  nothing: it reads `paid` at once, with `paid_on` its `invoice_date`, and
+  posts no movement. `cancel` now also accepts a `paid` invoice: with no
+  collection behind it (a zero total) it cancels; with one it is
+  `409 INVOICE_HAS_COLLECTIONS`, where it used to be
+  `409 INVOICE_TRANSITION_NOT_ALLOWED`.
+  - `POST /invoice-drafts/{id}/mark-paid/` is **deprecated** in favour of a
+    collection with `applies`. It keeps working: it records a collection of
+    everything the invoice still owes, dated `paid_on`, into the optional
+    `cash_account` (the firm's main till when omitted) with the optional
+    `method` (`transfer` by default, enum `PaymentMethod`). The main till is in
+    TRY: an invoice in another currency with no `cash_account` is
+    `400 CURRENCY_MISMATCH` on `cash_account` — pick a till in the invoice's
+    currency.
+  - A draft the previous release issues or marks paid while a deploy is in
+    flight, after the carry-over migration, is posted (and, if paid,
+    collected into the carried-over till) by the nightly `carry_over_invoices`
+    job. Until then it reads `collected` 0, and its customer's balance leaves
+    it out.
+  - An `invoice_date` or `paid_on` after today, or inside the firm's closed
+    period, is now refused with a `400` on the field the request sent:
+    `invoice_date` for `issue` (`invalid` after today, `PERIOD_CLOSED` in a
+    closed month), `paid_on` for `mark-paid`. No movement is dated in the
+    future or in a closed month.
 
 - **The customer portal has its own rate limit:** `PORTAL_RATE_LIMIT`,
   default `120/min` per portal account, instead of the staff user limit. Over

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from rest_framework import serializers
 
 from apps.billing.models import InvoiceDraft, InvoiceLine
+from apps.ledger.models import CashAccount, PaymentMethod
 
 
 class StrictMixin:
@@ -48,6 +49,18 @@ class InvoiceDraftReadSerializer(serializers.ModelSerializer[InvoiceDraft]):
     needs_price = serializers.SerializerMethodField(
         help_text="Whether any line still waits for a price; such a draft cannot be issued."
     )
+    collected = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+        help_text="What collections still standing have paid of this invoice.",
+    )
+    remaining = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+        help_text="The total less `collected`: what the customer still owes on it.",
+    )
 
     class Meta:
         model = InvoiceDraft
@@ -65,6 +78,8 @@ class InvoiceDraftReadSerializer(serializers.ModelSerializer[InvoiceDraft]):
             "subtotal",
             "vat_amount",
             "total",
+            "collected",
+            "remaining",
             "needs_price",
             "invoice_number",
             "invoice_date",
@@ -121,7 +136,23 @@ class InvoiceIssueSerializer(serializers.Serializer[Any]):
 
 
 class InvoiceMarkPaidSerializer(serializers.Serializer[Any]):
-    paid_on = serializers.DateField()
+    paid_on = serializers.DateField(help_text="The collection's date.")
+    # Scoped in get_fields: the firm's active cash accounts.
+    cash_account = serializers.PrimaryKeyRelatedField(
+        queryset=CashAccount.objects.none(),
+        required=False,
+        allow_null=True,
+        help_text="Where the money went. The firm's main till when omitted.",
+    )
+    method = serializers.ChoiceField(
+        choices=PaymentMethod.choices, default=PaymentMethod.TRANSFER, required=False
+    )
+
+    def get_fields(self) -> dict[str, Any]:
+        fields = super().get_fields()
+        till = cast(serializers.PrimaryKeyRelatedField[CashAccount], fields["cash_account"])
+        till.queryset = CashAccount.objects.filter(is_active=True)
+        return fields
 
 
 class InvoiceCancelSerializer(serializers.Serializer[Any]):

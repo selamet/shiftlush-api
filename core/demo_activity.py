@@ -1,5 +1,5 @@
 """The demo company's Phase 2 life: visits, the plan, faults, inspections,
-the portal, invoice drafts and the notifications all of that raises.
+the portal, invoice drafts, the books and the notifications all of that raises.
 
 `core.demo` builds the firm — staff, customers, buildings, lifts, contracts.
 This module makes it look like the firm has been working for a few months, so a
@@ -9,9 +9,10 @@ Three rules shape it:
 
 - **The real services, not hand-made rows**, wherever a module has one: the plan
   is the plan generator's, faults go through their transitions, inspections
-  through `record()`, drafts through the billing generator, and the daily jobs'
-  own scoped functions raise their notifications. Demo data that the product
-  could not have produced is a demonstration of something else. Visits are the
+  through `record()`, drafts through the billing generator, the books through
+  the ledger's services, and the daily jobs' own scoped functions raise their
+  notifications. Demo data that the product could not have produced is a
+  demonstration of something else. Visits are the
   exception — they are created in the past, which no service does — and they
   then go through the same `recalculate_next_maintenance` and plan-closing path
   a recorded visit does.
@@ -43,11 +44,12 @@ import struct
 import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from apps.billing import services as billing
@@ -61,6 +63,23 @@ from apps.faults import services as faults
 from apps.faults.models import Fault, FaultPriority, FaultStatus
 from apps.inspections import services as inspections
 from apps.inspections.models import Inspection, InspectionKind, Label, NonConformityStatus
+from apps.ledger import migration_helpers
+from apps.ledger import services as ledger
+from apps.ledger.balances import cash_balance
+from apps.ledger.models import (
+    Account,
+    AccountKind,
+    CashAccount,
+    CashKind,
+    Direction,
+    ManualEntry,
+    OpeningBalance,
+    PaymentMethod,
+    PaymentOut,
+    Supplier,
+    Transfer,
+    TransferKind,
+)
 from apps.maintenance import services as maintenance
 from apps.maintenance.models import (
     ChecklistItem,
@@ -112,6 +131,10 @@ class Activity:
     positions: int = 0
     signatures: int = 0
     reports: int = 0
+    #: Ledger documents posted: invoices and collections the migration helper
+    #: carried over, collections, purchases (manual entries), payments out and
+    #: transfers. Suppliers and the bank account are not documents.
+    ledger: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -157,6 +180,7 @@ def populate_activity(
         drafts, issued = _billing(firm, day)
         activity.drafts += drafts
         activity.issued += issued
+        activity.ledger += _ledger(firm, generator, day, activity)
         _job_notices(day)
         _age_notifications(started, generator)
         activity.notifications = Notification.objects.count() - before
@@ -1091,6 +1115,267 @@ def _billing(firm: _Firm, today: date) -> tuple[int, int]:
                 by=firm.owner,
             )
     return len(run.created), issued
+
+
+# Ledger -----------------------------------------------------------------------------------
+
+#: How many customers have paid part of their latest invoice.
+PARTIAL_CUSTOMERS = 3
+#: The overdue customer's unpaid invoice is at least this old: well past the 30
+#: days the overdue filter and the aging screen count from.
+OVERDUE_AFTER_DAYS = 40
+#: Every other customer has paid each invoice older than this in full.
+SETTLED_AFTER_DAYS = 30
+_CENT = Decimal("0.01")
+
+
+def _ledger(firm: _Firm, rng: random.Random, today: date, activity: Activity) -> int:
+    """Give the demo firm books worth opening: the aging and finance screens.
+
+    The firm's issued and paid drafts are posted through the migration helper
+    (already posted ones post nothing). Then, each judged on its own subject:
+    a bank account and a transfer into it from the default till; every
+    customer but one has paid its invoices older than 30 days, and a few have
+    paid part of their latest; the one left is overdue, its oldest invoice 40
+    days or more unpaid; two suppliers sold on credit and have been paid twice.
+
+    Every write goes through the ledger's services, each its own atomic
+    document, and every date is on or before today and after any opening
+    balance on the sides it touches. A firm with closed books is left alone:
+    a demo cannot know which of its dates the closing froze.
+
+    Returns the ledger documents posted (see Activity.ledger).
+    """
+    company = Company.objects.get(pk=firm.company.pk)
+    if company.ledger_closed_through is not None:
+        activity.notes.append(
+            f"the books are closed through {company.ledger_closed_through.isoformat()}, "
+            f"so the ledger was left as it is"
+        )
+        return 0
+    data = ACTIVITY["ledger"]
+    carried = migration_helpers.carry_over_firm(company.pk)
+    posted = carried.posted + carried.collected
+    till = ledger.default_cash_account(company.pk)
+    bank = _bank(firm, data["bank"])
+    posted += _customer_collections(firm, rng, today, till, bank, data, activity)
+    posted += _deposit(firm, rng, today, till, bank, data, activity)
+    posted += _supplier_payments(firm, rng, today, till, bank, data, activity)
+    return posted
+
+
+def _ledger_day(day: date, today: date, *sides: Account | CashAccount) -> date:
+    """`day`, but not after today and not before an opening balance on a side."""
+    accounts = [side.pk for side in sides if isinstance(side, Account)]
+    tills = [side.pk for side in sides if isinstance(side, CashAccount)]
+    floor = OpeningBalance.objects.filter(
+        Q(account__in=accounts) | Q(cash_account__in=tills), cancelled_at__isnull=True
+    ).aggregate(latest=Max("date"))["latest"]
+    day = min(day, today)
+    return max(day, floor) if floor is not None else day
+
+
+def _bank(firm: _Firm, name: str) -> CashAccount:
+    """The firm's bank account: the first one a person made, or the demo's."""
+    bank = (
+        CashAccount.objects.filter(kind=CashKind.BANK, role="", is_active=True)
+        .order_by("created_at", "id")
+        .first()
+    )
+    if bank is None:
+        bank = CashAccount.objects.create(
+            company=firm.company,
+            kind=CashKind.BANK,
+            name=name,
+            created_by=firm.owner,
+            updated_by=firm.owner,
+        )
+    return bank
+
+
+def _share(amount: Decimal, percent: int) -> Decimal:
+    """`percent` of `amount`, to the whole lira."""
+    return (amount * percent / 100).quantize(Decimal("1")).quantize(_CENT)
+
+
+def _customer_collections(
+    firm: _Firm,
+    rng: random.Random,
+    today: date,
+    till: CashAccount,
+    bank: CashAccount,
+    data: dict[str, Any],
+    activity: Activity,
+) -> int:
+    issued = list(
+        InvoiceDraft.objects.filter(
+            status=InvoiceStatus.ISSUED, cancelled_at__isnull=True, invoice_date__isnull=False
+        )
+        .select_related("customer")
+        .order_by("invoice_date", "id")
+    )
+    # Each with its invoice date, which the query above guarantees.
+    untouched = [
+        (draft, draft.invoice_date)
+        for draft in issued
+        if draft.invoice_date is not None and ledger.invoice_collected(draft) == 0
+    ]
+    # The overdue customer: whoever has waited longest for an untouched
+    # invoice, if that has waited long enough. Its invoices are left alone, so
+    # the same customer is chosen again on the next run.
+    overdue_before = today - timedelta(days=OVERDUE_AFTER_DAYS)
+    overdue = next(
+        (draft.customer_id for draft, issued_on in untouched if issued_on <= overdue_before), None
+    )
+    if overdue is None:
+        activity.notes.append(
+            f"no invoice has waited {OVERDUE_AFTER_DAYS} days unpaid, so no customer is overdue"
+        )
+    posted = 0
+
+    # Everyone else pays on time: each invoice older than 30 days, in full,
+    # one to three weeks after it was issued, mostly by bank transfer.
+    settled_before = today - timedelta(days=SETTLED_AFTER_DAYS)
+    for draft, issued_on in untouched:
+        if draft.customer_id == overdue or issued_on > settled_before:
+            continue
+        cash = bank if rng.random() < 0.7 else till
+        account = ledger.account_for_customer(draft.customer, draft.currency)
+        paid_on = issued_on + timedelta(days=rng.randint(7, 21))
+        ledger.collect_invoice(
+            draft,
+            date=_ledger_day(paid_on, today, account, cash),
+            by=firm.office,
+            cash_account=cash,
+            method=PaymentMethod.TRANSFER if cash == bank else PaymentMethod.CASH,
+        )
+        posted += 1
+
+    # A few pay part of their latest invoice. A customer that already has a
+    # partly paid invoice fills its own slot.
+    partly_paid = {
+        draft.customer_id
+        for draft in InvoiceDraft.objects.filter(
+            status=InvoiceStatus.ISSUED, cancelled_at__isnull=True
+        ).select_related("customer")
+        if ledger.invoice_collected(draft) > 0
+    }
+    latest: dict[Any, tuple[InvoiceDraft, date]] = {}
+    for draft, issued_on in untouched:
+        if draft.customer_id != overdue and issued_on > settled_before:
+            latest[draft.customer_id] = (draft, issued_on)
+    candidates = sorted(
+        (pair for customer, pair in latest.items() if customer not in partly_paid),
+        key=lambda pair: (pair[1], pair[0].pk),
+    )
+    for draft, issued_on in candidates[: max(0, PARTIAL_CUSTOMERS - len(partly_paid))]:
+        amount = _share(ledger.invoice_remaining(draft), rng.choice((25, 40, 50, 60)))
+        if amount <= 0:
+            continue
+        account = ledger.account_for_customer(draft.customer, draft.currency)
+        paid_on = issued_on + timedelta(days=rng.randint(2, 10))
+        ledger.record_collection(
+            account=account,
+            cash_account=till,
+            amount=amount,
+            method=PaymentMethod.CASH,
+            date=_ledger_day(paid_on, today, account, till),
+            note=data["partial_note"],
+            applies=[(draft, amount)],
+            by=firm.office,
+        )
+        posted += 1
+    return posted
+
+
+def _deposit(
+    firm: _Firm,
+    rng: random.Random,
+    today: date,
+    till: CashAccount,
+    bank: CashAccount,
+    data: dict[str, Any],
+    activity: Activity,
+) -> int:
+    """Most of what is in the till, taken to the bank, once."""
+    if Transfer.objects.filter(
+        kind=TransferKind.CASH, to_cash=bank, cancelled_at__isnull=True
+    ).exists():
+        return 0
+    amount = (cash_balance(till) * 6 / 10 // 100 * 100).quantize(_CENT)
+    if amount <= 0:
+        activity.notes.append("the till holds no money, so nothing was taken to the bank")
+        return 0
+    ledger.record_transfer(
+        kind=TransferKind.CASH,
+        amount=amount,
+        date=_ledger_day(today - timedelta(days=rng.randint(1, 4)), today, till, bank),
+        note=data["transfer_note"],
+        by=firm.owner,
+        from_cash=till,
+        to_cash=bank,
+    )
+    return 1
+
+
+def _supplier_payments(
+    firm: _Firm,
+    rng: random.Random,
+    today: date,
+    till: CashAccount,
+    bank: CashAccount,
+    data: dict[str, Any],
+    activity: Activity,
+) -> int:
+    """Two suppliers, each with a purchase on credit and two payments against it:
+    the first paid from the bank, the second in cash. Each still owes a little,
+    so the finance screen has payables. A supplier whose account already has a
+    purchase or a payment is left as it is."""
+    posted = 0
+    for index, entry in enumerate(data["suppliers"]):
+        supplier = Supplier.objects.filter(name=entry["name"]).order_by("created_at", "id").first()
+        if supplier is None:
+            supplier = ledger.create_supplier(
+                company_id=firm.company.pk, by=firm.owner, name=entry["name"]
+            )
+        account = Account.objects.filter(supplier=supplier).first() or ledger.open_account(
+            company_id=firm.company.pk, kind=AccountKind.SUPPLIER, by=firm.owner, supplier=supplier
+        )
+        if (
+            PaymentOut.objects.filter(account=account).exists()
+            or ManualEntry.objects.filter(account=account).exists()
+        ):
+            continue
+        cash = bank if index == 0 else till
+        payments = [Decimal(rng.randint(8, 40) * 100).quantize(_CENT) for _ in range(2)]
+        owed = sum(payments, Decimal(rng.randint(5, 30) * 100)).quantize(_CENT)
+        bought_on = today - timedelta(days=rng.randint(35, 50))
+        ledger.record_manual_entry(
+            account=account,
+            direction=Direction.CREDIT,
+            amount=owed,
+            date=_ledger_day(bought_on, today, account),
+            reason=data["purchase_reason"],
+            by=firm.owner,
+        )
+        posted += 1
+        for amount in payments:
+            if amount > cash_balance(cash):
+                activity.notes.append(
+                    f"{cash.name} cannot pay {supplier.name} {amount}, so that payment was left out"
+                )
+                continue
+            ledger.record_payment_out(
+                account=account,
+                cash_account=cash,
+                amount=amount,
+                method=PaymentMethod.TRANSFER if cash == bank else PaymentMethod.CASH,
+                date=_ledger_day(today - timedelta(days=rng.randint(0, 30)), today, account, cash),
+                note=entry["payment_note"],
+                by=firm.owner,
+            )
+            posted += 1
+    return posted
 
 
 # Notifications ----------------------------------------------------------------------------

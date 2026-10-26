@@ -1,1 +1,1 @@
-{{ company_name }} sizi ShiftLush'a davet etti
+{% autoescape off %}{{ company_name }} sizi ShiftLush'a davet etti{% endautoescape %}

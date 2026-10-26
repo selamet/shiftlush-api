@@ -9,10 +9,13 @@ two exports.
 
 from __future__ import annotations
 
+import csv
+import io
 import random
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from django.db import IntegrityError, connection, transaction
@@ -877,14 +880,14 @@ class TestPaidAndCancelled:
     def test_paid_only_from_issued(self, drafted):
         firm, draft = drafted
         url = reverse("invoice-draft-mark-paid", args=[draft.pk])
-        early = api_for(firm.accountant).post(url, {"paid_on": "2026-10-25"})
+        early = api_for(firm.accountant).post(url, {"paid_on": "2026-10-21"})
         assert early.status_code == 409
         price(firm, draft)
         issue(firm, draft)
         assert api_for(firm.accountant).post(url, {}).status_code == 400
-        paid = api_for(firm.accountant).post(url, {"paid_on": "2026-10-25"})
+        paid = api_for(firm.accountant).post(url, {"paid_on": "2026-10-21"})
         assert paid.status_code == 200
-        assert (paid.data["status"], paid.data["paid_on"]) == (InvoiceStatus.PAID, "2026-10-25")
+        assert (paid.data["status"], paid.data["paid_on"]) == (InvoiceStatus.PAID, "2026-10-21")
 
     def test_cancel_needs_a_reason_and_not_from_paid(self, drafted):
         firm, draft = drafted
@@ -893,11 +896,12 @@ class TestPaidAndCancelled:
         price(firm, draft)
         issue(firm, draft)
         api_for(firm.accountant).post(
-            reverse("invoice-draft-mark-paid", args=[draft.pk]), {"paid_on": "2026-10-25"}
+            reverse("invoice-draft-mark-paid", args=[draft.pk]), {"paid_on": "2026-10-21"}
         )
         refused = api_for(firm.accountant).post(url, {"reason": "x"})
         assert refused.status_code == 409
-        assert refused.data["error"]["code"] == ErrorCode.INVOICE_TRANSITION_NOT_ALLOWED.value
+        # Paid means a collection stands behind it: that goes first.
+        assert refused.data["error"]["code"] == ErrorCode.INVOICE_HAS_COLLECTIONS.value
 
     def test_an_issued_draft_can_be_cancelled_and_releases_its_number(self, drafted):
         firm, draft = drafted
@@ -1031,6 +1035,28 @@ class TestCsv:
         assert priced[2:4] == ["15.09.2026", "14.10.2026"]
         assert priced[4:6] == ["1750,50", "350,10"]
         assert priced[8] == "Taslak"
+
+    def test_free_text_never_runs_as_a_formula(self):
+        # Only attributes are read, so a stand-in draft is enough.
+        draft = SimpleNamespace(
+            status=InvoiceStatus.DRAFT,
+            customer=SimpleNamespace(legal_name='=HYPERLINK("http://x")'),
+            contract=SimpleNamespace(contract_number="+90"),
+            period_start=date(2026, 9, 1),
+            period_end=date(2026, 9, 30),
+            subtotal=Decimal("-10.50"),
+            vat_amount=Decimal("-2.10"),
+            total=Decimal("-12.60"),
+            currency="TRY",
+            invoice_number="@SUM(A1)",
+        )
+        text = documents.export_csv([cast(Any, draft)])
+        _, row = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+        assert row[0] == '\'=HYPERLINK("http://x")'
+        assert row[1] == "'+90"
+        assert row[9] == "'@SUM(A1)"
+        # Amounts the code formats stay numbers, negative ones included.
+        assert row[4:7] == ["-10,50", "-2,10", "-12,60"]
 
     def test_it_is_every_matching_draft_not_a_page(self, firm):
         for _ in range(30):

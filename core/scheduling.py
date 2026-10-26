@@ -66,6 +66,7 @@ def get_schedules() -> list[DailySchedule]:
     from apps.contracts.tasks import contract_expiry, contract_renewal_notice
     from apps.faults.tasks import purge_public_reporter_data
     from apps.inspections.tasks import correction_deadline_notice, inspection_due_notice
+    from apps.ledger.tasks import carry_over_invoices
     from apps.maintenance.tasks import maintenance_overdue, plan_maintenance
     from apps.reports.tasks import monthly_customer_reports
     from core.tasks import prune_task_results, purge_idempotency_keys
@@ -81,6 +82,10 @@ def get_schedules() -> list[DailySchedule]:
         DailySchedule("purge_attachments", purge_attachments, time(3, 15)),
         DailySchedule("prune_task_results", prune_task_results, time(3, 30)),
         DailySchedule("purge_public_reporter_data", purge_public_reporter_data, time(3, 45)),
+        # After the retention sweeps and before the morning's drafts: an
+        # invoice an old container issued or marked paid during a deploy is
+        # in the books before anybody opens them.
+        DailySchedule("carry_over_invoices", carry_over_invoices, time(4, 30)),
         # Before the working day, so the e-mails are waiting when it starts.
         # Before the working day, after the night's contract closures and the
         # retention sweeps, so a period ended yesterday is waiting at nine.

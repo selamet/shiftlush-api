@@ -1,1 +1,1 @@
-{{ company_name }} sizi müşteri portalına davet etti
+{% autoescape off %}{{ company_name }} sizi müşteri portalına davet etti{% endautoescape %}

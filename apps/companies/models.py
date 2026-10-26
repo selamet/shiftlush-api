@@ -56,6 +56,10 @@ class Company(SoftDeleteModel):
         blank=True,
     )
 
+    # The ledger (F0): no movement may be dated on or before this day. An
+    # owner setting, empty by default, that freezes the months already closed.
+    ledger_closed_through = models.DateField(null=True, blank=True)
+
     is_active = models.BooleanField(default=True)
 
     # Off until the owner turns it on: reports are generated and stored either

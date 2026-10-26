@@ -54,6 +54,22 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
     ("invoice", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
     ("fault_office", READ): set(),
     ("fault_office", WRITE): {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
+    # F0: the ledger. Read by the office's money roles; collections and
+    # payments out recorded by operations too; the books themselves (manual,
+    # transfer, opening, closed-through) by the owner and the accountant.
+    ("ledger", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    ("ledger", WRITE): set(),
+    ("ledger_document", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
+    ("ledger_document", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+    ("ledger_admin", READ): {Role.OWNER, Role.ACCOUNTANT},
+    ("ledger_admin", WRITE): {Role.OWNER, Role.ACCOUNTANT},
+    # The cash accounts and suppliers a collection or payment out is recorded
+    # against: operations picks from them, and reads nothing else of the ledger.
+    ("ledger_picker", READ): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
+    ("ledger_picker", WRITE): set(),
+    # Sending a statement is the ledger readers' (operations gets none).
+    ("ledger_statement_send", READ): set(),
+    ("ledger_statement_send", WRITE): {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
 }
 
 
