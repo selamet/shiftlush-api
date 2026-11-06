@@ -760,6 +760,12 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed since the first draft
 
+- **An organisation's tax number and a building's address note are optional.**
+  A customer of any organisation type can be created or saved without
+  `tax_number` (`FIELD_REQUIRED_FOR_CUSTOMER_TYPE` is no longer returned for it),
+  and `address_note` may be omitted or empty on a building. A tax number that is
+  given is still validated and still unique within the company; an individual
+  still needs a national ID. Relaxing a requirement is backwards compatible.
 - **A revoked refresh token no longer always revokes every session.** Replaying a
   token that rotation superseded still does, unchanged: that chain has a live
   successor, two parties hold tokens for one live session, and there is no way to

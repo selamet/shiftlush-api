@@ -67,10 +67,10 @@ class Building(CompanyOwnedModel):
     )
     street = models.CharField(max_length=150, blank=True)
     building_number = models.CharField(max_length=20, blank=True)
-    # Required free text, because new estates and public-housing districts are
-    # simply not in the address dataset. Without it a crew can be sent to a
-    # building nobody can find.
-    address_note = models.TextField()
+    # Optional free text for directions. New estates and public-housing
+    # districts are not in the address dataset, so this is often the only way a
+    # crew finds the building — but it is not demanded up front.
+    address_note = models.TextField(blank=True)
 
     # Never required: field staff open records without knowing the position, and
     # blocking on it would stop the record being created at all.

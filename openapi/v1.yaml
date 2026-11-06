@@ -7455,7 +7455,6 @@ components:
           maxLength: 20
         address_note:
           type: string
-          minLength: 1
         latitude:
           type: string
           format: decimal
@@ -7481,7 +7480,6 @@ components:
         is_active:
           type: boolean
       required:
-      - address_note
       - customer
       - name
       - type
@@ -12433,7 +12431,6 @@ components:
           maxLength: 20
         address_note:
           type: string
-          minLength: 1
         latitude:
           type: string
           format: decimal
