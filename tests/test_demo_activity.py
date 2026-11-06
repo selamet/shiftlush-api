@@ -694,8 +694,13 @@ class TestLedger:
     def test_the_finance_summary_is_not_empty(self, seeded):
         from apps.ledger.finance import summary
 
+        # The demo's money moves are spread over the past weeks, so the first
+        # days of a month can genuinely hold none. Judge a whole month: this
+        # one once it is half gone, otherwise the one before it.
+        today = local_today()
+        reference = today if today.day >= 15 else today.replace(day=1) - timedelta(days=1)
         with company_context(seeded.id):
-            (lira,) = summary("month", local_today()).currencies
+            (lira,) = summary("month", reference).currencies
         assert lira.receivables > 0
         assert lira.payables > 0
         assert lira.money_in > 0
