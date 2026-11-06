@@ -2249,6 +2249,10 @@ class TestApi:
         with (
             patch("apps.ledger.posting.local_today", return_value=today),
             patch("apps.ledger.api.v1.views.local_today", return_value=today),
+            # `owed` dates the invoice from this module's own `local_today`;
+            # left unpatched, it is dated against the real calendar and lands
+            # after the pinned day once that is more than 20 days behind.
+            patch(f"{__name__}.local_today", return_value=today),
         ):
             bank = bank_of(books, "Ziraat")
             owed(books, books.customer, "1000.00", days_ago=20)

@@ -535,12 +535,12 @@ class TestTypeRules:
         response = api_for(owner).post(reverse("customer-list"), corporate(national_id=TCKN))
         assert response.status_code == 400
 
-    def test_an_organisation_needs_a_tax_number(self, firm_a):
+    def test_an_organisation_may_be_created_without_a_tax_number(self, firm_a):
         _, owner, _ = firm_a
         body = corporate()
         del body["tax_number"]
         response = api_for(owner).post(reverse("customer-list"), body)
-        assert response.status_code == 400
+        assert response.status_code == 201
 
     @pytest.mark.parametrize(
         "customer_type",
@@ -551,12 +551,17 @@ class TestTypeRules:
             CustomerType.PUBLIC,
         ],
     )
-    def test_every_organisation_type_is_held_to_the_same_rule(self, firm_a, customer_type):
+    def test_every_organisation_type_accepts_an_empty_tax_number(self, firm_a, customer_type):
         _, owner, _ = firm_a
         response = api_for(owner).post(
             reverse("customer-list"),
             {"type": customer_type, "legal_name": "No number", "tax_number": ""},
         )
+        assert response.status_code == 201
+
+    def test_an_organisation_tax_number_is_still_validated_when_given(self, firm_a):
+        _, owner, _ = firm_a
+        response = api_for(owner).post(reverse("customer-list"), corporate(tax_number="1111111111"))
         assert response.status_code == 400
 
     def test_a_well_formed_individual_is_accepted(self, firm_a):
@@ -589,11 +594,20 @@ class TestTypeRules:
     def test_clearing_the_required_identifier_is_refused(self, firm_a):
         _, owner, _ = firm_a
         client = api_for(owner)
+        created = client.post(reverse("customer-list"), individual())
+        response = client.patch(
+            reverse("customer-detail", args=[created.data["id"]]), {"national_id": ""}
+        )
+        assert response.status_code == 400
+
+    def test_an_organisation_may_clear_its_tax_number(self, firm_a):
+        _, owner, _ = firm_a
+        client = api_for(owner)
         created = client.post(reverse("customer-list"), corporate())
         response = client.patch(
             reverse("customer-detail", args=[created.data["id"]]), {"tax_number": ""}
         )
-        assert response.status_code == 400
+        assert response.status_code == 200
 
     def test_an_unrelated_field_can_still_be_edited_on_a_record_that_predates_the_rule(
         self, firm_a
@@ -678,3 +692,15 @@ class TestBillingAddress:
         client.post(reverse("customer-list"), corporate(neighborhood=kadikoy.pk))
         rows = client.get(reverse("customer-list"), {"search": "acme"}).data["results"]
         assert [row["district_name"] for row in rows] == ["Kadıköy"]
+
+
+class TestBuildingAddressNote:
+    def test_a_building_may_be_created_without_an_address_note(self, firm_a):
+        _, owner, customer = firm_a
+        response = api_for(owner).post(
+            reverse("building-list"),
+            {"customer": str(customer.id), "name": "A Blok", "type": "residential"},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["address_note"] == ""

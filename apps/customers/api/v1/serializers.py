@@ -291,10 +291,14 @@ class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer[Customer]
     def _check_type_rules(self, attrs: dict[str, Any]) -> None:
         customer_type = attrs.get("type") or getattr(self.instance, "type", None)
         forbidden: tuple[str, ...]
+        required: str | None
         if customer_type == CustomerType.INDIVIDUAL:
             forbidden, required = ("tax_number", "tax_office"), "national_id"
         elif customer_type in ORGANISATION_TYPES:
-            forbidden, required = ("national_id",), "tax_number"
+            # The tax number is optional: offices often open the record before
+            # the paperwork arrives. When one is given it is still validated
+            # and still has to be unique within the company.
+            forbidden, required = ("national_id",), None
         else:
             # No type at all; the field validator has already said so.
             return
@@ -303,7 +307,11 @@ class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer[Customer]
         for field in forbidden:
             if self._effective(attrs, field):
                 errors[field] = [_reason(ErrorCode.FIELD_NOT_VALID_FOR_CUSTOMER_TYPE)]
-        if self._must_be_present(attrs, required) and not self._effective(attrs, required):
+        if (
+            required is not None
+            and self._must_be_present(attrs, required)
+            and not self._effective(attrs, required)
+        ):
             errors[required] = [_reason(ErrorCode.FIELD_REQUIRED_FOR_CUSTOMER_TYPE)]
         if errors:
             raise serializers.ValidationError(errors)
