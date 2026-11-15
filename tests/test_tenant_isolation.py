@@ -26,7 +26,7 @@ plain ``models.Manager`` passes every other test in this suite.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -71,11 +71,14 @@ from core.exceptions import BusinessRuleError
 from core.managers import TenantManager
 from core.models import TenantMismatchError
 from core.permissions import TechnicianScopedQueryset
+from core.scheduling import local_today
 from tests.identifiers import tax_number
 
 PASSWORD = "correct-horse-battery"
 NEW_PASSWORD = "staple-battery-horse"
-TODAY = date.today()
+# The firm's calendar, not the machine's: the finance summary's "today" is
+# local_today(), and between 21:00 and 24:00 UTC the two are different days.
+TODAY = local_today()
 
 
 @pytest.fixture
