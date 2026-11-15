@@ -26,6 +26,8 @@ from apps.notifications.models import Notification, NotificationKind
 from tests.test_faults import Shop
 
 ADDRESS = "203.0.113.7"
+PHONE = "0532 123 45 67"
+STORED_PHONE = "+905321234567"
 
 
 @pytest.fixture
@@ -38,7 +40,7 @@ def url(token: str) -> str:
 
 
 def send(token: str, address: str = ADDRESS, client: APIClient | None = None, **body: Any) -> Any:
-    payload = {"description": "Asansör katlar arasında durdu", **body}
+    payload = {"description": "Asansör katlar arasında durdu", "reporter_phone": PHONE, **body}
     return (client or APIClient()).post(url(token), payload, format="json", REMOTE_ADDR=address)
 
 
@@ -48,7 +50,7 @@ def faults() -> list[Fault]:
 
 class TestTheAnswer:
     def test_202_with_a_reference_and_nothing_else(self, shop):
-        response = send(shop.elevator.qr_token, reporter_name="Ayşe", reporter_phone="0532")
+        response = send(shop.elevator.qr_token, reporter_name="Ayşe")
 
         assert response.status_code == 202
         assert set(response.data) == {"reference"}
@@ -75,12 +77,34 @@ class TestTheAnswer:
         assert fault.channel == FaultChannel.PUBLIC_QR
         assert fault.status == FaultStatus.OPEN
         assert fault.reported_by_id is None
-        assert (fault.reporter_name, fault.reporter_phone) == ("Ayşe", "05321234567")
+        assert (fault.reporter_name, fault.reporter_phone) == ("Ayşe", STORED_PHONE)
 
-    def test_name_and_phone_are_optional(self, shop):
+    def test_the_name_is_optional(self, shop):
         assert send(shop.elevator.qr_token).status_code == 202
         (fault,) = faults()
-        assert (fault.reporter_name, fault.reporter_phone) == ("", "")
+        assert (fault.reporter_name, fault.reporter_phone) == ("", STORED_PHONE)
+
+    @pytest.mark.parametrize("body", [{"reporter_phone": ""}, {"reporter_phone": "  "}])
+    def test_a_phone_is_required(self, shop, body):
+        response = send(shop.elevator.qr_token, **body)
+        assert response.status_code == 400
+        assert [d["field"] for d in response.data["error"]["details"]] == ["reporter_phone"]
+        assert faults() == []
+
+    def test_a_missing_phone_is_refused(self, shop):
+        response = APIClient().post(
+            url(shop.elevator.qr_token), {"description": "Durdu"}, format="json"
+        )
+        assert response.status_code == 400
+        assert faults() == []
+
+    def test_a_phone_that_is_not_a_number_is_refused(self, shop):
+        response = send(shop.elevator.qr_token, reporter_phone="0532")
+        assert response.status_code == 400
+        assert response.data["error"]["details"] == [
+            {"field": "reporter_phone", "code": "INVALID_PHONE"}
+        ]
+        assert faults() == []
 
     def test_a_stale_token_in_the_browser_does_not_get_in_the_way(self, shop):
         client = APIClient()
@@ -179,10 +203,13 @@ class TestTheMerge:
         assert Notification.unscoped.filter(recipient=shop.owner).count() == 1
 
     def test_a_merged_report_fills_in_a_missing_contact(self, shop):
+        # A report from before the phone was required, or one whose contact
+        # the retention job has already cleared.
         send(shop.elevator.qr_token)
-        send(shop.elevator.qr_token, reporter_name="Mehmet", reporter_phone="0555")
+        Fault.unscoped.update(reporter_name="", reporter_phone="")
+        send(shop.elevator.qr_token, reporter_name="Mehmet", reporter_phone="0555 111 22 33")
         (fault,) = faults()
-        assert (fault.reporter_name, fault.reporter_phone) == ("Mehmet", "0555")
+        assert (fault.reporter_name, fault.reporter_phone) == ("Mehmet", "+905551112233")
 
     def test_a_merged_report_can_raise_the_priority_and_says_so(self, shop):
         send(shop.elevator.qr_token)
@@ -294,7 +321,9 @@ class TestATrappedPassengerNeedsNoWords:
 
     def test_trapped_without_a_description_is_accepted(self, shop):
         response = APIClient().post(
-            url(shop.elevator.qr_token), {"someone_trapped": True}, format="json"
+            url(shop.elevator.qr_token),
+            {"someone_trapped": True, "reporter_phone": PHONE},
+            format="json",
         )
         assert response.status_code == 202, response.data
         (fault,) = faults()
@@ -303,7 +332,9 @@ class TestATrappedPassengerNeedsNoWords:
 
     @pytest.mark.parametrize("body", [{}, {"description": "  "}, {"elevator_stopped": True}])
     def test_otherwise_a_description_is_required(self, shop, body):
-        response = APIClient().post(url(shop.elevator.qr_token), body, format="json")
+        response = APIClient().post(
+            url(shop.elevator.qr_token), {"reporter_phone": PHONE, **body}, format="json"
+        )
         assert response.status_code == 400
         assert response.data["error"]["details"] == [{"field": "description", "code": "required"}]
         assert faults() == []
