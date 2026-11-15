@@ -13,7 +13,8 @@ from uuid import UUID
 
 from rest_framework import serializers
 
-from apps.users.models import Invitation, Role, User
+from apps.users.models import Invitation, Role, User, seeded_role
+from core.context import require_current_company_id
 from core.validators import normalize_email, normalize_phone
 
 
@@ -125,7 +126,7 @@ class InvitationCreateSerializer(serializers.Serializer[Any]):
     def validate_role(self, value: str) -> str:
         # An invitation that could mint an owner would let an administrator
         # promote themselves past the one role they do not hold.
-        if value == Role.OWNER:
+        if seeded_role(require_current_company_id(), value).is_owner:
             raise serializers.ValidationError("Owners are not created by invitation.")
         return value
 

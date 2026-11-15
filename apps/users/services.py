@@ -31,6 +31,7 @@ from apps.users.models import (
     UserCustomer,
     seeded_role,
 )
+from apps.users.roles import seed_company_roles
 from core import mail
 from core.context import system_context
 from core.error_codes import ErrorCode
@@ -90,7 +91,6 @@ def issue_tokens(
     # The company travels in the token so the tenant middleware does not have to
     # re-read the user on every request.
     access["company_id"] = str(user.company_id) if user.company_id else None
-    access["role"] = user.role
 
     refresh = _new_token()
     expires_at = timezone.now() + REFRESH_TOKEN_LIFETIME
@@ -134,7 +134,7 @@ def register_company(
             company=company,
             first_name=first_name,
             last_name=last_name,
-            role=Role.OWNER,
+            company_role=seed_company_roles(company)[Role.OWNER],
         )
         # Every firm has a till from its first day (F0).
         create_default_cash_account(company)
@@ -637,11 +637,9 @@ def deactivate_user(*, user: User) -> None:
     A company must keep at least one active owner, or nobody can change company
     settings or manage users ever again.
     """
-    if user.role == Role.OWNER:
+    if user.is_owner:
         remaining = (
-            User.objects.filter(
-                company=user.company, company_role__system_key=Role.OWNER, is_active=True
-            )
+            User.objects.filter(company=user.company, company_role__is_owner=True, is_active=True)
             .exclude(pk=user.pk)
             .count()
         )
@@ -654,14 +652,14 @@ def deactivate_user(*, user: User) -> None:
 
 
 def _is_last_active_owner(user: User) -> bool:
-    if user.role != Role.OWNER or not user.is_active:
+    if not user.is_owner or not user.is_active:
         return False
     if user.company_id is None:
         # No firm, so not the last owner of one. Only a superuser gets here.
         return False
     return (
         not User.objects.filter(
-            company_id=user.company_id, company_role__system_key=Role.OWNER, is_active=True
+            company_id=user.company_id, company_role__is_owner=True, is_active=True
         )
         .exclude(pk=user.pk)
         .exists()

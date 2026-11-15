@@ -26,7 +26,7 @@ from apps.users.api.v1.team_serializers import (
     UserSerializer,
     UserUpdateSerializer,
 )
-from apps.users.models import Invitation, Role, User
+from apps.users.models import Invitation, Role, User, seeded_role
 from core.context import require_current_company_id
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
@@ -107,7 +107,11 @@ class UserViewSet(
         form.is_valid(raise_exception=True)
 
         role = form.validated_data.pop("role", None)
-        if role == Role.OWNER and authenticated_user(request).role != Role.OWNER:
+        if (
+            role is not None
+            and seeded_role(user.company_id, role).is_owner
+            and not authenticated_user(request).is_owner
+        ):
             # The rule InvitationCreateSerializer already applies, on the other
             # path to the same outcome: an administrator who could mint an owner
             # could promote themselves past the one role they do not hold.

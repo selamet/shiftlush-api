@@ -268,6 +268,12 @@ class User(SeedRoleCompat, AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
         return role is not None and role.assigned_only
 
     @property
+    def is_owner(self) -> bool:
+        """Holds the company's owner role."""
+        role = self.loaded_company_role()
+        return role is not None and role.is_owner
+
+    @property
     def is_field_staff(self) -> bool:
         """Can be given customers, and sent on visits and to faults."""
         role = self.loaded_company_role()
