@@ -94,7 +94,7 @@ _RESOURCES: list[Resource] = [
     # its own resource rather than by narrowing "user"/WRITE, because narrowing
     # that would take editing away from the administrator too. There is nothing
     # to read here, so nobody may read it.
-    _resource("user_deactivation", "company", write={OWNER}),
+    _resource("user_deactivation", "company", write={OWNER}, delete=True),
     # Separate from "user" although the roles match today: inviting somebody is
     # not the same act as editing a colleague's record, and the day they need
     # to be granted separately this catalogue is where it happens.
@@ -174,7 +174,7 @@ _RESOURCES: list[Resource] = [
     # A visit is not a technician's to correct after the fact - see
     # resource_by_action on MaintenanceVisitViewSet, the same mechanism the
     # QR-label endpoint uses to split "print" from "edit the elevator".
-    _resource("maintenance_visit_edit", "work", write={OWNER, ADMIN}),
+    _resource("maintenance_visit_edit", "work", write={OWNER, ADMIN}, delete=True),
     # The monthly plan (M3). A technician reads it - it is their work list,
     # narrowed in PlannedVisitViewSet to their own rows and the unassigned rows
     # of their customers - but deciding who goes where is the office's. One
@@ -201,7 +201,7 @@ _RESOURCES: list[Resource] = [
         write={OWNER, ADMIN, OPS, TECH},
         scopable=True,
     ),
-    _resource("fault_office", "faults", write=_OFFICE),
+    _resource("fault_office", "faults", write=_OFFICE, delete=True),
     # Periodic inspections (M5). The office records what the inspection body
     # found and arranges the fixes; technicians read it for the lifts of their
     # customers (narrowed in the viewsets), because they do the fixing.

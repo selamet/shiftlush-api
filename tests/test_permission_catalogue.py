@@ -68,3 +68,16 @@ def test_scopable_is_exactly_the_narrowed_resources():
         "attachment",
         "qr_label",
     }
+
+
+@pytest.mark.parametrize(
+    "resource", ["maintenance_visit_edit", "fault_office", "user_deactivation"]
+)
+def test_resources_guarding_a_destroy_can_be_deleted(resource):
+    # These are routed to by resource_by_action for destroy, cancel and
+    # deactivate; without DELETE nobody could ever perform those actions.
+    r = CATALOGUE[resource]
+    assert r.actions == {WRITE, DELETE}
+    assert {k for k, a in r.seeds.items() if DELETE in a} == {
+        k for k, a in r.seeds.items() if WRITE in a
+    }
