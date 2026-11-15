@@ -25,7 +25,10 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from apps.users.models import Role
-from core.permission_catalogue import READ, WRITE
+
+# Re-exported: views and tests name the actions next to `may()`, from here.
+from core.permission_catalogue import READ as READ
+from core.permission_catalogue import WRITE as WRITE
 
 # Generic so that a caller narrowing a Building queryset is handed Buildings
 # back, not bare Models.
