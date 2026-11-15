@@ -6627,6 +6627,7 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/PublicFaultReportRequest'
+        required: true
       responses:
         '202':
           content:
@@ -14012,12 +14013,16 @@ components:
           maxLength: 100
         reporter_phone:
           type: string
-          default: ''
+          minLength: 1
+          description: A number the office can call back on. Turkish numbers, any
+            common spelling.
           maxLength: 30
         website:
           type: string
           default: ''
           description: Leave empty. A form that fills this in is treated as automated.
+      required:
+      - reporter_phone
     RegisterRequest:
       type: object
       description: |-

@@ -760,6 +760,15 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed since the first draft
 
+- **A public fault report needs a phone number.** `POST
+  /public/elevators/{qr_token}/faults/` now refuses a missing or blank
+  `reporter_phone` (`required`) and one that is not a Turkish number
+  (`INVALID_PHONE`); the number is stored normalised to E.164, like every other
+  phone in the system. The office has to be able to call the resident back to
+  confirm a report. A trapped passenger still needs no description, and the
+  name stays optional. This tightens a request, so a client that sent no phone
+  must now ask for one; the only such client is the web's QR page, changed in
+  the same release.
 - **An organisation's tax number and a building's address note are optional.**
   A customer of any organisation type can be created or saved without
   `tax_number` (`FIELD_REQUIRED_FOR_CUSTOMER_TYPE` is no longer returned for it),

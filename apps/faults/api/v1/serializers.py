@@ -8,6 +8,7 @@ from apps.elevators.models import Elevator
 from apps.faults.models import Fault, FaultPriority
 from apps.users.models import Role, User
 from core.requests import authenticated_user
+from core.validators import normalize_phone
 
 
 class StrictMixin:
@@ -240,8 +241,12 @@ class PublicFaultReportSerializer(serializers.Serializer[Any]):
     reporter_name = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default=""
     )
+    #: Required: a report the office cannot call back about is one it cannot
+    #: confirm, and the resident at the lift is often the only witness.
+    #: Normalised like every other phone number in the system.
     reporter_phone = serializers.CharField(
-        max_length=30, required=False, allow_blank=True, default=""
+        max_length=30,
+        help_text="A number the office can call back on. Turkish numbers, any common spelling.",
     )
     #: The honeypot. Hidden from people by the page; a bot filling every field
     #: fills this one, and is answered exactly like a person while nothing is
@@ -252,6 +257,9 @@ class PublicFaultReportSerializer(serializers.Serializer[Any]):
         default="",
         help_text="Leave empty. A form that fills this in is treated as automated.",
     )
+
+    def validate_reporter_phone(self, value: str) -> str:
+        return normalize_phone(value)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         return require_description_unless_trapped(super().validate(attrs))
