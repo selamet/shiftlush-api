@@ -24,9 +24,11 @@ from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from apps.users.models import Role
+from apps.users.models import Role, RoleGrant
+from core.permission_catalogue import CATALOGUE, RECEIVE
 
 # Re-exported: views and tests name the actions next to `may()`, from here.
+from core.permission_catalogue import DELETE as DELETE
 from core.permission_catalogue import READ as READ
 from core.permission_catalogue import WRITE as WRITE
 
@@ -34,201 +36,72 @@ from core.permission_catalogue import WRITE as WRITE
 # back, not bare Models.
 ModelT = TypeVar("ModelT", bound=Model)
 
-# The matrix from the specification, written once. A viewset names a resource
-# and the action it is performing; the answer comes from here rather than from
-# a condition repeated across nine modules.
 
-MATRIX: dict[str, dict[str, set[str]]] = {
-    "company": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN, Role.ACCOUNTANT},
-        # Only the owner changes company settings.
-        WRITE: {Role.OWNER},
-    },
-    "user": {
-        READ: {Role.OWNER, Role.ADMIN},
-        WRITE: {Role.OWNER, Role.ADMIN},
-    },
-    # The one row of 6.2 the administrator is not ticked on, while every other
-    # user-management row ticks them. Listing, inviting and editing a colleague are
-    # an administrator's job; ending someone's access is the owner's. Written as
-    # its own resource rather than by narrowing "user"/WRITE, because narrowing
-    # that would take editing away from the administrator too. There is nothing
-    # to read here, so nobody may read it.
-    "user_deactivation": {
-        READ: set(),
-        WRITE: {Role.OWNER},
-    },
-    # Separate from "user" although the roles match today: inviting somebody is
-    # not the same act as editing a colleague's record, and the day they need
-    # to be granted separately this table is where it happens.
-    "invitation": {
-        READ: {Role.OWNER, Role.ADMIN},
-        WRITE: {Role.OWNER, Role.ADMIN},
-    },
-    "customer": {
-        # The technician is here but sees only assigned customers; that
-        # narrowing happens in the queryset, not in this table.
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "building": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "complex": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "elevator": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "contract": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    # Not a resource of its own but a slice of the contract. Operations runs the
-    # fleet, accounting runs the money, and neither needs the other's column.
-    "contract_financials": {
-        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-    },
-    "qr_label": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-    },
-    "audit_log": {
-        READ: {Role.OWNER, Role.ADMIN},
-        WRITE: set(),
-    },
-    "attachment": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "maintenance_visit": {
-        # A technician records their own visit; Operations can too, on
-        # behalf of a technician without an account yet. Accounting has no
-        # reason to see this and Operations already covers Owner/Admin's
-        # oversight need without adding them here separately.
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-    },
-    # A visit is not a technician's to correct after the fact - see
-    # resource_by_action on MaintenanceVisitViewSet, the same mechanism the
-    # QR-label endpoint uses to split "print" from "edit the elevator".
-    "maintenance_visit_edit": {
-        READ: set(),
-        WRITE: {Role.OWNER, Role.ADMIN},
-    },
-    # The monthly plan (M3). A technician reads it — it is their work list,
-    # narrowed in PlannedVisitViewSet to their own rows and the unassigned rows
-    # of their customers — but deciding who goes where is the office's. One
-    # resource rather than a read/edit pair like the visit's: every write here
-    # (PATCH, bulk-assign) belongs to the same three roles. Accounting has no
-    # reason to see it, as with visits.
-    # Faults (M4). Anyone who goes to lifts may report one, and the technician
-    # works the ones sent to them (arrive, resolve — narrowed to the assigned
-    # technician in FaultViewSet). Sending, closing, cancelling and correcting
-    # are the office's, as `fault_office`. Accounting reads closed faults
-    # through billing (M7), not here.
-    "fault": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-    },
-    "fault_office": {
-        READ: set(),
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    # Periodic inspections (M5). The office records what the inspection body
-    # found and arranges the fixes; technicians read it for the lifts of their
-    # customers (narrowed in the viewsets), because they do the fixing.
-    # Accounting has no access.
-    "inspection": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    # Running the customer portal (M6): inviting a customer's contacts, seeing
-    # their accounts, closing one. The office's job; a technician and the
-    # accountant have no say in who outside the firm can sign in.
-    "portal_access": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    # Invoice drafts (M7) — the first module where the accountant is the main
-    # user. Operations and technicians have no part in billing.
-    "invoice": {
-        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-    },
-    # Monthly customer reports. The accountant reads them (they are what the
-    # customer was told); only the office makes them, and regenerating replaces
-    # a file that was already sent, so it is narrower.
-    "customer_report": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    "customer_report_regenerate": {
-        READ: set(),
-        WRITE: {Role.OWNER, Role.ADMIN},
-    },
-    "planned_visit": {
-        READ: {Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.OPERATIONS},
-    },
-    # The ledger (F0). Reading accounts, cash accounts, statements and the
-    # summary. Operations sees a customer's balance only, through the customer
-    # read, not here; the technician has no part in money until F1. Nothing is
-    # written through this resource: every write is a document, below.
-    "ledger": {
-        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-        WRITE: set(),
-    },
-    # Collections and payments out. Operations takes the money at the door, so
-    # it records them, but reads the ledger no further than above.
-    "ledger_document": {
-        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
-    },
-    # What a collection or a payment out is recorded against: the cash
-    # accounts and suppliers to pick from. Operations records those documents,
-    # so it reads these lists, and nothing else of the ledger: not movements,
-    # statements, documents or the summary. Nothing is written through it.
-    "ledger_picker": {
-        READ: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT, Role.OPERATIONS},
-        WRITE: set(),
-    },
-    # E-mailing a statement to the customer: a POST, but it moves no money, so
-    # it is for whoever reads the ledger. Operations has no part in statements.
-    "ledger_statement_send": {
-        READ: set(),
-        WRITE: {Role.OWNER, Role.ADMIN, Role.ACCOUNTANT},
-    },
-    # Manual entries, transfers, opening balances and the closed-through date:
-    # the books themselves, the owner's and the accountant's alone.
-    "ledger_admin": {
-        READ: {Role.OWNER, Role.ACCOUNTANT},
-        WRITE: {Role.OWNER, Role.ACCOUNTANT},
-    },
-}
+def effective_permissions(user: Any) -> dict[str, frozenset[str]]:
+    """What the user's company role may do: resource -> the actions it holds.
+
+    The owner role holds every action of every catalogue resource, computed
+    rather than stored, so no edit to the grants can lock a firm out of its own
+    settings. Anyone else holds what their role's grant rows say; no role, or
+    no company, holds nothing.
+
+    Read without a company in context - signing in, issuing a token and
+    background jobs have none - and remembered on the user instance, so a
+    request pays for it once however many checks it makes.
+    """
+    if user is None:
+        return {}
+    cached: dict[str, frozenset[str]] | None = getattr(user, "_perm_cache", None)
+    if cached is not None:
+        return cached
+    perms = _load_permissions(user)
+    user._perm_cache = perms
+    return perms
 
 
-def may(role: str | None, resource: str, action: str) -> bool:
+def _load_permissions(user: Any) -> dict[str, frozenset[str]]:
+    if getattr(user, "company_id", None) is None:
+        return {}
+    role = user.loaded_company_role() if hasattr(user, "loaded_company_role") else None
     if role is None:
-        return False
-    return role in MATRIX.get(resource, {}).get(action, set())
+        return {}
+    if role.is_owner:
+        return {r.key: r.actions for r in CATALOGUE.values()}
+    # Not tenant-scoped: a grant belongs to the role, and the role is the one
+    # the user points at.
+    perms: dict[str, frozenset[str]] = {}
+    for grant in RoleGrant.objects.filter(role_id=role.pk):
+        held = frozenset(
+            action
+            for action, granted in (
+                (READ, grant.can_read),
+                (WRITE, grant.can_write),
+                (DELETE, grant.can_delete),
+                (RECEIVE, grant.can_receive),
+            )
+            if granted
+        )
+        if held:
+            perms[grant.resource] = held
+    return perms
 
 
-def may_see_balances(role: str | None) -> bool:
-    """Whether a customer's ledger balance is shown to this role.
+def may(user: Any, resource: str, action: str) -> bool:
+    """Whether the user's role holds `action` on `resource`. Unknown is no."""
+    return action in effective_permissions(user).get(resource, frozenset())
+
+
+def may_see_balances(user: Any) -> bool:
+    """Whether a customer's ledger balance is shown to this user.
 
     Whoever reads the ledger, and whoever records money against a customer
     (operations, "balances only, the customer page"); not the technician.
     """
-    return may(role, "ledger", READ) or may(role, "ledger_document", WRITE)
+    return may(user, "ledger", READ) or may(user, "ledger_document", WRITE)
 
 
 class RolePermission(permissions.BasePermission):
-    """Checks the matrix for the viewset's declared resource.
+    """Checks the user's role for the viewset's declared resource.
 
     Every viewset sets `resource`; a viewset that forgets is denied rather than
     allowed, so the failure mode of forgetting is a broken endpoint in testing
@@ -238,20 +111,44 @@ class RolePermission(permissions.BasePermission):
     different permission from the rest of the resource. Printing a QR label is
     the case that forced this: it hangs off the elevator endpoint but a
     technician may do it, while editing an elevator is not theirs to do.
+
+    The action follows the method: a safe method reads, `DELETE` deletes, and
+    anything else writes. An entry in `resource_by_action` may name the action
+    too, as a `(resource, action)` pair, for a custom action that removes or
+    voids a record - a cancel or a deactivation is a POST, but granting it is
+    granting DELETE, not WRITE.
     """
+
+    @staticmethod
+    def action_for(method: str) -> str:
+        if method in permissions.SAFE_METHODS:
+            return READ
+        if method == "DELETE":
+            return DELETE
+        return WRITE
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         user = request.user
         if not user or not user.is_authenticated:
             return False
 
+        method = (request.method or "").lower()
+        if method not in view.http_method_names or not hasattr(view, method):
+            # Not served here at all: the view answers 405 for everyone. Left
+            # to us, a method no resource has an action for (DELETE where
+            # nothing is deleted) would read as a 403, as if it could be granted.
+            return True
+
         overrides = getattr(view, "resource_by_action", {})
-        resource = overrides.get(getattr(view, "action", None)) or getattr(view, "resource", None)
+        override = overrides.get(getattr(view, "action", None))
+        if isinstance(override, tuple):
+            resource, action = override
+        else:
+            resource = override or getattr(view, "resource", None)
+            action = self.action_for(request.method or "")
         if resource is None:
             return False
-
-        action = READ if request.method in permissions.SAFE_METHODS else WRITE
-        return may(getattr(user, "role", None), resource, action)
+        return may(user, resource, action)
 
 
 class TechnicianScopedQueryset:

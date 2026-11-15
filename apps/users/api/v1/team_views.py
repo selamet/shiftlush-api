@@ -32,7 +32,7 @@ from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate
-from core.permissions import RolePermission
+from core.permissions import DELETE, RolePermission
 from core.requests import authenticated_company, authenticated_user
 
 
@@ -66,7 +66,8 @@ class UserViewSet(
     # this viewset, so without this line it resolves to "user"/WRITE and an
     # administrator is let through — the rule was written down and never
     # enforced.
-    resource_by_action = {"deactivate": "user_deactivation"}
+    # Ending someone's access removes them from the team: DELETE, not WRITE.
+    resource_by_action = {"deactivate": ("user_deactivation", DELETE)}
     # Never served — get_queryset() below replaces it on every request. It is
     # here so the schema generator can find the model without running a
     # request-time code path, and it is `none()` rather than `all()` so that if

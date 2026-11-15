@@ -260,8 +260,9 @@ _RESOURCES: list[Resource] = [
     # it is for whoever reads the ledger. Operations has no part in statements.
     _resource("ledger_statement_send", "money", write={OWNER, ADMIN, ACCT}),
     # Manual entries, transfers, opening balances and the closed-through date:
-    # the books themselves, the owner's and the accountant's alone.
-    _resource("ledger_admin", "money", read={OWNER, ACCT}, write={OWNER, ACCT}),
+    # the books themselves, the owner's and the accountant's alone. Cancelling
+    # one of those documents voids it, hence DELETE.
+    _resource("ledger_admin", "money", read={OWNER, ACCT}, write={OWNER, ACCT}, delete=True),
     # Who receives which notification, matching today's hard-wired recipients.
     # contracts/tasks.py
     _notify("notify_contract", "customers", {OWNER, ADMIN}),

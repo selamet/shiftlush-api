@@ -45,7 +45,7 @@ from apps.properties.services import position_of
 from apps.users.models import Role, User
 from core.context import require_current_company_id
 from core.filters import TenantFilterSet
-from core.permissions import RolePermission
+from core.permissions import DELETE, RolePermission
 from core.requests import authenticated_user
 from core.scheduling import local_today
 from core.viewsets import TenantViewSet
@@ -77,7 +77,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         "technicians": "maintenance_visit",
         "update": "maintenance_visit_edit",
         "partial_update": "maintenance_visit_edit",
-        "destroy": "maintenance_visit_edit",
+        "destroy": ("maintenance_visit_edit", DELETE),
     }
     # Visits are sent from a phone's outbox and retried on a bad connection;
     # without a key, a retry records the visit twice (spec 8.10).

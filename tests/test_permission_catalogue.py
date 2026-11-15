@@ -81,3 +81,11 @@ def test_resources_guarding_a_destroy_can_be_deleted(resource):
     assert {k for k, a in r.seeds.items() if DELETE in a} == {
         k for k, a in r.seeds.items() if WRITE in a
     }
+
+
+def test_cancelling_the_books_is_delete_for_who_writes_them():
+    # Manual entries, transfers and opening balances are voided by a cancel,
+    # which checks DELETE; it stays with the owner and the accountant.
+    r = CATALOGUE["ledger_admin"]
+    assert DELETE in r.actions
+    assert {k for k, a in r.seeds.items() if DELETE in a} == {"owner", "accountant"}

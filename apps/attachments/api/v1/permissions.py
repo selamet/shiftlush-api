@@ -1,6 +1,6 @@
 """One narrow exception on top of the resource matrix.
 
-A technician cannot write any attachment per core.permissions.MATRIX. The
+A technician is not granted WRITE on attachments by the seeded roles. The
 design doc's "Attachment permission carve-out" paragraph
 (docs/superpowers/specs/2026-09-12-maintenance-visit-design.md) spells out
 the exception: a technician may `POST` to the attachment endpoint only when

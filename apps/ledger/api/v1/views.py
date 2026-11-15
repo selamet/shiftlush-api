@@ -75,7 +75,7 @@ from core.exceptions import ServiceUnavailable
 from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate, replay_protected
 from core.pagination import StandardPagination
-from core.permissions import READ, RolePermission, may
+from core.permissions import DELETE, READ, RolePermission, may
 from core.requests import authenticated_company, authenticated_company_id, authenticated_user
 from core.scheduling import local_today
 
@@ -416,8 +416,7 @@ class CashAccountViewSet(
         Such a reader gets the slim shape: no balance, no IBAN, and no ordering
         by a balance it may not see (an ordering would leak it as a ranking).
         """
-        role = getattr(self.request.user, "role", None)
-        return self.action in ("list", "retrieve") and not may(role, "ledger", READ)
+        return self.action in ("list", "retrieve") and not may(self.request.user, "ledger", READ)
 
     def initial(self, request: Request, *args: Any, **kwargs: Any) -> None:
         super().initial(request, *args, **kwargs)
@@ -541,7 +540,8 @@ class _DocumentViewSet[D: (Collection, PaymentOut, ManualEntry, Transfer, Openin
     """Created, read and cancelled; never edited, never deleted.
 
     A create needs an `Idempotency-Key`: a retried request that recorded the
-    money twice is exactly what the ledger exists to prevent.
+    money twice is exactly what the ledger exists to prevent. A cancel voids
+    the document, so each subclass routes it to its resource's DELETE.
     """
 
     permission_classes = [RolePermission]
@@ -590,6 +590,7 @@ class CollectionViewSet(_DocumentViewSet[Collection]):
     """Money received (tahsilat): a credit on the account, cash in."""
 
     resource = "ledger_document"
+    resource_by_action = {"cancel": ("ledger_document", DELETE)}
     queryset = Collection.objects.none()
     serializer_class = CollectionReadSerializer
     filterset_class = CollectionFilter
@@ -652,6 +653,7 @@ class PaymentOutViewSet(_DocumentViewSet[PaymentOut]):
     """Money paid out (tediye): a debit on the account, cash out."""
 
     resource = "ledger_document"
+    resource_by_action = {"cancel": ("ledger_document", DELETE)}
     queryset = PaymentOut.objects.none()
     serializer_class = PaymentOutReadSerializer
     filterset_class = PaymentOutFilter
@@ -679,6 +681,7 @@ class ManualEntryViewSet(_DocumentViewSet[ManualEntry]):
     """A debit or credit with no cash behind it, and a reason. Owner and accountant."""
 
     resource = "ledger_admin"
+    resource_by_action = {"cancel": ("ledger_admin", DELETE)}
     queryset = ManualEntry.objects.none()
     serializer_class = ManualEntryReadSerializer
     filterset_fields = ["account", "direction"]
@@ -705,6 +708,7 @@ class TransferViewSet(_DocumentViewSet[Transfer]):
     """A transfer (virman), between two accounts or two cash accounts."""
 
     resource = "ledger_admin"
+    resource_by_action = {"cancel": ("ledger_admin", DELETE)}
     queryset = Transfer.objects.none()
     serializer_class = TransferReadSerializer
     filterset_fields = ["kind"]
@@ -731,6 +735,7 @@ class OpeningBalanceViewSet(_DocumentViewSet[OpeningBalance]):
     """A balance carried over at go-live (devir). Owner and accountant."""
 
     resource = "ledger_admin"
+    resource_by_action = {"cancel": ("ledger_admin", DELETE)}
     queryset = OpeningBalance.objects.none()
     serializer_class = OpeningBalanceReadSerializer
     filterset_fields = ["account", "cash_account"]

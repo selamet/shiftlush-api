@@ -116,11 +116,11 @@ class SeedRoleCompat:
     company_id: Any
     company_role: CompanyRole | None
 
-    @property
-    def role(self) -> str:
+    def loaded_company_role(self) -> CompanyRole | None:
+        """`company_role`, read without a company in context, and cached."""
         role_id = getattr(self, "company_role_id", None)
         if role_id is None:
-            return ""
+            return None
         field = type(self)._meta.get_field("company_role")  # type: ignore[attr-defined]
         if not field.is_cached(self):
             # Not through the relation: that goes through the tenant-scoped
@@ -128,11 +128,19 @@ class SeedRoleCompat:
             # yet — signing in, issuing a token. It is the row the user points
             # at, so there is no other firm's data to step into.
             field.set_cached_value(self, CompanyRole.unscoped.get(pk=role_id))
-        return str(field.get_cached_value(self).system_key)
+        role: CompanyRole = field.get_cached_value(self)
+        return role
+
+    @property
+    def role(self) -> str:
+        role = self.loaded_company_role()
+        return "" if role is None else str(role.system_key)
 
     @role.setter
     def role(self, system_key: str) -> None:
         self.company_role = seeded_role(self.company_id, str(system_key))
+        # What core.permissions worked out was for the role this replaces.
+        self.__dict__.pop("_perm_cache", None)
 
 
 class UserManager(BaseUserManager["User"]):
