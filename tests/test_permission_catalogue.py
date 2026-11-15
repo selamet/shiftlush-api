@@ -89,3 +89,10 @@ def test_cancelling_the_books_is_delete_for_who_writes_them():
     r = CATALOGUE["ledger_admin"]
     assert DELETE in r.actions
     assert {k for k, a in r.seeds.items() if DELETE in a} == {"owner", "accountant"}
+
+
+def test_closing_a_portal_account_is_delete_for_the_office():
+    # The portal `deactivate` action checks DELETE; it stays with the office.
+    r = CATALOGUE["portal_access"]
+    assert DELETE in r.actions
+    assert {k for k, a in r.seeds.items() if DELETE in a} == {"owner", "admin", "operations"}

@@ -37,7 +37,7 @@ from apps.ledger.balances import with_collected
 from core.dates import add_months
 from core.exceptions import ServiceUnavailable
 from core.filters import TenantFilterSet
-from core.permissions import RolePermission
+from core.permissions import DELETE, RolePermission
 from core.requests import authenticated_user
 
 
@@ -93,6 +93,8 @@ class InvoiceDraftViewSet(
     GenericViewSet[InvoiceDraft],
 ):
     resource = "invoice"
+    # Cancelling voids the draft: DELETE, though it is a POST.
+    resource_by_action = {"cancel": ("invoice", DELETE)}
     permission_classes = [RolePermission]
     http_method_names = ["get", "post", "patch", "head", "options"]
     queryset = InvoiceDraft.objects.none()

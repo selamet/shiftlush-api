@@ -139,8 +139,6 @@ class SeedRoleCompat:
     @role.setter
     def role(self, system_key: str) -> None:
         self.company_role = seeded_role(self.company_id, str(system_key))
-        # What core.permissions worked out was for the role this replaces.
-        self.__dict__.pop("_perm_cache", None)
 
 
 class UserManager(BaseUserManager["User"]):

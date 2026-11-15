@@ -45,17 +45,23 @@ def effective_permissions(user: Any) -> dict[str, frozenset[str]]:
     settings. Anyone else holds what their role's grant rows say; no role, or
     no company, holds nothing.
 
+    A role that has been deleted, or that belongs to another firm, holds
+    nothing: neither should happen, and if it does it must not open anything.
+
     Read without a company in context - signing in, issuing a token and
     background jobs have none - and remembered on the user instance, so a
-    request pays for it once however many checks it makes.
+    request pays for it once however many checks it makes. The memo is keyed
+    by the role it was worked out for, so pointing the user at another role
+    is never answered from the old one.
     """
     if user is None:
         return {}
-    cached: dict[str, frozenset[str]] | None = getattr(user, "_perm_cache", None)
-    if cached is not None:
-        return cached
+    role_id = getattr(user, "company_role_id", None)
+    cached: tuple[Any, dict[str, frozenset[str]]] | None = getattr(user, "_perm_cache", None)
+    if cached is not None and cached[0] == role_id:
+        return cached[1]
     perms = _load_permissions(user)
-    user._perm_cache = perms
+    user._perm_cache = (role_id, perms)
     return perms
 
 
@@ -63,7 +69,7 @@ def _load_permissions(user: Any) -> dict[str, frozenset[str]]:
     if getattr(user, "company_id", None) is None:
         return {}
     role = user.loaded_company_role() if hasattr(user, "loaded_company_role") else None
-    if role is None:
+    if role is None or role.is_deleted or role.company_id != user.company_id:
         return {}
     if role.is_owner:
         return {r.key: r.actions for r in CATALOGUE.values()}

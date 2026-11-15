@@ -141,6 +141,34 @@ def test_changing_the_seeded_role_forgets_what_was_worked_out(db):
     assert may(user, "customer", WRITE)
 
 
+def test_assigning_another_role_directly_is_not_answered_from_the_memo(db):
+    company = make_company()
+    user = make_user(company, role="technician", email="t@x.test")
+    assert not may(user, "customer", WRITE)
+    user.company_role = CompanyRole.unscoped.get(company=company, system_key="operations")
+    assert may(user, "customer", WRITE)
+    user.company_role_id = CompanyRole.unscoped.get(company=company, system_key="accountant").pk
+    assert not may(user, "customer", WRITE)
+    assert may(user, "ledger", READ)
+
+
+def test_a_deleted_role_grants_nothing(db):
+    company = make_company()
+    user = make_user(company, email="custom@x.test")
+    role = make_custom_role(company, customer={"can_read": True})
+    user.company_role = role
+    user.save()
+    CompanyRole.unscoped.filter(pk=role.pk).update(is_deleted=True)
+    assert effective_permissions(fresh(user)) == {}
+
+
+def test_a_role_of_another_firm_grants_nothing(db):
+    user = make_user(make_company("Mine"), role="operations", email="ops@x.test")
+    theirs = CompanyRole.unscoped.get(company=make_company("Theirs"), system_key="owner")
+    User.objects.filter(pk=user.pk).update(company_role=theirs)
+    assert effective_permissions(fresh(user)) == {}
+
+
 def test_custom_role_answers_from_its_grants(db):
     company = make_company()
     user = make_user(company, email="custom@x.test")
@@ -254,16 +282,31 @@ def test_every_guarded_route_names_an_action_its_resource_has():
         ("ManualEntryViewSet", "ledger_admin"),
         ("TransferViewSet", "ledger_admin"),
         ("OpeningBalanceViewSet", "ledger_admin"),
+        ("InvoiceDraftViewSet", "invoice"),
+        ("PortalAccountViewSet", "portal_access"),
     ],
 )
 def test_removing_or_voiding_a_record_is_delete(view, resource):
     assert (view, resource, DELETE) in _guarded_checks()
 
 
-def test_a_method_the_view_does_not_serve_is_405_not_403(db):
+@pytest.mark.parametrize("role", ["technician", "nothing"])
+def test_a_method_the_view_does_not_serve_is_405_not_403(db, monkeypatch, role):
     # Faults are never deleted, so nobody holds DELETE on them; the answer is
     # that the method does not exist, not that the user lacks a grant for it.
+    # The viewset inherits a destroy handler; it must never be reached.
+    from apps.faults.api.v1.views import FaultViewSet
+
+    ran: list[object] = []
+    monkeypatch.setattr(FaultViewSet, "destroy", lambda self, *a, **k: ran.append(a))
     company = make_company()
-    user = make_user(company, role="technician", email="t@x.test")
+    user = make_user(company, email="u@x.test")
+    if role == "nothing":
+        user.company_role = make_custom_role(company)
+    else:
+        user.role = role
+    user.save()
+    assert not may(fresh(user), "fault", DELETE)
     response = api_for(user).delete(reverse("fault-detail", args=[uuid.uuid4()]))
     assert response.status_code == 405
+    assert ran == []

@@ -63,7 +63,7 @@ from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 from core.filters import TenantFilterSet
 from core.idempotency import ReplayProtectedCreate, replay_protected
-from core.permissions import RolePermission
+from core.permissions import DELETE, RolePermission
 
 #: The portal's refresh cookie, its own name and its own path: the staff cookie
 #: is scoped to /api/v1/auth, so neither is ever sent to the other's endpoints.
@@ -466,6 +466,8 @@ class PortalAccountViewSet(GenericViewSet[PortalAccount]):
     """`POST /portal-accounts/{id}/deactivate/` — close an account."""
 
     resource = "portal_access"
+    # Closing an account ends someone's access: DELETE, though it is a POST.
+    resource_by_action = {"deactivate": ("portal_access", DELETE)}
     permission_classes = [RolePermission]
     serializer_class = PortalAccountSerializer
     queryset = PortalAccount.objects.none()

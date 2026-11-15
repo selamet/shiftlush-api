@@ -215,8 +215,9 @@ _RESOURCES: list[Resource] = [
     ),
     # Running the customer portal (M6): inviting a customer's contacts, seeing
     # their accounts, closing one. The office's job; a technician and the
-    # accountant have no say in who outside the firm can sign in.
-    _resource("portal_access", "customers", read=_OFFICE, write=_OFFICE),
+    # accountant have no say in who outside the firm can sign in. Closing an
+    # account is a deactivation, hence DELETE.
+    _resource("portal_access", "customers", read=_OFFICE, write=_OFFICE, delete=True),
     # Invoice drafts (M7) - the first module where the accountant is the main
     # user. Operations and technicians have no part in billing. Draft lines
     # can be deleted, hence DELETE.
