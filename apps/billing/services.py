@@ -29,9 +29,11 @@ from apps.ledger import services as ledger
 from apps.ledger.models import CashAccount, PaymentMethod
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError, Conflict, DuplicateRecord
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import LOCAL_TZ
 
 #: Contracts that ended (expired, or renewed into a successor) this recently are
@@ -42,7 +44,6 @@ RECENTLY_ENDED = timedelta(days=92)
 #: onto years of contracts does not bury the accountant in historical drafts.
 LOOKBACK = timedelta(days=92)
 
-_BILLING_PEOPLE = (Role.OWNER, Role.ADMIN, Role.ACCOUNTANT)
 _FAR_FUTURE = date.max
 
 
@@ -250,11 +251,7 @@ def draft_for(contract: Contract, period: Period) -> InvoiceDraft | None:
 
 
 def _billing_people(company_id: Any) -> list[User]:
-    return list(
-        User.objects.filter(
-            company_id=company_id, company_role__system_key__in=_BILLING_PEOPLE, is_active=True
-        )
-    )
+    return list(holders(company_id, "notify_billing", RECEIVE))
 
 
 @transaction.atomic

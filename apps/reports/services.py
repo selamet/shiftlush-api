@@ -27,15 +27,15 @@ from apps.portal.models import PortalAccount
 from apps.reports import documents
 from apps.reports.content import ReportData, build_report
 from apps.reports.models import CustomerReport, ReportDelivery
-from apps.users.models import Role, User
+from apps.users.models import User
 from core import mail, storage
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import local_today
 
 logger = logging.getLogger(__name__)
-
-_OFFICE = (Role.OWNER, Role.ADMIN)
 
 
 @dataclass
@@ -305,9 +305,7 @@ def generate(company: Company, period: str, *, today: date, send: bool) -> RunRe
     if result.created or result.failed:
         notify(
             kind=NotificationKind.MONTHLY_REPORTS_READY,
-            recipients=User.objects.filter(
-                company=company, company_role__system_key__in=_OFFICE, is_active=True
-            ),
+            recipients=holders(company.pk, "notify_report", RECEIVE),
             subject_type="reports",
             subject_id=company.pk,
             data={

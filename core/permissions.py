@@ -19,12 +19,12 @@ from __future__ import annotations
 
 from typing import Any, TypeVar
 
-from django.db.models import Model, QuerySet
+from django.db.models import Model, Q, QuerySet
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from apps.users.models import RoleGrant
+from apps.users.models import RoleGrant, User
 from core.permission_catalogue import CATALOGUE, RECEIVE
 
 # Re-exported: views and tests name the actions next to `may()`, from here.
@@ -95,6 +95,41 @@ def _load_permissions(user: Any) -> dict[str, frozenset[str]]:
 def may(user: Any, resource: str, action: str) -> bool:
     """Whether the user's role holds `action` on `resource`. Unknown is no."""
     return action in effective_permissions(user).get(resource, frozenset())
+
+
+_GRANT_COLUMN = {
+    READ: "can_read",
+    WRITE: "can_write",
+    DELETE: "can_delete",
+    RECEIVE: "can_receive",
+}
+
+
+def holders(company_id: Any, resource: str, action: str) -> QuerySet[User]:
+    """The active people of a firm whose role holds `action` on `resource`.
+
+    Mirrors `effective_permissions` for a whole company at once, in one query:
+    the owner role holds everything without grant rows, so it is matched on
+    `is_owner`; any other role needs a grant row carrying the action's flag. A
+    soft-deleted role holds nothing. Used to address notifications, so that
+    "who hears about it" is a permission an owner can hand out, not a role name.
+    """
+    column = _GRANT_COLUMN[action]
+    granted = Q(
+        company_role__grants__resource=resource,
+        **{f"company_role__grants__{column}": True},
+    )
+    return (
+        User.objects.filter(
+            company_id=company_id,
+            is_active=True,
+            is_deleted=False,
+            company_role__company_id=company_id,
+            company_role__is_deleted=False,
+        )
+        .filter(Q(company_role__is_owner=True) | granted)
+        .distinct()
+    )
 
 
 def may_see_balances(user: Any) -> bool:

@@ -15,8 +15,10 @@ from apps.elevators.models import Elevator
 from apps.maintenance.services import generate_plan
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.context import system_context
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import local_today
 
 
@@ -52,11 +54,7 @@ def maintenance_overdue_in_scope(*, today: date) -> int:
     )
     for elevator in overdue:
         assert elevator.next_maintenance_date is not None
-        office = User.objects.filter(
-            company_id=elevator.company_id,
-            company_role__system_key__in=[Role.OWNER, Role.ADMIN, Role.OPERATIONS],
-            is_active=True,
-        )
+        office = holders(elevator.company_id, "notify_plan", RECEIVE)
         technicians = User.objects.filter(
             company_id=elevator.company_id,
             company_role__field_staff=True,
