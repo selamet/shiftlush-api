@@ -42,7 +42,7 @@ from apps.maintenance.models import (
 from apps.maintenance.routing import Stop, plan_route
 from apps.maintenance.signatures import SignatureState, filter_by_state, with_signature
 from apps.properties.services import position_of
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.context import require_current_company_id
 from core.filters import TenantFilterSet
 from core.permissions import DELETE, RolePermission
@@ -195,7 +195,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         if company_id is None:
             return Response([])
         technicians = User.objects.filter(
-            company_id=company_id, company_role__system_key=Role.TECHNICIAN, is_active=True
+            company_id=company_id, company_role__field_staff=True, is_active=True
         ).order_by("first_name", "last_name", "id")
         rows = [
             {"id": user.id, "name": f"{user.first_name} {user.last_name}".strip()}
@@ -357,7 +357,7 @@ class PlannedVisitViewSet(
         user = self.request.user
         # isinstance, not authenticated_user(): the schema generator walks this
         # without a request user, and the answer there is "no narrowing".
-        if isinstance(user, User) and user.role == Role.TECHNICIAN:
+        if isinstance(user, User) and user.is_scoped:
             assigned = list(user.customer_assignments.values_list("customer_id", flat=True))
             queryset = queryset.filter(elevator__building__customer_id__in=assigned).filter(
                 Q(technician=user) | Q(technician__isnull=True)

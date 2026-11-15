@@ -681,24 +681,24 @@ def change_role(*, user: User, role: str) -> None:
     user.role = role
     user.save(update_fields=["company_role", "updated_at"])
 
-    if role != Role.TECHNICIAN:
-        # Assignments only mean something for technicians. Leaving them behind
+    if not user.is_field_staff:
+        # Assignments only mean something for field staff. Leaving them behind
         # would silently narrow the person's view again if they ever moved back.
         user.customer_assignments.all().delete()
 
 
 @transaction.atomic
 def set_assigned_customers(*, user: User, customer_ids: list[UUID], assigned_by: User) -> None:
-    """Replace the set of customers a technician may see.
+    """Replace the set of customers a field worker is given.
 
     A replace rather than an add: the caller sends the list it wants to be true,
     which is the only form that can remove an assignment without a second
     endpoint and a second race.
     """
-    if user.role != Role.TECHNICIAN or user.company_id is None:
-        # A user with no firm has no customers to be assigned, and is not a
-        # technician either — only a superuser reaches that state.
-        raise BusinessRuleError(ErrorCode.ONLY_TECHNICIANS_ARE_ASSIGNED)
+    if not user.is_field_staff or user.company_id is None:
+        # A user with no firm has no customers to be assigned, and is not field
+        # staff either — only a superuser reaches that state.
+        raise BusinessRuleError(ErrorCode.ONLY_FIELD_STAFF_ARE_ASSIGNED)
 
     wanted = set(customer_ids)
     current = {row.customer_id: row for row in user.customer_assignments.all()}

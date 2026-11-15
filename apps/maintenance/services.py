@@ -37,7 +37,7 @@ from apps.maintenance.models import (
 )
 from apps.notifications.models import Notification, NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User, UserCustomer
+from apps.users.models import User, UserCustomer
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
 from core.scheduling import local_today
@@ -407,7 +407,7 @@ def _default_technicians() -> dict[uuid.UUID, uuid.UUID]:
     """
     assigned: defaultdict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
     rows = UserCustomer.objects.filter(
-        user__company_role__system_key=Role.TECHNICIAN, user__is_active=True, user__is_deleted=False
+        user__company_role__field_staff=True, user__is_active=True, user__is_deleted=False
     ).values_list("customer_id", "user_id")
     for customer_id, user_id in rows:
         assigned[customer_id].add(user_id)

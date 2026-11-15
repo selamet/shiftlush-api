@@ -49,7 +49,7 @@ class UserSerializer(serializers.ModelSerializer[User]):
         read_only_fields = fields
 
     def get_assigned_customer_ids(self, user: User) -> list[str]:
-        if user.role != Role.TECHNICIAN:
+        if not user.is_field_staff:
             return []
         return [str(row.customer_id) for row in user.customer_assignments.all()]
 

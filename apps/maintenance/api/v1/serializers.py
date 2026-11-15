@@ -22,7 +22,7 @@ from apps.maintenance.signatures import (
     check_signature_fields,
     signature_state,
 )
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict, field_error
 from core.requests import authenticated_user
@@ -209,10 +209,10 @@ class MaintenanceVisitWriteSerializer(StrictMixin, serializers.ModelSerializer[M
         user = authenticated_user(self.context["request"])
         named = attrs.get("technician")
 
-        if user.role == Role.TECHNICIAN:
+        if user.is_scoped:
             # A visit is a statement that the named person did the work. A
-            # technician makes that statement about themselves only, and does
-            # not have to repeat their own name to do it.
+            # scoped user (the technician) makes that statement about
+            # themselves only, and does not have to repeat their own name.
             if named is not None and named.pk != user.pk:
                 code = ErrorCode.TECHNICIAN_RECORDS_OWN_VISITS
                 raise serializers.ValidationError(

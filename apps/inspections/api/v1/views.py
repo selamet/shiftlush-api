@@ -27,7 +27,7 @@ from apps.inspections.api.v1.serializers import (
     NonConformitySerializer,
 )
 from apps.inspections.models import Inspection, Label, NonConformity, NonConformityStatus
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.filters import TenantFilterSet
 from core.permissions import RolePermission
 from core.requests import authenticated_user
@@ -71,8 +71,8 @@ class InspectionFilter(TenantFilterSet):
 
 
 def _assigned_customers(user: Any) -> list[Any] | None:
-    """The customers a technician is narrowed to, or None for everyone else."""
-    if isinstance(user, User) and user.role == Role.TECHNICIAN:
+    """The customers a scoped user is narrowed to, or None for everyone else."""
+    if isinstance(user, User) and user.is_scoped:
         return list(user.customer_assignments.values_list("customer_id", flat=True))
     return None
 

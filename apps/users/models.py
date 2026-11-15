@@ -261,13 +261,25 @@ class User(SeedRoleCompat, AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
+    @property
+    def is_scoped(self) -> bool:
+        """Sees only the customers assigned to them, and acts on their own work only."""
+        role = self.loaded_company_role()
+        return role is not None and role.assigned_only
+
+    @property
+    def is_field_staff(self) -> bool:
+        """Can be given customers, and sent on visits and to faults."""
+        role = self.loaded_company_role()
+        return role is not None and role.field_staff
+
 
 class UserCustomer(CompanyOwnedModel):
-    """Which customers a technician is allowed to see.
+    """Which customers a field worker is given.
 
-    Only technicians are listed here; every other role sees the whole company.
-    A technician with no rows sees an empty list, which is a stated condition
-    rather than an error.
+    Only field staff are listed here. For a scoped role (`assigned_only`) the
+    rows are everything the person sees; one with no rows sees an empty list,
+    which is a stated condition rather than an error.
     """
 
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="customer_assignments")

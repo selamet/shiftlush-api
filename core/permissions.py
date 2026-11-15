@@ -24,7 +24,7 @@ from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from apps.users.models import Role, RoleGrant
+from apps.users.models import RoleGrant
 from core.permission_catalogue import CATALOGUE, RECEIVE
 
 # Re-exported: views and tests name the actions next to `may()`, from here.
@@ -157,19 +157,23 @@ class RolePermission(permissions.BasePermission):
         return may(user, resource, action)
 
 
-class TechnicianScopedQueryset:
-    """Narrows a queryset to the customers a technician is assigned to.
+class ScopedQueryset:
+    """Narrows a queryset to the customers a scoped user is assigned to.
 
     A mixin rather than a permission, because it changes what exists rather than
-    what is allowed — and because a technician with no assignments should see an
-    empty list, not a 403. Nothing went wrong; they simply have no work yet.
+    what is allowed — and because a scoped user with no assignments should see
+    an empty list, not a 403. Nothing went wrong; they simply have no work yet.
     """
 
     #: Lookup path from this model to the customer, e.g. "building__customer".
     customer_path: str = "customer"
 
     def scope_to_assignments(self, queryset: QuerySet[ModelT], user: Any) -> QuerySet[ModelT]:
-        if getattr(user, "role", None) != Role.TECHNICIAN:
+        if not getattr(user, "is_scoped", False):
             return queryset
         assigned = user.customer_assignments.values_list("customer_id", flat=True)
         return queryset.filter(**{f"{self.customer_path}__in": list(assigned)})
+
+
+#: The name it had while only the technician role was scoped.
+TechnicianScopedQueryset = ScopedQueryset

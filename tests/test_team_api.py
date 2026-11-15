@@ -554,7 +554,7 @@ class TestTechnicianAssignments:
         )
         # Every other role sees the whole company, so an assignment on one would
         # be a row that changes nothing — and would look like it did.
-        assert response.data["error"]["code"] == "ONLY_TECHNICIANS_ARE_ASSIGNED"
+        assert response.data["error"]["code"] == "ONLY_FIELD_STAFF_ARE_ASSIGNED"
 
     def test_a_customer_from_another_company_is_unknown(self, setup):
         company, owner, technician, _, _ = setup

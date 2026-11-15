@@ -76,7 +76,7 @@ def _customer_technicians(fault: Fault) -> list[User]:
     return list(
         User.objects.filter(
             company_id=fault.company_id,
-            company_role__system_key=Role.TECHNICIAN,
+            company_role__field_staff=True,
             is_active=True,
             customer_assignments__customer_id=fault.elevator.building.customer_id,
             customer_assignments__is_deleted=False,

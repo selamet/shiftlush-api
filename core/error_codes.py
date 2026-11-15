@@ -159,9 +159,16 @@ class ErrorCode(models.TextChoices):
         "LAST_OWNER_CANNOT_BE_DEACTIVATED",
         "A company must keep at least one active owner",
     )
+    ONLY_FIELD_STAFF_ARE_ASSIGNED = (
+        "ONLY_FIELD_STAFF_ARE_ASSIGNED",
+        "Customer assignments apply to field staff only",
+    )
+    # Deprecated: no longer returned, replaced by ONLY_FIELD_STAFF_ARE_ASSIGNED
+    # once assignments followed the role's `field_staff` flag. Kept in the enum
+    # for one release so a client switching on it still type-checks.
     ONLY_TECHNICIANS_ARE_ASSIGNED = (
         "ONLY_TECHNICIANS_ARE_ASSIGNED",
-        "Customer assignments apply to technicians only",
+        "Deprecated: replaced by ONLY_FIELD_STAFF_ARE_ASSIGNED",
     )
     TECHNICIAN_RECORDS_OWN_VISITS = (
         "TECHNICIAN_RECORDS_OWN_VISITS",

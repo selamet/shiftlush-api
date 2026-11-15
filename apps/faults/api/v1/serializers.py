@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from apps.elevators.models import Elevator
 from apps.faults.models import Fault, FaultPriority
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.requests import authenticated_user
 from core.validators import normalize_phone
 
@@ -154,7 +154,7 @@ class FaultCreateSerializer(StrictMixin, serializers.ModelSerializer[Fault]):
         user = getattr(self.context.get("request"), "user", None)
         if isinstance(user, User):
             lifts = Elevator.objects.all()
-            if user.role == Role.TECHNICIAN:
+            if user.is_scoped:
                 assigned = user.customer_assignments.values_list("customer_id", flat=True)
                 lifts = lifts.filter(building__customer_id__in=list(assigned))
             elevator.queryset = lifts
@@ -164,9 +164,9 @@ class FaultCreateSerializer(StrictMixin, serializers.ModelSerializer[Fault]):
         attrs = super().validate(attrs)
         user = authenticated_user(self.context["request"])
         named = attrs.get("technician")
-        # Sending somebody is the office's decision; a technician who reports
-        # a fault may take it themselves, and nobody else.
-        if user.role == Role.TECHNICIAN and named is not None and named.pk != user.pk:
+        # Sending somebody is the office's decision; a scoped user (the
+        # technician) who reports a fault may take it themselves, and nobody else.
+        if user.is_scoped and named is not None and named.pk != user.pk:
             raise serializers.ValidationError(
                 {
                     "technician": serializers.ErrorDetail(
