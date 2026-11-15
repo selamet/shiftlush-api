@@ -25,6 +25,7 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from apps.users.models import Role
+from core.permission_catalogue import READ, WRITE
 
 # Generic so that a caller narrowing a Building queryset is handed Buildings
 # back, not bare Models.
@@ -33,8 +34,6 @@ ModelT = TypeVar("ModelT", bound=Model)
 # The matrix from the specification, written once. A viewset names a resource
 # and the action it is performing; the answer comes from here rather than from
 # a condition repeated across nine modules.
-READ = "read"
-WRITE = "write"
 
 MATRIX: dict[str, dict[str, set[str]]] = {
     "company": {
