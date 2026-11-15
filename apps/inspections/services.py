@@ -142,14 +142,18 @@ def sync_elevator(elevator: Elevator) -> None:
 
 
 def office(company_id: Any) -> list[User]:
-    return list(User.objects.filter(company_id=company_id, role__in=_OFFICE, is_active=True))
+    return list(
+        User.objects.filter(
+            company_id=company_id, company_role__system_key__in=_OFFICE, is_active=True
+        )
+    )
 
 
 def office_and_technicians(elevator: Elevator) -> list[User]:
     """The office, and the technicians who cover the lift's customer."""
     technicians = User.objects.filter(
         company_id=elevator.company_id,
-        role=Role.TECHNICIAN,
+        company_role__system_key=Role.TECHNICIAN,
         is_active=True,
         customer_assignments__customer_id=elevator.building.customer_id,
         customer_assignments__is_deleted=False,

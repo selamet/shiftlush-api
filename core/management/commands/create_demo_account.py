@@ -164,7 +164,11 @@ class Command(BaseCommand):
             raise CommandError("Run load_address_data first — buildings need somewhere to be.")
 
         with system_context():
-            colleagues = User.objects.filter(company=company).exclude(role=Role.OWNER).exists()
+            colleagues = (
+                User.objects.filter(company=company)
+                .exclude(company_role__system_key=Role.OWNER)
+                .exists()
+            )
 
         from apps.customers.models import Customer
 

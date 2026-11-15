@@ -162,7 +162,9 @@ class TestRenewalNotice:
     def test_the_notice_carries_what_the_sentence_needs(self, firm):
         contract = contract_for(firm, end=TODAY + timedelta(days=30), auto_renew=True)
         contract_renewal_notice.call()
-        notification = Notification.unscoped.filter(recipient__role=Role.OWNER).get()
+        notification = Notification.unscoped.filter(
+            recipient__company_role__system_key=Role.OWNER
+        ).get()
         assert notification.subject_type == "contract"
         assert notification.subject_id == contract.id
         assert notification.data == {
@@ -192,7 +194,8 @@ class TestExpiry:
         contract_expiry.call()
 
         notification = Notification.unscoped.filter(
-            kind=NotificationKind.CONTRACT_AUTO_RENEWED, recipient__role=Role.OWNER
+            kind=NotificationKind.CONTRACT_AUTO_RENEWED,
+            recipient__company_role__system_key=Role.OWNER,
         ).get()
         successor = Contract.unscoped.get(previous_contract=contract)
         assert notification.subject_id == successor.id

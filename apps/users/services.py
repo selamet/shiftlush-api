@@ -29,6 +29,7 @@ from apps.users.models import (
     TokenPurpose,
     User,
     UserCustomer,
+    seeded_role,
 )
 from core import mail
 from core.context import system_context
@@ -546,7 +547,7 @@ def create_invitation(
         email=email.lower(),
         first_name=first_name,
         last_name=last_name,
-        role=role,
+        company_role=seeded_role(company.pk, role),
         token_hash=_hash(token),
         expires_at=timezone.now() + INVITATION_LIFETIME,
         invited_by=invited_by,
@@ -638,7 +639,9 @@ def deactivate_user(*, user: User) -> None:
     """
     if user.role == Role.OWNER:
         remaining = (
-            User.objects.filter(company=user.company, role=Role.OWNER, is_active=True)
+            User.objects.filter(
+                company=user.company, company_role__system_key=Role.OWNER, is_active=True
+            )
             .exclude(pk=user.pk)
             .count()
         )
@@ -657,7 +660,9 @@ def _is_last_active_owner(user: User) -> bool:
         # No firm, so not the last owner of one. Only a superuser gets here.
         return False
     return (
-        not User.objects.filter(company_id=user.company_id, role=Role.OWNER, is_active=True)
+        not User.objects.filter(
+            company_id=user.company_id, company_role__system_key=Role.OWNER, is_active=True
+        )
         .exclude(pk=user.pk)
         .exists()
     )
@@ -674,7 +679,7 @@ def change_role(*, user: User, role: str) -> None:
         raise BusinessRuleError(ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED)
 
     user.role = role
-    user.save(update_fields=["role", "updated_at"])
+    user.save(update_fields=["company_role", "updated_at"])
 
     if role != Role.TECHNICIAN:
         # Assignments only mean something for technicians. Leaving them behind

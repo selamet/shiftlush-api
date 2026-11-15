@@ -19,6 +19,9 @@ from core.validators import normalize_email, normalize_phone
 
 class UserSerializer(serializers.ModelSerializer[User]):
     full_name = serializers.CharField(read_only=True)
+    # Declared, not inferred: `role` is a property over `company_role` now, and
+    # an inferred one would lose its choices in the schema.
+    role = serializers.ChoiceField(choices=Role.choices, read_only=True)
     assigned_customer_ids = serializers.SerializerMethodField()
 
     class Meta:
@@ -52,6 +55,10 @@ class UserSerializer(serializers.ModelSerializer[User]):
 
 
 class UserUpdateSerializer(serializers.ModelSerializer[User]):
+    # Declared: a property is read-only to a ModelSerializer, and the view
+    # hands a changed role to `services.change_role`.
+    role = serializers.ChoiceField(choices=Role.choices, required=False)
+
     class Meta:
         model = User
         # Not the e-mail address: it is the username, it is globally unique, and
@@ -73,6 +80,9 @@ class UserUpdateSerializer(serializers.ModelSerializer[User]):
 class InvitationSerializer(serializers.ModelSerializer[Invitation]):
     invited_by_name = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
+    # Declared, not inferred: `role` is a property over `company_role` now, and
+    # an inferred one would lose its choices in the schema.
+    role = serializers.ChoiceField(choices=Role.choices, read_only=True)
 
     class Meta:
         model = Invitation

@@ -251,7 +251,9 @@ def draft_for(contract: Contract, period: Period) -> InvoiceDraft | None:
 
 def _billing_people(company_id: Any) -> list[User]:
     return list(
-        User.objects.filter(company_id=company_id, role__in=_BILLING_PEOPLE, is_active=True)
+        User.objects.filter(
+            company_id=company_id, company_role__system_key__in=_BILLING_PEOPLE, is_active=True
+        )
     )
 
 

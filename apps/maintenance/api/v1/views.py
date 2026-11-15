@@ -195,7 +195,7 @@ class MaintenanceVisitViewSet(TenantViewSet[MaintenanceVisit]):
         if company_id is None:
             return Response([])
         technicians = User.objects.filter(
-            company_id=company_id, role=Role.TECHNICIAN, is_active=True
+            company_id=company_id, company_role__system_key=Role.TECHNICIAN, is_active=True
         ).order_by("first_name", "last_name", "id")
         rows = [
             {"id": user.id, "name": f"{user.first_name} {user.last_name}".strip()}

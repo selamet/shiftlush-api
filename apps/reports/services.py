@@ -305,7 +305,9 @@ def generate(company: Company, period: str, *, today: date, send: bool) -> RunRe
     if result.created or result.failed:
         notify(
             kind=NotificationKind.MONTHLY_REPORTS_READY,
-            recipients=User.objects.filter(company=company, role__in=_OFFICE, is_active=True),
+            recipients=User.objects.filter(
+                company=company, company_role__system_key__in=_OFFICE, is_active=True
+            ),
             subject_type="reports",
             subject_id=company.pk,
             data={

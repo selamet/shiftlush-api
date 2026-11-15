@@ -344,7 +344,8 @@ def _build_firm(letter: str, seed: int) -> Firm:
             email=f"invited-{letter.lower()}@example.com",
             first_name="Nur",
             last_name=letter,
-            role=Role.OPERATIONS,
+            # The compat `role` property; the type checker only knows fields.
+            role=Role.OPERATIONS,  # type: ignore[misc]
             token_hash=f"hash-of-{letter}",
             expires_at=timezone.now() + timedelta(hours=72),
             invited_by=owner,
@@ -1170,6 +1171,9 @@ class TestEveryModelIsScoped:
             # Not routed yet; its tenant boundary is tested in
             # tests/test_customer_reports.py and the endpoints come with it.
             "reports.CustomerReport",
+            # Not routed yet; its tenant boundary is tested at the manager in
+            # tests/test_company_roles_model.py and the endpoints come with it.
+            "users.CompanyRole",
             "users.Invitation",
             "users.User",
             "users.UserCustomer",

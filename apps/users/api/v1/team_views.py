@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db.models import QuerySet
+from django.db.models import F, QuerySet
+from django_filters import rest_framework as filters
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status
@@ -36,6 +37,10 @@ from core.requests import authenticated_company, authenticated_user
 
 
 class UserFilter(TenantFilterSet):
+    # `role` is the seed key of the user's company role; the query parameter
+    # keeps its name and values.
+    role = filters.ChoiceFilter(field_name="company_role__system_key", choices=Role.choices)
+
     class Meta:
         model = User
         fields = ["role", "is_active"]
@@ -80,9 +85,15 @@ class UserViewSet(
         # before the company is known, since the company comes from the user.
         # That makes this line the only thing standing between one firm and
         # another firm's staff list — it is not an optimisation.
-        return User.objects.filter(company_id=require_current_company_id()).prefetch_related(
-            "customer_assignments"
+        users = (
+            User.objects.filter(company_id=require_current_company_id())
+            .select_related("company_role")
+            .prefetch_related("customer_assignments")
         )
+        # What `?ordering=role` sorts by. An alias, so nothing is set on the
+        # rows — an annotation would go through the compat `role` setter. The
+        # type checker reads the name as redefining that property.
+        return users.alias(role=F("company_role__system_key"))  # type: ignore[no-redef]
 
     def get_serializer_class(self) -> Any:
         if self.action in ("update", "partial_update"):
@@ -174,7 +185,7 @@ class InvitationViewSet(
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self) -> QuerySet[Invitation]:
-        return Invitation.objects.select_related("invited_by")
+        return Invitation.objects.select_related("invited_by", "company_role")
 
     @extend_schema(request=InvitationCreateSerializer, responses={201: InvitationSerializer})
     def create(self, request: Request) -> Response:

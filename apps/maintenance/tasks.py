@@ -54,12 +54,12 @@ def maintenance_overdue_in_scope(*, today: date) -> int:
         assert elevator.next_maintenance_date is not None
         office = User.objects.filter(
             company_id=elevator.company_id,
-            role__in=[Role.OWNER, Role.ADMIN, Role.OPERATIONS],
+            company_role__system_key__in=[Role.OWNER, Role.ADMIN, Role.OPERATIONS],
             is_active=True,
         )
         technicians = User.objects.filter(
             company_id=elevator.company_id,
-            role=Role.TECHNICIAN,
+            company_role__system_key=Role.TECHNICIAN,
             is_active=True,
             customer_assignments__customer_id=elevator.building.customer_id,
             customer_assignments__is_deleted=False,

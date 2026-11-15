@@ -34,7 +34,9 @@ def _contract_people(company_id: Any) -> list[User]:
     """Who hears about a contract: the people who can act on one."""
     return list(
         User.objects.filter(
-            company_id=company_id, role__in=[Role.OWNER, Role.ADMIN], is_active=True
+            company_id=company_id,
+            company_role__system_key__in=[Role.OWNER, Role.ADMIN],
+            is_active=True,
         )
     )
 

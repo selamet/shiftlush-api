@@ -407,7 +407,7 @@ def _default_technicians() -> dict[uuid.UUID, uuid.UUID]:
     """
     assigned: defaultdict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
     rows = UserCustomer.objects.filter(
-        user__role=Role.TECHNICIAN, user__is_active=True, user__is_deleted=False
+        user__company_role__system_key=Role.TECHNICIAN, user__is_active=True, user__is_deleted=False
     ).values_list("customer_id", "user_id")
     for customer_id, user_id in rows:
         assigned[customer_id].add(user_id)
