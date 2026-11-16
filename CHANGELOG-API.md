@@ -769,6 +769,9 @@ carried as compatibility shims nobody will ever remove.
   and writes those same five keys. The owner role is the one flagged
   `is_owner`: it holds every action, and the "last active owner" and "only an
   owner gives the owner role" rules follow that flag.
+  Recipient lookups for notifications now skip soft-deleted users; the old
+  queries used the unfiltered manager, so a soft-deleted but still active user
+  used to be notified.
 - **Delete is its own permission, and voiding counts as delete.** Removing a record, and
   any action that voids or reverses one, now needs the resource's delete action
   rather than write. With the seeded roles the people who may do it are the same as before.
