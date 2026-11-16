@@ -18,8 +18,10 @@ from apps.contracts.models import Contract, ContractStatus
 from apps.contracts.services import expire
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.context import system_context
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import local_today
 
 logger = logging.getLogger(__name__)
@@ -32,11 +34,7 @@ _LONGEST_NOTICE = timedelta(days=366)
 
 def _contract_people(company_id: Any) -> list[User]:
     """Who hears about a contract: the people who can act on one."""
-    return list(
-        User.objects.filter(
-            company_id=company_id, role__in=[Role.OWNER, Role.ADMIN], is_active=True
-        )
-    )
+    return list(holders(company_id, "notify_contract", RECEIVE))
 
 
 def _facts(contract: Contract) -> dict[str, Any]:

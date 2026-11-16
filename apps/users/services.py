@@ -29,7 +29,9 @@ from apps.users.models import (
     TokenPurpose,
     User,
     UserCustomer,
+    seeded_role,
 )
+from apps.users.roles import seed_company_roles
 from core import mail
 from core.context import system_context
 from core.error_codes import ErrorCode
@@ -89,7 +91,6 @@ def issue_tokens(
     # The company travels in the token so the tenant middleware does not have to
     # re-read the user on every request.
     access["company_id"] = str(user.company_id) if user.company_id else None
-    access["role"] = user.role
 
     refresh = _new_token()
     expires_at = timezone.now() + REFRESH_TOKEN_LIFETIME
@@ -133,7 +134,7 @@ def register_company(
             company=company,
             first_name=first_name,
             last_name=last_name,
-            role=Role.OWNER,
+            company_role=seed_company_roles(company)[Role.OWNER],
         )
         # Every firm has a till from its first day (F0).
         create_default_cash_account(company)
@@ -546,7 +547,7 @@ def create_invitation(
         email=email.lower(),
         first_name=first_name,
         last_name=last_name,
-        role=role,
+        company_role=seeded_role(company.pk, role),
         token_hash=_hash(token),
         expires_at=timezone.now() + INVITATION_LIFETIME,
         invited_by=invited_by,
@@ -636,9 +637,9 @@ def deactivate_user(*, user: User) -> None:
     A company must keep at least one active owner, or nobody can change company
     settings or manage users ever again.
     """
-    if user.role == Role.OWNER:
+    if user.is_owner:
         remaining = (
-            User.objects.filter(company=user.company, role=Role.OWNER, is_active=True)
+            User.objects.filter(company=user.company, company_role__is_owner=True, is_active=True)
             .exclude(pk=user.pk)
             .count()
         )
@@ -651,13 +652,15 @@ def deactivate_user(*, user: User) -> None:
 
 
 def _is_last_active_owner(user: User) -> bool:
-    if user.role != Role.OWNER or not user.is_active:
+    if not user.is_owner or not user.is_active:
         return False
     if user.company_id is None:
         # No firm, so not the last owner of one. Only a superuser gets here.
         return False
     return (
-        not User.objects.filter(company_id=user.company_id, role=Role.OWNER, is_active=True)
+        not User.objects.filter(
+            company_id=user.company_id, company_role__is_owner=True, is_active=True
+        )
         .exclude(pk=user.pk)
         .exists()
     )
@@ -674,26 +677,26 @@ def change_role(*, user: User, role: str) -> None:
         raise BusinessRuleError(ErrorCode.LAST_OWNER_CANNOT_BE_DEACTIVATED)
 
     user.role = role
-    user.save(update_fields=["role", "updated_at"])
+    user.save(update_fields=["company_role", "updated_at"])
 
-    if role != Role.TECHNICIAN:
-        # Assignments only mean something for technicians. Leaving them behind
+    if not user.is_field_staff:
+        # Assignments only mean something for field staff. Leaving them behind
         # would silently narrow the person's view again if they ever moved back.
         user.customer_assignments.all().delete()
 
 
 @transaction.atomic
 def set_assigned_customers(*, user: User, customer_ids: list[UUID], assigned_by: User) -> None:
-    """Replace the set of customers a technician may see.
+    """Replace the set of customers a field worker is given.
 
     A replace rather than an add: the caller sends the list it wants to be true,
     which is the only form that can remove an assignment without a second
     endpoint and a second race.
     """
-    if user.role != Role.TECHNICIAN or user.company_id is None:
-        # A user with no firm has no customers to be assigned, and is not a
-        # technician either — only a superuser reaches that state.
-        raise BusinessRuleError(ErrorCode.ONLY_TECHNICIANS_ARE_ASSIGNED)
+    if not user.is_field_staff or user.company_id is None:
+        # A user with no firm has no customers to be assigned, and is not field
+        # staff either — only a superuser reaches that state.
+        raise BusinessRuleError(ErrorCode.ONLY_FIELD_STAFF_ARE_ASSIGNED)
 
     wanted = set(customer_ids)
     current = {row.customer_id: row for row in user.customer_assignments.all()}

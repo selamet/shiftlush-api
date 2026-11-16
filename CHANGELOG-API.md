@@ -760,6 +760,39 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed since the first draft
 
+- **Roles are per company and stored as data.** What a user may do is now read
+  from their company's role (a row of grants per resource) rather than from a
+  fixed enum. Nothing changes for existing users: every company is seeded with
+  the five roles it always had (`owner`, `admin`, `operations`, `technician`,
+  `accountant`) holding exactly today's access, each user is moved onto their
+  company's copy, and the `role` field on users and invitations still reads
+  and writes those same five keys. The owner role is the one flagged
+  `is_owner`: it holds every action, and the "last active owner" and "only an
+  owner gives the owner role" rules follow that flag.
+  Recipient lookups for notifications now skip soft-deleted users; the old
+  queries used the unfiltered manager, so a soft-deleted but still active user
+  used to be notified.
+- **Delete is its own permission, and voiding counts as delete.** Removing a record, and
+  any action that voids or reverses one, now needs the resource's delete action
+  rather than write. With the seeded roles the people who may do it are the same as before.
+- **The access token no longer carries a `role` claim.** Nothing read it; the
+  role is looked up on the user for every request. A token issued before this
+  change, still carrying `role`, is accepted and the claim is ignored, so
+  nobody is signed out. A client that decoded the claim should read the role
+  from `GET /auth/me` instead.
+- **Customer assignments follow the role's `field_staff` flag, not the
+  technician role.** `PUT /users/{id}/customers/` on a user whose role is not
+  field staff is now `422 ONLY_FIELD_STAFF_ARE_ASSIGNED`.
+  `ONLY_TECHNICIANS_ARE_ASSIGNED` is **deprecated**: it stays in the
+  `ErrorCode` enum for one release so a client switching on it still compiles,
+  but it is no longer returned — map `ONLY_FIELD_STAFF_ARE_ASSIGNED` to the same
+  message. With the seeded roles nothing else moves: the technician is the one
+  role that is field staff and scoped (`assigned_only`). Who is listed by
+  `GET /maintenance-visits/technicians/`, who is told about a customer's faults,
+  inspections and overdue lifts, and who may photograph their own visit or
+  fault without `attachment` write follow `field_staff`; narrowing to assigned
+  customers and acting on one's own visits and faults only follow
+  `assigned_only`.
 - **A public fault report needs a phone number.** `POST
   /public/elevators/{qr_token}/faults/` now refuses a missing or blank
   `reporter_phone` (`required`) and one that is not a Turkish number

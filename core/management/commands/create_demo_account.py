@@ -54,6 +54,7 @@ from django.db import transaction
 from apps.companies.models import Company
 from apps.ledger.services import create_default_cash_account
 from apps.users.models import Role, User
+from apps.users.roles import seed_company_roles
 from core import demo, demo_activity
 from core.context import company_context, system_context
 
@@ -145,7 +146,7 @@ class Command(BaseCommand):
                 company=company,
                 first_name=FIRST_NAME,
                 last_name=LAST_NAME,
-                role=Role.OWNER,
+                company_role=seed_company_roles(company)[Role.OWNER],
                 is_email_verified=True,
             )
             # Every firm has a till from its first day (F0), this one included.
@@ -164,7 +165,9 @@ class Command(BaseCommand):
             raise CommandError("Run load_address_data first — buildings need somewhere to be.")
 
         with system_context():
-            colleagues = User.objects.filter(company=company).exclude(role=Role.OWNER).exists()
+            colleagues = (
+                User.objects.filter(company=company).exclude(company_role__is_owner=True).exists()
+            )
 
         from apps.customers.models import Customer
 

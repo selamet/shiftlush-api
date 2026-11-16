@@ -53,7 +53,8 @@ from apps.elevators.models import (
     MachineRoom,
 )
 from apps.properties.models import Building, BuildingType, Complex
-from apps.users.models import Role, User
+from apps.users.models import User
+from apps.users.roles import seed_company_roles
 from core.context import company_context
 from core.text import normalize
 
@@ -272,6 +273,7 @@ def _short_name(legal_name: str) -> str:
 
 
 def _staff(company: Company, domain: str) -> list[User]:
+    roles = seed_company_roles(company)
     created = []
     for first, last, role in STAFF:
         slug = f"{first}.{last}".lower().translate(TR_SLUG)
@@ -282,7 +284,7 @@ def _staff(company: Company, domain: str) -> list[User]:
                 company=company,
                 first_name=first,
                 last_name=last,
-                role=role,
+                company_role=roles[role],
                 is_email_verified=True,
             )
         )
@@ -570,7 +572,7 @@ def _contracts(
 
 
 def _assign_technicians(company: Company, users: list[User], customers: list[Customer]) -> None:
-    technicians = [user for user in users if user.role == Role.TECHNICIAN]
+    technicians = [user for user in users if user.is_field_staff]
     for index, technician in enumerate(technicians):
         # Half each, so the narrowing is visible rather than theoretical.
         for customer in customers[index :: len(technicians)]:

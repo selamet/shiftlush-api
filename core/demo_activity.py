@@ -192,9 +192,9 @@ def populate_activity(
 
 def _firm(company: Company) -> _Firm:
     staff = list(User.objects.filter(company=company, is_active=True).order_by("created_at", "id"))
-    owner = next(user for user in staff if user.role == Role.OWNER)
+    owner = next(user for user in staff if user.is_owner)
     office = next((user for user in staff if user.role == Role.OPERATIONS), owner)
-    technicians = [user for user in staff if user.role == Role.TECHNICIAN]
+    technicians = [user for user in staff if user.is_field_staff]
     technician_of = {
         row.customer_id: row.user
         for row in UserCustomer.objects.select_related("user").order_by("assigned_at", "id")

@@ -17,7 +17,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.idempotency import ReplayProtectedCreate
 from core.models import CompanyOwnedModel
 from core.permissions import RolePermission
@@ -67,21 +67,22 @@ class TenantViewSet(
     def get_base_queryset(self) -> QuerySet[ModelT]:
         """Subclasses override this, not get_queryset.
 
-        Overriding get_queryset directly would drop the technician narrowing
+        Overriding get_queryset directly would drop the scoped-role narrowing
         below, silently and without any test failing except one that checks the
-        rows a technician actually sees.
+        rows a scoped user actually sees.
         """
         return super().get_queryset()
 
     def get_queryset(self) -> QuerySet[ModelT]:
         # The manager has already applied the company filter; this narrows
-        # further for the one role that does not see the whole company.
+        # further for a scoped role (`assigned_only`), which does not see the
+        # whole company.
         queryset = self.get_base_queryset()
         user = self.request.user
         # isinstance rather than the helper below: this one is allowed to run
         # without a user — the schema generator walks viewsets outside a request
         # — and the answer for a non-user is "no narrowing", not an exception.
-        if isinstance(user, User) and user.role == Role.TECHNICIAN and self.customer_path:
+        if isinstance(user, User) and user.is_scoped and self.customer_path:
             assigned = list(user.customer_assignments.values_list("customer_id", flat=True))
             queryset = queryset.filter(**{f"{self.customer_path}__in": assigned})
         return queryset

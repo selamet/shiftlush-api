@@ -133,8 +133,7 @@ class ElevatorDetailSerializer(OpenCorrectionMixin, serializers.ModelSerializer[
         # is not entitled to ask. Hiding it in the client instead would be
         # decoration — the value would still be in the response body.
         request = self.context.get("request")
-        role = getattr(getattr(request, "user", None), "role", None)
-        if not may(role, "contract_financials", READ):
+        if not may(getattr(request, "user", None), "contract_financials", READ):
             block.pop("unit_price", None)
         return block
 

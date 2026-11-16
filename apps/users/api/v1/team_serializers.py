@@ -13,12 +13,16 @@ from uuid import UUID
 
 from rest_framework import serializers
 
-from apps.users.models import Invitation, Role, User
+from apps.users.models import Invitation, Role, User, seeded_role
+from core.context import require_current_company_id
 from core.validators import normalize_email, normalize_phone
 
 
 class UserSerializer(serializers.ModelSerializer[User]):
     full_name = serializers.CharField(read_only=True)
+    # Declared, not inferred: `role` is a property over `company_role` now, and
+    # an inferred one would lose its choices in the schema.
+    role = serializers.ChoiceField(choices=Role.choices, read_only=True)
     assigned_customer_ids = serializers.SerializerMethodField()
 
     class Meta:
@@ -46,12 +50,16 @@ class UserSerializer(serializers.ModelSerializer[User]):
         read_only_fields = fields
 
     def get_assigned_customer_ids(self, user: User) -> list[str]:
-        if user.role != Role.TECHNICIAN:
+        if not user.is_field_staff:
             return []
         return [str(row.customer_id) for row in user.customer_assignments.all()]
 
 
 class UserUpdateSerializer(serializers.ModelSerializer[User]):
+    # Declared: a property is read-only to a ModelSerializer, and the view
+    # hands a changed role to `services.change_role`.
+    role = serializers.ChoiceField(choices=Role.choices, required=False)
+
     class Meta:
         model = User
         # Not the e-mail address: it is the username, it is globally unique, and
@@ -73,6 +81,9 @@ class UserUpdateSerializer(serializers.ModelSerializer[User]):
 class InvitationSerializer(serializers.ModelSerializer[Invitation]):
     invited_by_name = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
+    # Declared, not inferred: `role` is a property over `company_role` now, and
+    # an inferred one would lose its choices in the schema.
+    role = serializers.ChoiceField(choices=Role.choices, read_only=True)
 
     class Meta:
         model = Invitation
@@ -115,7 +126,7 @@ class InvitationCreateSerializer(serializers.Serializer[Any]):
     def validate_role(self, value: str) -> str:
         # An invitation that could mint an owner would let an administrator
         # promote themselves past the one role they do not hold.
-        if value == Role.OWNER:
+        if seeded_role(require_current_company_id(), value).is_owner:
             raise serializers.ValidationError("Owners are not created by invitation.")
         return value
 

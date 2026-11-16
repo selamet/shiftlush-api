@@ -83,7 +83,7 @@ class CustomerViewSet(TenantViewSet[Customer]):
             .select_related(*ADDRESS_JOIN)
             .prefetch_related("contacts")
         )
-        if may_see_balances(getattr(self.request.user, "role", None)):
+        if may_see_balances(self.request.user):
             # One query for every row's accounts and their balances, rather than
             # one per customer; read by CustomerReadSerializer.get_account.
             customers = customers.prefetch_related(

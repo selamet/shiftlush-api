@@ -27,8 +27,8 @@ from apps.faults.api.v1.serializers import (
     ResolveSerializer,
 )
 from apps.faults.models import Fault, FaultPriority
-from apps.users.models import Role
 from core.filters import TenantFilterSet
+from core.permissions import DELETE
 from core.requests import authenticated_user
 from core.viewsets import TenantViewSet
 
@@ -62,7 +62,8 @@ class FaultViewSet(TenantViewSet[Fault]):
         "partial_update": "fault_office",
         "assign": "fault_office",
         "close": "fault_office",
-        "cancel": "fault_office",
+        # Voids the fault: DELETE, though it is a POST.
+        "cancel": ("fault_office", DELETE),
     }
     http_method_names = ["get", "post", "patch", "head", "options"]
     read_serializer_class = FaultReadSerializer
@@ -145,7 +146,7 @@ class FaultViewSet(TenantViewSet[Fault]):
         user = authenticated_user(request)
         # Seeing a fault (the customer narrowing) is not the same as being the
         # one sent to it. 403 rather than 404: the fault is visible to them.
-        if user.role == Role.TECHNICIAN and fault.technician_id != user.pk:
+        if user.is_scoped and fault.technician_id != user.pk:
             raise PermissionDenied
         return fault
 

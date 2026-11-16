@@ -28,10 +28,12 @@ from apps.faults.models import (
 )
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.context import company_context
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import LOCAL_TZ
 
 #: Repeated public reports of one lift within this window are one fault.
@@ -39,7 +41,6 @@ PUBLIC_MERGE_WINDOW = timedelta(minutes=30)
 #: How long a public reporter's name and phone outlive the closed fault.
 REPORTER_DATA_RETENTION = timedelta(days=90)
 
-_OFFICE = (Role.OWNER, Role.ADMIN, Role.OPERATIONS)
 _REFERENCE_ATTEMPTS = 8
 
 
@@ -65,14 +66,14 @@ def _locked(fault: Fault) -> Fault:
 
 
 def _office(company_id: Any) -> list[User]:
-    return list(User.objects.filter(company_id=company_id, role__in=_OFFICE, is_active=True))
+    return list(holders(company_id, "notify_fault_office", RECEIVE))
 
 
 def _customer_technicians(fault: Fault) -> list[User]:
     return list(
         User.objects.filter(
             company_id=fault.company_id,
-            role=Role.TECHNICIAN,
+            company_role__field_staff=True,
             is_active=True,
             customer_assignments__customer_id=fault.elevator.building.customer_id,
             customer_assignments__is_deleted=False,

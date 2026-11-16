@@ -272,8 +272,10 @@ class TestContractsAndNotifications:
 
     def test_a_history_in_the_bell(self, seeded):
         with company_context(seeded.id):
-            owner = User.objects.get(company=seeded, role=Role.OWNER)
-            technicians = User.objects.filter(company=seeded, role=Role.TECHNICIAN)
+            owner = User.objects.get(company=seeded, company_role__system_key=Role.OWNER)
+            technicians = User.objects.filter(
+                company=seeded, company_role__system_key=Role.TECHNICIAN
+            )
             mine = Notification.objects.filter(recipient=owner)
             kinds = set(Notification.objects.values_list("kind", flat=True))
             assert kinds >= {
@@ -435,7 +437,9 @@ class TestOneStrayRowBlocksNothing:
             )
             stray_lift = covered[5]
             line = stray_lift.contract_lines.get(removed_at__isnull=True)
-            office = User.objects.get(company=phase_one_demo, role=Role.OPERATIONS)
+            office = User.objects.get(
+                company=phase_one_demo, company_role__system_key=Role.OPERATIONS
+            )
             stray = MaintenanceVisit.objects.create(
                 company=phase_one_demo,
                 elevator=stray_lift,
@@ -471,7 +475,9 @@ class TestOneStrayRowBlocksNothing:
 
         with company_context(phase_one_demo.id):
             lift = Elevator.objects.order_by("registration_number", "id")[0]
-            office = User.objects.get(company=phase_one_demo, role=Role.OPERATIONS)
+            office = User.objects.get(
+                company=phase_one_demo, company_role__system_key=Role.OPERATIONS
+            )
             # A cancelled fault, an inspection on one lift, and a contact
             # already invited to the portal, all entered by hand.
             stray = fault_services.report_by_staff(
@@ -726,7 +732,7 @@ class TestLedger:
             ]
             assert waiting, "no invoice has waited 40 days unpaid"
             overdue = {Account.objects.get(customer_id=d.customer_id).pk for d in waiting}
-            owner = User.objects.get(role=Role.OWNER)
+            owner = User.objects.get(company_role__system_key=Role.OWNER)
         assert len(overdue) == 1
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(owner).access}")

@@ -42,7 +42,8 @@ class _WithCompany:
         # A queryset, not a manager: simplejwt only ever calls `.get()` on this,
         # and `select_related` is what puts the join in. Saying Manager here
         # would have been a comfortable lie about what the caller receives.
-        queryset: QuerySet[Any] = self._model.objects.select_related("company")
+        # The role comes along too: every permission check reads it.
+        queryset: QuerySet[Any] = self._model.objects.select_related("company", "company_role")
         return queryset
 
 

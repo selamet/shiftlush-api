@@ -405,6 +405,52 @@ docker compose exec scheduler python manage.py run_scheduler --once
 
 The two purge commands still exist for a one-off or a `--dry-run`.
 
+## Roles as data (GH-164): deploying and rolling back
+
+Migration `users.0009_drop_user_role_column` drops `user.role`. Code from
+before this release selects that column on every authenticated request, so the
+order of operations matters in both directions.
+
+**Deploying.** The API container applies 0009 while the old `worker` and
+`scheduler` are still running old code: they wait for the API to be healthy,
+but they are not stopped first. A task that loads `User` in that window fails
+with `column "role" does not exist`, is stored as `FAILED`, and is not retried
+(the notify jobs and `plan_maintenance` are the ones that do). So deploy
+outside the job window, **00:30 to 07:15 Istanbul time** (first job
+`contract_expiry` at 00:30, last `maintenance_overdue` at 07:00; see
+`core/scheduling.py` and the table above), and only with nothing queued:
+
+```bash
+docker compose exec api python manage.py shell -c \
+  "from django_tasks_db.models import DBTaskResult as T; \
+print(T.objects.filter(status__in=['READY','RUNNING']).count())"
+```
+
+It must print `0`. If you cannot wait, stop the old containers first with
+`docker compose stop worker scheduler`; the deploy starts them again.
+
+**Rolling back.** The plain sequence in the next section is not enough here.
+While the new image is still running, reverse the migration, and only then
+move the checkout back:
+
+```bash
+ssh selamet@91.98.233.170
+cd /opt/apps/shiftlush-api
+docker compose exec api python manage.py migrate users 0006
+git reset --hard <previous-commit>
+/opt/vds-stack/deploy/shiftlush-api.sh
+```
+
+The reverse refuses to run if any user holds a custom role, because the old
+`role` column cannot represent one. None can exist before Part B ships the
+endpoints that create them, so until then it always goes through.
+
+**Getting the order wrong.** Resetting and redeploying first leaves old code on
+a database without `user.role`: every authenticated request returns 500, and
+`migrate users 0006` can no longer be run from the old image, which does not
+contain 0009 to reverse. Fix it by checking out the new commit again,
+bringing the container up, and starting from the first step of the rollback.
+
 ## Rolling back
 
 ```bash

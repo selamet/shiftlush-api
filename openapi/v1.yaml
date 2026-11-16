@@ -15089,6 +15089,7 @@ components:
       - PLAN_ROW_CLOSED
       - NOTIFICATION_EMAIL_LOCKED
       - LAST_OWNER_CANNOT_BE_DEACTIVATED
+      - ONLY_FIELD_STAFF_ARE_ASSIGNED
       - ONLY_TECHNICIANS_ARE_ASSIGNED
       - TECHNICIAN_RECORDS_OWN_VISITS
       - CANNOT_DEACTIVATE_SELF
@@ -15160,7 +15161,8 @@ components:
         * `PLAN_ROW_CLOSED` - The planned visit is done or cancelled; its day can no longer change
         * `NOTIFICATION_EMAIL_LOCKED` - This notification is always e-mailed and cannot be turned off
         * `LAST_OWNER_CANNOT_BE_DEACTIVATED` - A company must keep at least one active owner
-        * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Customer assignments apply to technicians only
+        * `ONLY_FIELD_STAFF_ARE_ASSIGNED` - Customer assignments apply to field staff only
+        * `ONLY_TECHNICIANS_ARE_ASSIGNED` - Deprecated: replaced by ONLY_FIELD_STAFF_ARE_ASSIGNED
         * `TECHNICIAN_RECORDS_OWN_VISITS` - A technician records maintenance visits in their own name only
         * `CANNOT_DEACTIVATE_SELF` - A user cannot deactivate their own account
         * `BUILDING_CUSTOMER_MISMATCH` - A building in a complex must share the complex's customer

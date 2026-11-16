@@ -83,9 +83,7 @@ class ContractViewSet(TenantViewSet[Contract]):
         context: dict[str, Any] = dict(super().get_serializer_context())
         # Decided here, from the same matrix the permission class reads, so the
         # rule lives in one place rather than being restated per serializer.
-        context["show_financials"] = may(
-            getattr(self.request.user, "role", None), "contract_financials", READ
-        )
+        context["show_financials"] = may(self.request.user, "contract_financials", READ)
         return context
 
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:

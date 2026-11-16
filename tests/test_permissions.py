@@ -1,18 +1,39 @@
 """The permission matrix, checked exhaustively.
 
-Every role against every resource and both actions, compared against the table
-in the specification. Written out rather than generated from MATRIX itself —
-asserting the code matches the code would prove nothing.
+Every seeded role against every resource and both actions, compared against
+the table in the specification. Written out rather than generated from the
+catalogue itself — asserting the code matches the code would prove nothing.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from apps.users.models import Role
-from core.permissions import MATRIX, READ, WRITE, may
+from apps.companies.models import Company
+from apps.users.models import CompanyRole, Role, User
+from core.context import system_context
+from core.permissions import DELETE, READ, WRITE, may
 
 ALL_ROLES = [Role.OWNER, Role.ADMIN, Role.OPERATIONS, Role.TECHNICIAN, Role.ACCOUNTANT]
+
+
+@pytest.fixture
+def staff(db) -> dict[str, User]:
+    """One user of each seeded role, in one firm."""
+    with system_context():
+        company = Company.objects.create(legal_name="Firm Ltd", display_name="Firm")
+        return {
+            role: User.objects.create_user(
+                email=f"{role}@example.com",
+                password="x-Strong-pass-1",
+                company=company,
+                first_name="A",
+                last_name="B",
+                role=role,
+            )
+            for role in ALL_ROLES
+        }
+
 
 # resource, action -> roles that are allowed, transcribed from section 6.2.
 EXPECTED: dict[tuple[str, str], set[str]] = {
@@ -74,10 +95,10 @@ EXPECTED: dict[tuple[str, str], set[str]] = {
 
 
 @pytest.mark.parametrize(("key", "allowed"), EXPECTED.items())
-def test_matrix_matches_the_specification(key, allowed):
+def test_matrix_matches_the_specification(staff, key, allowed):
     resource, action = key
     for role in ALL_ROLES:
-        assert may(role, resource, action) is (role in allowed), (
+        assert may(staff[role], resource, action) is (role in allowed), (
             f"{role} on {resource}:{action} does not match the specification"
         )
 
@@ -85,57 +106,56 @@ def test_matrix_matches_the_specification(key, allowed):
 class TestSpecificBoundaries:
     """The rules that exist for a reason worth restating."""
 
-    def test_only_the_owner_writes_company_settings(self):
-        assert may(Role.OWNER, "company", WRITE)
-        assert not may(Role.ADMIN, "company", WRITE)
+    def test_only_the_owner_writes_company_settings(self, staff):
+        assert may(staff[Role.OWNER], "company", WRITE)
+        assert not may(staff[Role.ADMIN], "company", WRITE)
 
-    def test_only_the_owner_deactivates_a_colleague(self):
+    def test_only_the_owner_deactivates_a_colleague(self, staff):
         # An administrator manages people — invites them, edits them, moves them
         # between roles. Ending someone's access is where 6.2 stops them, and it
         # is a separate resource so that saying so does not also take editing
         # away.
-        assert may(Role.ADMIN, "user", WRITE)
-        assert not may(Role.ADMIN, "user_deactivation", WRITE)
-        assert may(Role.OWNER, "user_deactivation", WRITE)
+        assert may(staff[Role.ADMIN], "user", WRITE)
+        assert not may(staff[Role.ADMIN], "user_deactivation", WRITE)
+        assert may(staff[Role.OWNER], "user_deactivation", WRITE)
+        # Deactivating is a DELETE since actions that void a record are.
+        assert not may(staff[Role.ADMIN], "user_deactivation", DELETE)
+        assert may(staff[Role.OWNER], "user_deactivation", DELETE)
 
-    def test_operations_cannot_see_contract_money(self):
+    def test_operations_cannot_see_contract_money(self, staff):
         # Operations runs the fleet; the amount is not part of that job, and
         # the boundary is applied on the server as well as in the interface.
-        assert may(Role.OPERATIONS, "contract", READ)
-        assert not may(Role.OPERATIONS, "contract_financials", READ)
+        assert may(staff[Role.OPERATIONS], "contract", READ)
+        assert not may(staff[Role.OPERATIONS], "contract_financials", READ)
 
-    def test_accountant_cannot_see_the_technical_register(self):
-        assert may(Role.ACCOUNTANT, "contract", READ)
-        assert not may(Role.ACCOUNTANT, "elevator", READ)
-        assert not may(Role.ACCOUNTANT, "building", READ)
+    def test_accountant_cannot_see_the_technical_register(self, staff):
+        assert may(staff[Role.ACCOUNTANT], "contract", READ)
+        assert not may(staff[Role.ACCOUNTANT], "elevator", READ)
+        assert not may(staff[Role.ACCOUNTANT], "building", READ)
 
-    def test_technician_reads_but_never_writes(self):
+    def test_technician_reads_but_never_writes(self, staff):
         for resource in ("customer", "building", "elevator"):
-            assert may(Role.TECHNICIAN, resource, READ)
-            assert not may(Role.TECHNICIAN, resource, WRITE)
+            assert may(staff[Role.TECHNICIAN], resource, READ)
+            assert not may(staff[Role.TECHNICIAN], resource, WRITE)
 
-    def test_technician_has_no_access_to_contracts(self):
-        assert not may(Role.TECHNICIAN, "contract", READ)
+    def test_technician_has_no_access_to_contracts(self, staff):
+        assert not may(staff[Role.TECHNICIAN], "contract", READ)
 
-    def test_audit_log_is_never_writable(self):
+    def test_audit_log_is_never_writable(self, staff):
         # Append-only by design: a log anyone can edit is not evidence.
         for role in ALL_ROLES:
-            assert not may(role, "audit_log", WRITE)
+            assert not may(staff[role], "audit_log", WRITE)
 
 
 class TestFailClosed:
-    def test_unknown_resource_is_denied(self):
-        assert not may(Role.OWNER, "not_a_resource", READ)
+    def test_unknown_resource_is_denied(self, staff):
+        assert not may(staff[Role.OWNER], "not_a_resource", READ)
 
-    def test_unknown_role_is_denied(self):
-        assert not may("superuser", "elevator", READ)
+    def test_a_role_the_company_made_and_granted_nothing_is_denied(self, staff):
+        user = staff[Role.ADMIN]
+        user.company_role = CompanyRole.unscoped.create(company=user.company, name="Custom")
+        user.save()
+        assert not may(User.objects.get(pk=user.pk), "elevator", READ)
 
-    def test_missing_role_is_denied(self):
+    def test_missing_user_is_denied(self):
         assert not may(None, "elevator", READ)
-
-    def test_every_resource_declares_both_actions(self):
-        # A resource missing an action would fall through to an empty set, which
-        # denies — safe, but silently. Better to notice it here.
-        for resource, actions in MATRIX.items():
-            assert READ in actions, f"{resource} does not declare a read rule"
-            assert WRITE in actions, f"{resource} does not declare a write rule"

@@ -24,6 +24,123 @@ class Role(models.TextChoices):
     ACCOUNTANT = "accountant", "Accountant"
 
 
+class CompanyRole(CompanyOwnedModel):
+    """A role a company gives its people: a name, a few flags and its grants.
+
+    Every company starts with the five roles the app always had, each marked
+    with its `system_key`; a company may add its own, which have none. The
+    owner role is `is_owner` and holds no grant rows — what the owner may do is
+    computed, so no edit can lock a firm out of its own settings.
+    """
+
+    name = models.CharField(max_length=60)
+    description = models.TextField(blank=True)
+    # The seed key this role was created as ("" for a role the company added).
+    system_key = models.CharField(max_length=20, blank=True)
+    is_owner = models.BooleanField(default=False)
+    # Sees only the customers assigned to the holder.
+    assigned_only = models.BooleanField(default=False)
+    # Works in the field: can be sent on visits and assigned to faults.
+    field_staff = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "company_role"
+        ordering = ["name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name"],
+                condition=models.Q(is_deleted=False),
+                name="uq_company_role_name_active",
+            ),
+            models.UniqueConstraint(
+                fields=["company"],
+                condition=models.Q(is_owner=True),
+                name="uq_company_role_one_owner",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "system_key"],
+                condition=~models.Q(system_key="") & models.Q(is_deleted=False),
+                name="uq_company_role_system_key_active",
+            ),
+            # Narrowing to assigned customers only makes sense for field staff.
+            models.CheckConstraint(
+                condition=models.Q(assigned_only=False) | models.Q(field_staff=True),
+                name="company_role_assigned_only_is_field_staff",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class RoleGrant(models.Model):
+    """What one role may do with one catalogue resource.
+
+    No row means nothing granted. RECEIVE (who is notified) is `can_receive`.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    role = models.ForeignKey(CompanyRole, on_delete=models.CASCADE, related_name="grants")
+    resource = models.CharField(max_length=60)
+    can_read = models.BooleanField(default=False)
+    can_write = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    can_receive = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "role_grant"
+        constraints = [
+            models.UniqueConstraint(fields=["role", "resource"], name="uq_role_grant_resource")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.role_id}: {self.resource}"
+
+
+def seeded_role(company_id: Any, system_key: str) -> CompanyRole:
+    """The company's live seeded role for a seed key (`Role` value)."""
+    if company_id is None:
+        raise ValueError("A role can only be set once the company is known.")
+    return CompanyRole.unscoped.get(company_id=company_id, system_key=system_key, is_deleted=False)
+
+
+class SeedRoleCompat:
+    """`role` as the seed key of `company_role`. Removed in Part E.
+
+    Reads give the seed key ("" for a company-made role or no role at all);
+    assignment, including `Model(role=...)`, picks the company's seeded role
+    with that key. It exists so code and tests that speak in seed keys keep
+    working while they move to `company_role`.
+    """
+
+    company_id: Any
+    company_role: CompanyRole | None
+
+    def loaded_company_role(self) -> CompanyRole | None:
+        """`company_role`, read without a company in context, and cached."""
+        role_id = getattr(self, "company_role_id", None)
+        if role_id is None:
+            return None
+        field = type(self)._meta.get_field("company_role")  # type: ignore[attr-defined]
+        if not field.is_cached(self):
+            # Not through the relation: that goes through the tenant-scoped
+            # manager, and a user's role is read where no company is in context
+            # yet — signing in, issuing a token. It is the row the user points
+            # at, so there is no other firm's data to step into.
+            field.set_cached_value(self, CompanyRole.unscoped.get(pk=role_id))
+        role: CompanyRole = field.get_cached_value(self)
+        return role
+
+    @property
+    def role(self) -> str:
+        role = self.loaded_company_role()
+        return "" if role is None else str(role.system_key)
+
+    @role.setter
+    def role(self, system_key: str) -> None:
+        self.company_role = seeded_role(self.company_id, str(system_key))
+
+
 class UserManager(BaseUserManager["User"]):
     """Deliberately not tenant-scoped.
 
@@ -63,7 +180,7 @@ class UserManager(BaseUserManager["User"]):
         return self._create(email, password, **extra)
 
 
-class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
+class User(SeedRoleCompat, AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     """A person who signs in.
 
     Not a CompanyOwnedModel even though it carries a company: see UserManager
@@ -87,7 +204,10 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     email = models.EmailField(max_length=150, unique=True)
     phone = models.CharField(max_length=20, blank=True)
 
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.OPERATIONS)
+    # Null only for a user with no company (a superuser).
+    company_role = models.ForeignKey(
+        CompanyRole, on_delete=models.PROTECT, related_name="users", null=True, blank=True
+    )
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -123,24 +243,49 @@ class User(AbstractBaseUser, PermissionsMixin, SoftDeleteModel):
     class Meta:
         db_table = "user"
         ordering = ["first_name", "last_name", "id"]
-        constraints = [
-            models.CheckConstraint(condition=models.Q(role__in=Role.values), name="user_role_valid")
-        ]
 
     def __str__(self) -> str:
         return self.email
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.company_role_id is None and self.company_id is not None:
+            # A colleague created without a role is operations, as the column's
+            # default made them before roles became rows.
+            self.company_role = seeded_role(self.company_id, Role.OPERATIONS)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "company_role"}
+        super().save(*args, **kwargs)
 
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
+    @property
+    def is_scoped(self) -> bool:
+        """Sees only the customers assigned to them, and acts on their own work only."""
+        role = self.loaded_company_role()
+        return role is not None and role.assigned_only
+
+    @property
+    def is_owner(self) -> bool:
+        """Holds the company's owner role."""
+        role = self.loaded_company_role()
+        return role is not None and role.is_owner
+
+    @property
+    def is_field_staff(self) -> bool:
+        """Can be given customers, and sent on visits and to faults."""
+        role = self.loaded_company_role()
+        return role is not None and role.field_staff
+
 
 class UserCustomer(CompanyOwnedModel):
-    """Which customers a technician is allowed to see.
+    """Which customers a field worker is given.
 
-    Only technicians are listed here; every other role sees the whole company.
-    A technician with no rows sees an empty list, which is a stated condition
-    rather than an error.
+    Only field staff are listed here. For a scoped role (`assigned_only`) the
+    rows are everything the person sees; one with no rows sees an empty list,
+    which is a stated condition rather than an error.
     """
 
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="customer_assignments")
@@ -166,11 +311,13 @@ class UserCustomer(CompanyOwnedModel):
         return f"{self.user_id} -> {self.customer_id}"
 
 
-class Invitation(CompanyOwnedModel):
+class Invitation(SeedRoleCompat, CompanyOwnedModel):
     email = models.EmailField(max_length=150)
     first_name = models.CharField(max_length=60)
     last_name = models.CharField(max_length=60)
-    role = models.CharField(max_length=20, choices=Role.choices)
+    company_role = models.ForeignKey(
+        CompanyRole, on_delete=models.PROTECT, related_name="invitations"
+    )
     # Only the hash is stored. The plaintext exists once, in the e-mail.
     token_hash = models.CharField(max_length=255, unique=True)
     expires_at = models.DateTimeField()
@@ -182,11 +329,6 @@ class Invitation(CompanyOwnedModel):
     class Meta:
         db_table = "invitation"
         ordering = ["-created_at", "-id"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(role__in=Role.values), name="invitation_role_valid"
-            )
-        ]
 
     def __str__(self) -> str:
         return self.email

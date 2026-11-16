@@ -19,7 +19,6 @@ from apps.attachments.api.v1.serializers import (
 )
 from apps.attachments.models import Attachment, AttachmentCategory, ObjectType
 from apps.attachments.services import confirm_upload, download_url, prepare_upload
-from apps.users.models import Role
 from core.error_codes import ErrorCode
 from core.exceptions import Conflict
 from core.filters import TenantFilterSet
@@ -71,7 +70,7 @@ class AttachmentViewSet(
     def get_queryset(self) -> QuerySet[Attachment]:
         queryset = Attachment.objects.select_related("uploaded_by")
         user = self.request.user
-        if getattr(user, "role", None) == Role.TECHNICIAN:
+        if getattr(user, "is_scoped", False):
             queryset = queryset.filter(self._visible_to_technician(user))
         return queryset
 

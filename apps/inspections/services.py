@@ -34,12 +34,12 @@ from apps.inspections.models import (
 )
 from apps.notifications.models import NotificationKind
 from apps.notifications.services import notify
-from apps.users.models import Role, User
+from apps.users.models import User
 from core.error_codes import ErrorCode
 from core.exceptions import BusinessRuleError
+from core.permission_catalogue import RECEIVE
+from core.permissions import holders
 from core.scheduling import local_today
-
-_OFFICE = (Role.OWNER, Role.ADMIN, Role.OPERATIONS)
 
 
 class NonConformityEntry(TypedDict):
@@ -142,14 +142,14 @@ def sync_elevator(elevator: Elevator) -> None:
 
 
 def office(company_id: Any) -> list[User]:
-    return list(User.objects.filter(company_id=company_id, role__in=_OFFICE, is_active=True))
+    return list(holders(company_id, "notify_inspection_office", RECEIVE))
 
 
 def office_and_technicians(elevator: Elevator) -> list[User]:
     """The office, and the technicians who cover the lift's customer."""
     technicians = User.objects.filter(
         company_id=elevator.company_id,
-        role=Role.TECHNICIAN,
+        company_role__field_staff=True,
         is_active=True,
         customer_assignments__customer_id=elevator.building.customer_id,
         customer_assignments__is_deleted=False,

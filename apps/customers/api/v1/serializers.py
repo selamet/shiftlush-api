@@ -182,11 +182,7 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
         request = self.context.get("request")
         view = self.context.get("view")
         generating_schema = getattr(view, "swagger_fake_view", False)
-        if (
-            request is not None
-            and not generating_schema
-            and not may_see_balances(getattr(request.user, "role", None))
-        ):
+        if request is not None and not generating_schema and not may_see_balances(request.user):
             fields.pop("accounts", None)
         return fields
 
