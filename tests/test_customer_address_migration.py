@@ -20,6 +20,9 @@ PASSWORD = "correct-horse-battery"
 
 BEFORE = ("customers", "0008_customer_address")
 AFTER = ("customers", "0009_move_customer_address")
+#: As a deploy runs it: the columns dropped too, so a reverse re-adds them empty
+#: and only 0009's reverse fills them.
+DROPPED = ("customers", "0010_drop_customer_address_columns")
 
 
 def migrate_to(target: tuple[str, str]) -> Any:
@@ -157,5 +160,80 @@ class TestMovingTheCustomerAddress:
             assert len(addresses_of(again, full.id)) == 1
             assert len(addresses_of(again, unit.id)) == 1
             assert len(addresses_of(again, deleted.id)) == 1
+        finally:
+            migrate_to_latest()
+
+    def test_edits_made_while_rolled_back_win_on_the_re_apply(self):
+        """Back at 0008 the old code edits the columns; those are the truth.
+
+        Re-applying must carry what the office typed during the rollback into
+        the book, not keep the row the first run wrote and drop the columns.
+        """
+        try:
+            firm = make_company("Firm")
+            other_firm = make_company("Other")
+
+            old_apps = migrate_to(BEFORE)
+            old_customer = old_apps.get_model("customers", "Customer")
+
+            def customer(company: Any, legal_name: str, **values: Any) -> Any:
+                return old_customer.objects.create(
+                    company_id=company.id, type="corporate", legal_name=legal_name, **values
+                )
+
+            edited = customer(firm, "Edited", street="Ataturk Cd.", building_number="12")
+            cleared = customer(firm, "Cleared", street="Old Cd.")
+            noted = customer(firm, "Noted", street="Noted Cd.")
+            rebilled = customer(firm, "Rebilled", street="First Cd.")
+            deleted = customer(other_firm, "Deleted", street="Bagdat Cd.", is_deleted=True)
+
+            new_apps = migrate_to(DROPPED)
+            address_model = new_apps.get_model("customers", "CustomerAddress")
+            # In the address book, before the rollback: a note only the book
+            # can hold, and a billing row soft-deleted through the API.
+            address_model.objects.filter(customer_id=noted.id).update(address_note="Arka kapı")
+            address_model.objects.filter(customer_id=rebilled.id).update(is_deleted=True)
+
+            old_apps = migrate_to(BEFORE)
+            old_customer = old_apps.get_model("customers", "Customer")
+            assert old_customer.objects.get(pk=rebilled.id).street == ""
+            # What the old code writes while rolled back.
+            old_customer.objects.filter(pk=edited.id).update(street="Moda Cd.")
+            old_customer.objects.filter(pk=cleared.id).update(street="")
+            old_customer.objects.filter(pk=noted.id).update(street="")
+            old_customer.objects.filter(pk=rebilled.id).update(street="Second Cd.")
+            old_customer.objects.filter(pk=deleted.id).update(street="Bagdat Cd. 2")
+
+            again = migrate_to(DROPPED)
+            address_model = again.get_model("customers", "CustomerAddress")
+
+            def rows(customer_id: Any) -> list[Any]:
+                return list(address_model.objects.filter(customer_id=customer_id).order_by("id"))
+
+            # The edit wins, on the same row, and nothing is duplicated.
+            [row] = rows(edited.id)
+            assert (row.street, row.building_number, row.is_billing) == ("Moda Cd.", "12", True)
+            assert row.is_deleted is False
+
+            # Cleared and holding nothing else: soft-deleted, not left as an
+            # empty billing row the API would refuse to save.
+            [row] = rows(cleared.id)
+            assert row.is_deleted is True and row.deleted_at is not None
+
+            # Cleared but still holding a note: kept, live and billing, with the
+            # four fields emptied to match the columns.
+            [row] = rows(noted.id)
+            assert row.is_deleted is False and row.is_billing is True
+            assert (row.street, row.address_note) == ("", "Arka kapı")
+
+            # Only a soft-deleted billing row: a new live one is created; the
+            # old one stays as history and the billing slot holds one row.
+            live = [r for r in rows(rebilled.id) if not r.is_deleted]
+            assert [(r.street, r.is_billing) for r in live] == [("Second Cd.", True)]
+            assert len(rows(rebilled.id)) == 2
+
+            # A soft-deleted customer's row is updated and stays deleted with it.
+            [row] = rows(deleted.id)
+            assert (row.street, row.is_deleted) == ("Bagdat Cd. 2", True)
         finally:
             migrate_to_latest()
