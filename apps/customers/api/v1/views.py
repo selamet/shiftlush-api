@@ -12,13 +12,16 @@ from rest_framework.response import Response
 
 from apps.customers.api.v1.serializers import (
     LEDGER_ACCOUNT_ROWS,
+    CustomerAddressNestedWriteSerializer,
+    CustomerAddressReadSerializer,
+    CustomerAddressWriteSerializer,
     CustomerContactNestedWriteSerializer,
     CustomerContactReadSerializer,
     CustomerContactWriteSerializer,
     CustomerReadSerializer,
     CustomerWriteSerializer,
 )
-from apps.customers.models import Customer, CustomerContact
+from apps.customers.models import Customer, CustomerAddress, CustomerContact
 from apps.ledger.balances import customer_accounts
 from apps.ledger.models import Account
 from core.error_codes import ErrorCode
@@ -166,6 +169,55 @@ class CustomerViewSet(TenantViewSet[Customer]):
         read = CustomerContactReadSerializer(write.instance, context=self.get_serializer_context())
         return Response(read.data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        methods=["GET"],
+        description="The addresses of this customer, the billing one first.",
+        filters=False,
+        responses={200: CustomerAddressReadSerializer(many=True)},
+    )
+    @extend_schema(
+        methods=["POST"],
+        description="Add an address to this customer. The customer comes from the path.",
+        request=CustomerAddressNestedWriteSerializer,
+        responses={201: CustomerAddressReadSerializer},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="addresses")
+    def addresses(self, request: Request, pk: str | None = None) -> Response:
+        """The saved addresses of one customer.
+
+        Mirrors `contacts`: `get_object()` makes another company's customer a
+        404, and the customer id comes from the URL, never the body.
+        """
+        customer = self.get_object()
+        if request.method == "POST":
+            return self._create_address(request, customer)
+
+        queryset = CustomerAddress.objects.filter(customer=customer).select_related(*ADDRESS_JOIN)
+        page = cast(
+            "list[CustomerAddress] | None",
+            self.paginate_queryset(cast("QuerySet[Customer]", queryset)),
+        )
+        serializer = CustomerAddressReadSerializer(
+            page, many=True, context=self.get_serializer_context()
+        )
+        return self.get_paginated_response(serializer.data)
+
+    @replay_protected
+    def _create_address(self, request: Request, customer: Customer) -> Response:
+        write = CustomerAddressNestedWriteSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        write.is_valid(raise_exception=True)
+        user = authenticated_user(request)
+        write.save(
+            company_id=user.company_id,
+            customer=customer,
+            created_by=user,
+            updated_by=user,
+        )
+        read = CustomerAddressReadSerializer(write.instance, context=self.get_serializer_context())
+        return Response(read.data, status=status.HTTP_201_CREATED)
+
 
 class CustomerContactViewSet(TenantViewSet[CustomerContact]):
     resource = "customer"
@@ -176,3 +228,14 @@ class CustomerContactViewSet(TenantViewSet[CustomerContact]):
 
     def get_base_queryset(self) -> QuerySet[CustomerContact]:
         return CustomerContact.objects.select_related("customer")
+
+
+class CustomerAddressViewSet(TenantViewSet[CustomerAddress]):
+    resource = "customer"
+    read_serializer_class = CustomerAddressReadSerializer
+    write_serializer_class = CustomerAddressWriteSerializer
+    filterset_fields = ["customer", "is_billing"]
+    customer_path = "customer_id"
+
+    def get_base_queryset(self) -> QuerySet[CustomerAddress]:
+        return CustomerAddress.objects.select_related("customer", *ADDRESS_JOIN)

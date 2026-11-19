@@ -695,6 +695,13 @@ carried as compatibility shims nobody will ever remove.
 - **`GET, POST /customers/{id}/contacts`** — specification §8.6, previously
   routed only as the flat `/customer-contacts`. The customer comes from the
   path; naming it in the body is a 400. `Idempotency-Key` is honoured.
+- **`GET, POST /customers/{id}/addresses` and the flat `/customer-addresses`**
+  — a customer's saved addresses, with one optional billing address
+  (`is_billing`). Marking another address billing moves the flag rather than
+  failing. The customer comes from the path on the nested route; naming it in
+  the body is a 400. `Idempotency-Key` is honoured. New error code
+  **`ADDRESS_EMPTY`** (400, on `label`): an address needs a neighbourhood, a
+  street, a number or a note.
 - **`CONSTRAINT_VIOLATION`**, 409. A last resort for a database constraint that
   reaches the client without a rule of its own having caught it first. It
   replaces the `INTERNAL_ERROR` such a case used to produce, which told clients

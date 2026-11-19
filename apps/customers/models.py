@@ -158,6 +158,7 @@ class CustomerAddress(CompanyOwnedModel):
     neighborhood = models.ForeignKey(
         "address.Neighborhood",
         null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="customer_addresses",
     )
