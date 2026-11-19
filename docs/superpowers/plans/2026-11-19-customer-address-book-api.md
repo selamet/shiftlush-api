@@ -348,4 +348,4 @@ gh pr create --title "GH-166-feat: the customer address book" --body "<what chan
 Closes #166"
 ```
 
-The body is English and carries no AI attribution. Do not merge: the user decides when, and the web change (shiftlush-web#134) should be ready to deploy with it.
+The body is English and carries no AI attribution. Do not merge: merging deploys the breaking contract. The web change (shiftlush-web#134) is built against this branch's `openapi/v1.yaml` while this PR stays open, and the two are merged back to back, this one first, when the user says so.

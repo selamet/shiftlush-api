@@ -10,7 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-19-customer-address-book-design.md` in `shiftlush-api`.
 
-**Depends on:** the API plan (`2026-11-19-customer-address-book-api.md`) merged to `shiftlush-api` main, so `npm run api:sync` can pull the contract.
+**Depends on:** the API plan (`2026-11-19-customer-address-book-api.md`) implemented on branch `GH-166` of `shiftlush-api`, with its PR open and **not yet merged**.
+
+**Sequencing:** merging the API PR deploys a breaking contract, and until the web change is live the old customer form cannot save. So the web is built against the API branch's contract, and the two PRs are merged back to back, API first. `npm run lint:contract` compares against `shiftlush-api` main and therefore stays red until the API PR merges; that one check, and with it `npm run verify`, can only go green in Task 7.
 
 ## Global Constraints
 
@@ -49,7 +51,7 @@
 
 - [ ] **Step 1: Create the worktree.** `git -C ~/projects/shiftlush-web fetch origin && git -C ~/projects/shiftlush-web worktree add -b GH-134 ../shiftlush-web-GH-134 origin/main`, then `npm ci` inside it.
 
-- [ ] **Step 2: Pull the contract.** `npm run api:sync && npm run api:generate`. Expected: `generated.ts` gains `CustomerAddressRead`, `CustomerRead` loses `street` and gains `addresses`.
+- [ ] **Step 2: Pull the contract from the API branch.** Copy `~/projects/shiftlush-api-GH-166/openapi/v1.yaml` over `openapi/v1.yaml` in this worktree (`npm run api:sync` reads `shiftlush-api` main, which does not have the change yet), then `npm run api:generate`. Expected: `generated.ts` gains `CustomerAddressRead`, `CustomerRead` loses `street` and gains `addresses`.
 
 - [ ] **Step 3: Run `npm run typecheck`.** Expected: FAIL in `CustomerFormScreen.tsx` and `CustomerDetailScreen.tsx`, which still read the removed fields. These failures are the work list for Tasks 4 and 5; leave them.
 
@@ -336,7 +338,7 @@ git commit -m "GH-134-feat: pick a saved address in the site and building forms"
 
 ### Task 7: Verify and open the pull request
 
-- [ ] **Step 1: Run `npm run verify`.** Expected: every step passes, including `lint:contract` against `shiftlush-api` main.
+- [ ] **Step 1: Run every step of `npm run verify` except `lint:contract`** (run the scripts it chains, one by one). Expected: all pass. Then run `npm run lint:contract` and confirm its only complaint is that `openapi/v1.yaml` is ahead of `shiftlush-api` main. Say in the PR that this check goes green once shiftlush-api#166's PR merges, after which `npm run api:sync` must produce no diff.
 
 - [ ] **Step 2: Confirm the branch holds only this work.** `git log --oneline origin/main..HEAD` and `git diff --stat origin/main..HEAD` name only the files in this plan.
 
