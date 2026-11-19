@@ -7329,6 +7329,14 @@ components:
           type: string
           readOnly: true
           nullable: true
+        district_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        province_id:
+          type: integer
+          readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
@@ -7389,6 +7397,7 @@ components:
       - created_at
       - customer_id
       - customer_name
+      - district_id
       - district_name
       - elevator_count
       - floor_count
@@ -7399,6 +7408,7 @@ components:
       - name
       - neighborhood_id
       - neighborhood_name
+      - province_id
       - province_name
       - street
       - type
@@ -7898,6 +7908,14 @@ components:
           type: string
           readOnly: true
           nullable: true
+        district_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        province_id:
+          type: integer
+          readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
@@ -7949,6 +7967,7 @@ components:
       - created_at
       - customer_id
       - customer_name
+      - district_id
       - district_name
       - elevator_count
       - id
@@ -7958,6 +7977,7 @@ components:
       - neighborhood_id
       - neighborhood_name
       - notes
+      - province_id
       - province_name
       - street
       - updated_at

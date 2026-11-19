@@ -199,6 +199,12 @@ class TestNullableAddressNames:
         properties = spec["components"]["schemas"][schema]["properties"]
         assert properties[field].get("nullable") is True
 
+    @pytest.mark.parametrize("schema", ["BuildingRead", "ComplexRead"])
+    @pytest.mark.parametrize("field", ["district_id", "province_id"])
+    def test_the_id_fields_are_declared_nullable(self, spec, schema, field):
+        properties = spec["components"]["schemas"][schema]["properties"]
+        assert properties[field].get("nullable") is True
+
 
 class TestTheContractDescribesWhatWritesReturn:
     """A create or an edit answers with the record as it is read, id included.

@@ -704,3 +704,50 @@ class TestBuildingAddressNote:
         )
         assert response.status_code == 201
         assert response.data["address_note"] == ""
+
+
+class TestBuildingAddressIds:
+    """A form fills its province and district pickers from ids, not from names."""
+
+    @pytest.fixture
+    def moda(self, db):
+        from apps.address.models import District, Neighborhood, Province
+
+        province = Province.objects.create(id=34, name="İstanbul", name_normalized="istanbul")
+        district = District.objects.create(
+            id=3401, province=province, name="Kadıköy", name_normalized="kadikoy"
+        )
+        return Neighborhood.objects.create(
+            id=340101, district=district, name="Caferağa", name_normalized="caferaga"
+        )
+
+    def make_building(self, company, customer, **extra):
+        from apps.properties.models import Building, BuildingType
+
+        with company_context(company.id):
+            return Building.objects.create(
+                company=company,
+                customer=customer,
+                name="A Blok",
+                type=BuildingType.RESIDENTIAL,
+                address_note="Test",
+                **extra,
+            )
+
+    def test_a_building_read_carries_the_ids_of_its_district_and_province(self, firm_a, moda):
+        company, owner, customer = firm_a
+        building = self.make_building(company, customer, neighborhood=moda)
+
+        body = api_for(owner).get(reverse("building-detail", args=[building.id])).json()
+
+        assert body["district_id"] == 3401
+        assert body["province_id"] == 34
+
+    def test_a_building_without_a_neighbourhood_has_null_ids(self, firm_a):
+        company, owner, customer = firm_a
+        building = self.make_building(company, customer)
+
+        body = api_for(owner).get(reverse("building-detail", args=[building.id])).json()
+
+        assert body["district_id"] is None
+        assert body["province_id"] is None

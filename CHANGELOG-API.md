@@ -685,6 +685,9 @@ carried as compatibility shims nobody will ever remove.
 
 ### Added since the first draft
 
+- **`district_id` and `province_id` on every named address read** (`BuildingRead`,
+  `ComplexRead`), so a client can fill a province and district picker from a
+  record. Both are null when the record has no neighbourhood.
 - **`neighborhood_name`, `district_name` and `province_name` on `CustomerRead`.**
   The billing address (§5.6) could be written and not read: the response carried
   an id, which no screen can display and no edit form can open a picker on.

@@ -30,8 +30,14 @@ class AddressReadMixin(serializers.Serializer[Any]):
     neighborhood_name = serializers.CharField(
         source="neighborhood.name", read_only=True, allow_null=True
     )
+    district_id = serializers.IntegerField(
+        source="neighborhood.district_id", read_only=True, allow_null=True
+    )
     district_name = serializers.CharField(
         source="neighborhood.district.name", read_only=True, allow_null=True
+    )
+    province_id = serializers.IntegerField(
+        source="neighborhood.district.province_id", read_only=True, allow_null=True
     )
     province_name = serializers.CharField(
         source="neighborhood.district.province.name", read_only=True, allow_null=True
