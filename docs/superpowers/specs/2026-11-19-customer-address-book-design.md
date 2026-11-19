@@ -215,7 +215,8 @@ Address
   Street [ Ataturk Cd. ]   Building no [ 12/A ]
 ```
 
-Turkish and English strings go in the message files.
+User-facing strings are Turkish and go in `messages/tr.json`, the web app's
+only message file.
 
 ## Constraints
 
