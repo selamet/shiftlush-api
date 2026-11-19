@@ -277,7 +277,7 @@ git commit -m "GH-134-feat: addresses card and address form on the customer"
 
 - [ ] **Step 4: Run `npm run typecheck`.** Expected: PASS; the failures from Task 1 are gone.
 
-- [ ] **Step 5: Check it by hand** against a local API (`make dev` in `shiftlush-api-GH-166` after `make migrate`): create a customer with an address and see one "Fatura" row on its page; create one with the block untouched and see the empty state; edit a customer and see no address block. Then stop the API between the two requests is not practical, so force the failure once by temporarily posting an empty label and confirm the notice appears and exactly one customer exists; revert the temporary change.
+- [ ] **Step 5: Check it by hand** against a local API (`make dev` in `shiftlush-api-GH-166` after `make migrate`): create a customer with an address and see one "Fatura" row on its page; create one with the block untouched and see the empty state; edit a customer and see no address block. Then force the second request to fail once, by temporarily sending an empty label, and confirm the notice appears and exactly one customer exists; revert the temporary change.
 
 - [ ] **Step 6: Commit.**
 
