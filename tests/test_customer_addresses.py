@@ -9,9 +9,9 @@ from rest_framework.test import APIClient
 
 from apps.customers.models import Customer, CustomerAddress, CustomerType
 from apps.customers.services import demote_other_billing
-from apps.users.models import User
+from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
-from core.context import company_context
+from core.context import company_context, system_context
 
 PASSWORD = "correct-horse-battery"
 
@@ -101,6 +101,54 @@ class TestTheBillingSlot:
                     company=company, customer=customer, label=label, street="x", is_billing=billing
                 )
             assert [a.label for a in customer.addresses.all()] == ["Z", "A", "B"]
+
+
+def make_technician(company, email: str) -> User:
+    with system_context():
+        return User.objects.create_user(
+            email=email,
+            password=PASSWORD,
+            company=company,
+            first_name="T",
+            last_name="Tech",
+            role=Role.TECHNICIAN,
+        )
+
+
+class TestATechnicianSeesOnlyTheirOwnCustomers:
+    def test_unassigned_gets_an_empty_flat_list(self, firm_a):
+        company, _, customer = firm_a
+        with company_context(company.id):
+            CustomerAddress.objects.create(company=company, customer=customer, street="x")
+        technician = make_technician(company, "tech-none@example.com")
+
+        response = api_for(technician).get(reverse("customer-address-list"))
+
+        assert response.status_code == 200
+        assert response.data["results"] == []
+
+    def test_unassigned_gets_a_404_on_the_nested_list(self, firm_a):
+        company, _, customer = firm_a
+        with company_context(company.id):
+            CustomerAddress.objects.create(company=company, customer=customer, street="x")
+        technician = make_technician(company, "tech-404@example.com")
+
+        assert api_for(technician).get(nested(customer)).status_code == 404
+
+    def test_assigned_sees_the_address_in_both_places(self, firm_a):
+        company, _, customer = firm_a
+        with company_context(company.id):
+            address = CustomerAddress.objects.create(company=company, customer=customer, street="x")
+        technician = make_technician(company, "tech-yes@example.com")
+        with company_context(company.id):
+            technician.customer_assignments.create(company=company, customer=customer)
+        client = api_for(technician)
+
+        flat = client.get(reverse("customer-address-list"))
+        under = client.get(nested(customer))
+
+        assert [row["id"] for row in flat.data["results"]] == [str(address.id)]
+        assert [row["id"] for row in under.data["results"]] == [str(address.id)]
 
 
 class TestTheEndpoints:
