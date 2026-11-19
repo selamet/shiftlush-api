@@ -264,8 +264,9 @@ class CustomerAccountSerializer(serializers.Serializer[Any]):
     currency = serializers.CharField(read_only=True)
 
 
-class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Customer]):
+class CustomerReadSerializer(serializers.ModelSerializer[Customer]):
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
+    addresses = CustomerAddressReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
     accounts = serializers.SerializerMethodField(
@@ -319,16 +320,10 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
             "tax_number",
             "phone",
             "email",
-            "neighborhood_id",
-            "neighborhood_name",
-            "district_name",
-            "province_name",
-            "street",
-            "building_number",
-            "unit_number",
             "notes",
             "is_active",
             "contacts",
+            "addresses",
             "building_count",
             "elevator_count",
             "accounts",
@@ -354,10 +349,6 @@ class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer[Customer]
             "national_id",
             "phone",
             "email",
-            "neighborhood",
-            "street",
-            "building_number",
-            "unit_number",
             "notes",
             "is_active",
         ]

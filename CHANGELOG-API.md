@@ -770,6 +770,16 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed since the first draft
 
+- **Breaking: the customer no longer carries an address of its own.**
+  `CustomerWrite` no longer accepts `neighborhood`, `street`, `building_number`
+  or `unit_number` (sending one is a 400, like any undeclared field), and
+  `CustomerRead` no longer returns `neighborhood_id`, `neighborhood_name`,
+  `district_name`, `province_name`, `street`, `building_number` or
+  `unit_number`. Read the customer's `addresses` (`CustomerAddressRead[]`, the
+  billing address first) and write them through `/customers/{id}/addresses`.
+  Every existing customer address was migrated into the address book as the
+  billing address, labelled "Fatura adresi"; a customer that had none has an
+  empty list. Made in place because v1 is not frozen.
 - **A public fault report needs a phone number.** `POST
   /public/elevators/{qr_token}/faults/` now refuses a missing or blank
   `reporter_phone` (`required`) and one that is not a Turkish number

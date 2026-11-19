@@ -41,7 +41,13 @@ from apps.contracts.models import (
     PricingType,
     Scope,
 )
-from apps.customers.models import ContactRole, Customer, CustomerContact, CustomerType
+from apps.customers.models import (
+    ContactRole,
+    Customer,
+    CustomerAddress,
+    CustomerContact,
+    CustomerType,
+)
 from apps.elevators.models import (
     Category,
     ControlType,
@@ -305,6 +311,9 @@ def _phone(index: int) -> str:
 
 def _customers(company: Company, rng: random.Random, area: ServiceArea) -> list[Customer]:
     created = []
+    # The second addresses draw from a generator of their own, so adding them
+    # left every other generated row exactly where it was.
+    second_addresses = random.Random(SEED + 3)
     for index, (name, kind, contact, tax_number) in enumerate(CUSTOMERS):
         district = area.district_for(index)
         customer = Customer.objects.create(
@@ -326,10 +335,29 @@ def _customers(company: Company, rng: random.Random, area: ServiceArea) -> list[
             tax_number=tax_number,
             tax_office=rng.choice(DEMO["tax_offices"]),
             phone=_phone(index),
-            neighborhood=area.somewhere_in(district, rng),
-            street=_street(rng),
             is_active=index != len(CUSTOMERS) - 1,
         )
+        # The address the customer is registered at, which is also where its
+        # first building stands: see _estate and _premises.
+        CustomerAddress.objects.create(
+            company=company,
+            customer=customer,
+            label=DEMO["billing_address_label"],
+            is_billing=True,
+            neighborhood=area.somewhere_in(district, rng),
+            street=_street(rng),
+        )
+        if index % 4 == 3:
+            # Every fourth customer also keeps a second address, so the
+            # address book a demonstration opens is not always a single row.
+            CustomerAddress.objects.create(
+                company=company,
+                customer=customer,
+                label=DEMO["site_entrance_label"],
+                is_billing=False,
+                neighborhood=area.somewhere_in(district, second_addresses),
+                street=_street(second_addresses),
+            )
         CustomerContact.objects.create(
             company=company,
             customer=customer,
@@ -362,6 +390,13 @@ def _block(company: Company, rng: random.Random, **fields: Any) -> Building:
     )
 
 
+def _billing_address(customer: Customer) -> CustomerAddress:
+    """The address every demo customer is given first, in _customers."""
+    return CustomerAddress.objects.select_related("neighborhood").get(
+        customer=customer, is_billing=True
+    )
+
+
 def _estate(
     company: Company, rng: random.Random, customer: Customer, created: list[Building]
 ) -> None:
@@ -372,12 +407,13 @@ def _estate(
     Drawing a neighbourhood per block, which is what this did before, produced
     an "estate" whose three blocks were in three different parts of town.
     """
+    registered = _billing_address(customer)
     site = Complex.objects.create(
         company=company,
         customer=customer,
         name=_short_name(customer.legal_name),
-        neighborhood=customer.neighborhood,
-        street=customer.street,
+        neighborhood=registered.neighborhood,
+        street=registered.street,
         building_number=str(rng.randint(1, 40)),
     )
     for block in range(rng.randint(2, 4)):
@@ -421,10 +457,11 @@ def _premises(
     else:
         kind, names = BuildingType.RESIDENTIAL, [""]
 
+    registered = _billing_address(customer)
     for position, suffix in enumerate(names):
         # The first is at the address the customer is registered at; the rest
         # are elsewhere in the same district.
-        here = customer.neighborhood if position == 0 else area.somewhere_in(district, rng)
+        here = registered.neighborhood if position == 0 else area.somewhere_in(district, rng)
         created.append(
             _block(
                 company,
@@ -434,7 +471,7 @@ def _premises(
                 name=f"{short} {suffix}".strip() if suffix else short,
                 type=kind,
                 neighborhood=here,
-                street=customer.street if position == 0 else _street(rng),
+                street=registered.street if position == 0 else _street(rng),
                 building_number=str(rng.randint(1, 90)),
             )
         )

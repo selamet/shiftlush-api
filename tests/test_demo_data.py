@@ -80,10 +80,14 @@ def write_dataset(root: Path, provinces: dict[int, str], places: dict[int, int])
 def place_of(row: Any) -> Any:
     """The neighbourhood on a building or a customer.
 
-    `Building.neighborhood` is nullable because field staff create records
-    before they know the address. The generator always sets it, and asserting
-    that here is what lets the rest of these read as one expression each.
+    A customer is placed by its billing address, read from the prefetched
+    address book. `neighborhood` is nullable on both because field staff create
+    records before they know the address. The generator always sets it, and
+    asserting that here is what lets the rest of these read as one expression
+    each.
     """
+    if isinstance(row, Customer):
+        [row] = [address for address in row.addresses.all() if address.is_billing]
     place = row.neighborhood
     assert place is not None
     return place
@@ -112,11 +116,7 @@ class TestOneFirmInOneTown:
 
     def test_the_customers_are_in_the_same_province_as_their_buildings(self, seeded):
         with company_context(seeded.id):
-            customers = list(
-                Customer.objects.select_related("neighborhood__district").filter(
-                    neighborhood__isnull=False
-                )
-            )
+            customers = list(Customer.objects.prefetch_related("addresses__neighborhood__district"))
             buildings = list(Building.objects.select_related("neighborhood__district"))
 
         assert customers
@@ -147,9 +147,7 @@ class TestOneFirmInOneTown:
         firm.
         """
         with company_context(seeded.id):
-            customers = list(
-                Customer.objects.select_related("neighborhood").filter(neighborhood__isnull=False)
-            )
+            customers = list(Customer.objects.prefetch_related("addresses__neighborhood"))
 
         by_district: dict[int, int] = {}
         for customer in customers:
@@ -167,6 +165,24 @@ class TestOneFirmInOneTown:
             }
 
         assert len(places) > 1
+
+
+class TestTheAddressBook:
+    def test_every_customer_has_a_billing_address_and_every_fourth_a_second(self, seeded):
+        with company_context(seeded.id):
+            customers = list(Customer.objects.prefetch_related("addresses"))
+
+        assert len(customers) == len(demo.CUSTOMERS)
+        for customer in customers:
+            assert [a.label for a in customer.addresses.all() if a.is_billing] == ["Fatura adresi"]
+        second = [
+            address
+            for customer in customers
+            for address in customer.addresses.all()
+            if not address.is_billing
+        ]
+        assert len(second) == len(demo.CUSTOMERS) // 4
+        assert {address.label for address in second} == {"Şantiye girişi"}
 
 
 class TestAnEstateIsOnePlace:

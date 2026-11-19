@@ -72,19 +72,19 @@ class CustomerViewSet(TenantViewSet[Customer]):
     customer_path = "id"
 
     def get_base_queryset(self) -> QuerySet[Customer]:
-        customers = (
-            Customer.objects.annotate(
-                building_count=Count(
-                    "buildings", distinct=True, filter=Q(buildings__is_deleted=False)
-                ),
-                elevator_count=Count(
-                    "buildings__elevators",
-                    distinct=True,
-                    filter=Q(buildings__elevators__is_deleted=False),
-                ),
-            )
-            .select_related(*ADDRESS_JOIN)
-            .prefetch_related("contacts")
+        customers = Customer.objects.annotate(
+            building_count=Count("buildings", distinct=True, filter=Q(buildings__is_deleted=False)),
+            elevator_count=Count(
+                "buildings__elevators",
+                distinct=True,
+                filter=Q(buildings__elevators__is_deleted=False),
+            ),
+        ).prefetch_related(
+            "contacts",
+            Prefetch(
+                "addresses",
+                queryset=CustomerAddress.objects.select_related(*ADDRESS_JOIN),
+            ),
         )
         if may_see_balances(getattr(self.request.user, "role", None)):
             # One query for every row's accounts and their balances, rather than

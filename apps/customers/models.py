@@ -48,17 +48,6 @@ class Customer(CompanyOwnedModel):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(max_length=150, blank=True)
 
-    neighborhood = models.ForeignKey(
-        "address.Neighborhood",
-        on_delete=models.PROTECT,
-        related_name="customers",
-        null=True,
-        blank=True,
-    )
-    street = models.CharField(max_length=150, blank=True)
-    building_number = models.CharField(max_length=20, blank=True)
-    unit_number = models.CharField(max_length=20, blank=True)
-
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
 

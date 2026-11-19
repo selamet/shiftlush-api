@@ -9005,14 +9005,6 @@ components:
       - full_name
     CustomerRead:
       type: object
-      description: |-
-        The named address behind a `neighborhood` foreign key.
-
-        Every one of these keys is nullable — a record can be entered before anyone
-        knows where it is — so the fields are declared nullable too. Without that
-        the contract promises a string on rows that hold nothing, a generated client
-        reads the field as always present, and the screen prints an empty line
-        without anything having failed.
       properties:
         id:
           type: string
@@ -9038,34 +9030,6 @@ components:
           type: string
           format: email
           readOnly: true
-        neighborhood_id:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-          readOnly: true
-        neighborhood_name:
-          type: string
-          readOnly: true
-          nullable: true
-        district_name:
-          type: string
-          readOnly: true
-          nullable: true
-        province_name:
-          type: string
-          readOnly: true
-          nullable: true
-        street:
-          type: string
-          readOnly: true
-        building_number:
-          type: string
-          readOnly: true
-        unit_number:
-          type: string
-          readOnly: true
         notes:
           type: string
           readOnly: true
@@ -9076,6 +9040,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerContactRead'
+          readOnly: true
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddressRead'
           readOnly: true
         building_count:
           type: integer
@@ -9102,26 +9071,20 @@ components:
           format: date-time
           readOnly: true
       required:
+      - addresses
       - building_count
-      - building_number
       - contacts
       - created_at
-      - district_name
       - elevator_count
       - email
       - id
       - is_active
       - legal_name
-      - neighborhood_id
-      - neighborhood_name
       - notes
       - phone
-      - province_name
-      - street
       - tax_number
       - tax_office
       - type
-      - unit_number
       - updated_at
     CustomerReportRead:
       type: object
@@ -9227,21 +9190,6 @@ components:
             maxLength: 150
           - type: string
             maxLength: 0
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        unit_number:
-          type: string
-          maxLength: 20
         notes:
           type: string
         is_active:
@@ -13218,21 +13166,6 @@ components:
             maxLength: 150
           - type: string
             maxLength: 0
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        unit_number:
-          type: string
-          maxLength: 20
         notes:
           type: string
         is_active:
