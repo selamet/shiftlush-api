@@ -1132,6 +1132,7 @@ class TestEveryModelIsScoped:
             "contracts.ContractElevator",
             "core.IdempotencyKey",
             "customers.Customer",
+            "customers.CustomerAddress",
             "customers.CustomerContact",
             "elevators.Elevator",
             # Over HTTP in the sweep above; the public report in
