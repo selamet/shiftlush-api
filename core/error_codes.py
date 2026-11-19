@@ -127,6 +127,10 @@ class ErrorCode(models.TextChoices):
         "MONTHLY_REPORT_NEEDS_EMAIL",
         "A contact without an e-mail address cannot receive the monthly report",
     )
+    ADDRESS_EMPTY = (
+        "ADDRESS_EMPTY",
+        "An address needs a neighbourhood, a street, a number or a note",
+    )
     REPORT_NO_RECIPIENT = (
         "REPORT_NO_RECIPIENT",
         "Nobody on this customer is set to receive the monthly report",

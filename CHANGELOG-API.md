@@ -685,6 +685,9 @@ carried as compatibility shims nobody will ever remove.
 
 ### Added since the first draft
 
+- **`district_id` and `province_id` on every named address read** (`BuildingRead`,
+  `ComplexRead`), so a client can fill a province and district picker from a
+  record. Both are null when the record has no neighbourhood.
 - **`neighborhood_name`, `district_name` and `province_name` on `CustomerRead`.**
   The billing address (§5.6) could be written and not read: the response carried
   an id, which no screen can display and no edit form can open a picker on.
@@ -692,6 +695,13 @@ carried as compatibility shims nobody will ever remove.
 - **`GET, POST /customers/{id}/contacts`** — specification §8.6, previously
   routed only as the flat `/customer-contacts`. The customer comes from the
   path; naming it in the body is a 400. `Idempotency-Key` is honoured.
+- **`GET, POST /customers/{id}/addresses` and the flat `/customer-addresses`**
+  — a customer's saved addresses, with one optional billing address
+  (`is_billing`). Marking another address billing moves the flag rather than
+  failing. The customer comes from the path on the nested route; naming it in
+  the body is a 400. `Idempotency-Key` is honoured. New error code
+  **`ADDRESS_EMPTY`** (400, on `label`): an address needs a neighbourhood, a
+  street, a number or a note.
 - **`CONSTRAINT_VIOLATION`**, 409. A last resort for a database constraint that
   reaches the client without a rule of its own having caught it first. It
   replaces the `INTERNAL_ERROR` such a case used to produce, which told clients
@@ -760,6 +770,16 @@ carried as compatibility shims nobody will ever remove.
 
 ### Changed since the first draft
 
+- **Breaking: the customer no longer carries an address of its own.**
+  `CustomerWrite` no longer accepts `neighborhood`, `street`, `building_number`
+  or `unit_number` (sending one is a 400, like any undeclared field), and
+  `CustomerRead` no longer returns `neighborhood_id`, `neighborhood_name`,
+  `district_name`, `province_name`, `street`, `building_number` or
+  `unit_number`. Read the customer's `addresses` (`CustomerAddressRead[]`, the
+  billing address first) and write them through `/customers/{id}/addresses`.
+  Every existing customer address was migrated into the address book as the
+  billing address, labelled "Fatura adresi"; a customer that had none has an
+  empty list. Made in place because v1 is not frozen.
 - **A public fault report needs a phone number.** `POST
   /public/elevators/{qr_token}/faults/` now refuses a missing or blank
   `reporter_phone` (`required`) and one that is not a Turkish number

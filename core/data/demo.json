@@ -131,6 +131,8 @@
     "Servis asansörü"
   ],
   "block_suffix": " Blok",
+  "billing_address_label": "Fatura adresi",
+  "site_entrance_label": "Şantiye girişi",
   "street_suffix": ". Sokak",
   "address_notes": [
     "Ana caddeden girip market sırasının arkasındaki ikinci blok.",

@@ -48,17 +48,6 @@ class Customer(CompanyOwnedModel):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(max_length=150, blank=True)
 
-    neighborhood = models.ForeignKey(
-        "address.Neighborhood",
-        on_delete=models.PROTECT,
-        related_name="customers",
-        null=True,
-        blank=True,
-    )
-    street = models.CharField(max_length=150, blank=True)
-    building_number = models.CharField(max_length=20, blank=True)
-    unit_number = models.CharField(max_length=20, blank=True)
-
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
 
@@ -148,3 +137,40 @@ class CustomerContact(CompanyOwnedModel):
 
     def __str__(self) -> str:
         return self.full_name
+
+
+class CustomerAddress(CompanyOwnedModel):
+    """One saved address of a customer: a building, an office, a billing address."""
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="addresses")
+    label = models.CharField(max_length=60)
+    neighborhood = models.ForeignKey(
+        "address.Neighborhood",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="customer_addresses",
+    )
+    street = models.CharField(max_length=150, blank=True)
+    building_number = models.CharField(max_length=20, blank=True)
+    unit_number = models.CharField(max_length=20, blank=True)
+    address_note = models.TextField(blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    is_billing = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "customer_address"
+        ordering = ["-is_billing", "label", "id"]
+        constraints = [
+            # At most one billing address per customer, and only among live
+            # rows — a deleted address must not hold the slot.
+            models.UniqueConstraint(
+                fields=["customer"],
+                condition=models.Q(is_billing=True, is_deleted=False),
+                name="uq_customer_billing_address",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.label

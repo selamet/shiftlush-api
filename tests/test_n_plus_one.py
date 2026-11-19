@@ -23,8 +23,9 @@ from rest_framework import serializers
 from rest_framework.test import APIClient
 from zen_queries import QueriesDisabledError
 
+from apps.address.models import District, Neighborhood, Province
 from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
-from apps.customers.models import Customer, CustomerType
+from apps.customers.models import Customer, CustomerAddress, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
 from apps.properties.models import Building, BuildingType
@@ -160,5 +161,65 @@ class TestTheContractListStaysFlat:
         assert len(four_rows) == len(one_row), (
             f"The contract list costs {len(one_row)} queries for one contract and "
             f"{len(four_rows)} for four. A list whose cost depends on its length is "
+            f"the N+1 in section 8.8."
+        )
+
+
+class TestTheCustomerListStaysFlat:
+    """Each customer now carries its address book, joins included."""
+
+    def _add_addresses(self, company, customer, first: int, last: int, neighborhood) -> None:
+        with company_context(company.id):
+            for index in range(first, last):
+                CustomerAddress.objects.create(
+                    company=company,
+                    customer=customer,
+                    label=f"Address {index}",
+                    neighborhood=neighborhood,
+                    is_billing=index == 0,
+                )
+
+    def _customer(self, company, name: str) -> Customer:
+        with company_context(company.id):
+            return Customer.objects.create(
+                company=company, type=CustomerType.CORPORATE, legal_name=name
+            )
+
+    def test_the_query_count_does_not_grow_with_the_rows(self, db):
+        company, owner = register_company(
+            legal_name="Flat Ltd",
+            display_name="Flat",
+            first_name="F",
+            last_name="Owner",
+            email="flat@example.com",
+            password=PASSWORD,
+        )
+        province = Province.objects.create(id=34, name="İstanbul", name_normalized="istanbul")
+        district = District.objects.create(
+            id=3401, province=province, name="Kadıköy", name_normalized="kadikoy"
+        )
+        neighborhood = Neighborhood.objects.create(
+            id=340101, district=district, name="Caferağa", name_normalized="caferaga"
+        )
+        client = api_for(owner)
+
+        first = self._customer(company, "Customer 0")
+        self._add_addresses(company, first, 0, 1, neighborhood)
+        with CaptureQueriesContext(connection) as one_row:
+            assert client.get("/api/v1/customers/").status_code == 200
+
+        self._add_addresses(company, first, 1, 3, neighborhood)
+        for index in (1, 2):
+            self._add_addresses(
+                company, self._customer(company, f"Customer {index}"), 0, 3, neighborhood
+            )
+        with CaptureQueriesContext(connection) as three_rows:
+            response = client.get("/api/v1/customers/")
+            assert response.status_code == 200
+        assert [len(row["addresses"]) for row in response.data["results"]] == [3, 3, 3]
+
+        assert len(three_rows) == len(one_row), (
+            f"The customer list costs {len(one_row)} queries for one customer and "
+            f"{len(three_rows)} for three. A list whose cost depends on its length is "
             f"the N+1 in section 8.8."
         )

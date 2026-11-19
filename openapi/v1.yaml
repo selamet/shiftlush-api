@@ -1345,6 +1345,174 @@ paths:
               schema:
                 $ref: '#/components/schemas/ContractRead'
           description: ''
+  /api/v1/customer-addresses/:
+    get:
+      operationId: customer_addresses_list
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: query
+        name: customer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: is_billing
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - customer-addresses
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerAddressReadList'
+          description: ''
+    post:
+      operationId: customer_addresses_create
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      tags:
+      - customer-addresses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressRead'
+          description: ''
+  /api/v1/customer-addresses/{id}/:
+    get:
+      operationId: customer_addresses_retrieve
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer address.
+        required: true
+      tags:
+      - customer-addresses
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressRead'
+          description: ''
+    patch:
+      operationId: customer_addresses_partial_update
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer address.
+        required: true
+      tags:
+      - customer-addresses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerAddressWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerAddressWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomerAddressWriteRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressRead'
+          description: ''
+    delete:
+      operationId: customer_addresses_destroy
+      description: |-
+        CRUD over a company-owned model.
+
+        PUT is not routed: partial update is the only update verb. A full replace
+        means the client has to send every field it does not want cleared, and the
+        moment the model grows a column, old clients start wiping it.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer address.
+        required: true
+      tags:
+      - customer-addresses
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/customer-contacts/:
     get:
       operationId: customer_contacts_list
@@ -1972,6 +2140,75 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/customers/{id}/addresses/:
+    get:
+      operationId: customers_addresses_list
+      description: The addresses of this customer, the billing one first.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer.
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - customers
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomerAddressReadList'
+          description: ''
+    post:
+      operationId: customers_addresses_create
+      description: Add an address to this customer. The customer comes from the path.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this customer.
+        required: true
+      tags:
+      - customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressNestedWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressNestedWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressNestedWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressRead'
+          description: ''
   /api/v1/customers/{id}/contacts/:
     get:
       operationId: customers_contacts_list
@@ -7329,6 +7566,14 @@ components:
           type: string
           readOnly: true
           nullable: true
+        district_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        province_id:
+          type: integer
+          readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
@@ -7389,6 +7634,7 @@ components:
       - created_at
       - customer_id
       - customer_name
+      - district_id
       - district_name
       - elevator_count
       - floor_count
@@ -7399,6 +7645,7 @@ components:
       - name
       - neighborhood_id
       - neighborhood_name
+      - province_id
       - province_name
       - street
       - type
@@ -7898,6 +8145,14 @@ components:
           type: string
           readOnly: true
           nullable: true
+        district_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        province_id:
+          type: integer
+          readOnly: true
+          nullable: true
         district_name:
           type: string
           readOnly: true
@@ -7949,6 +8204,7 @@ components:
       - created_at
       - customer_id
       - customer_name
+      - district_id
       - district_name
       - elevator_count
       - id
@@ -7958,6 +8214,7 @@ components:
       - neighborhood_id
       - neighborhood_name
       - notes
+      - province_id
       - province_name
       - street
       - updated_at
@@ -8426,6 +8683,199 @@ components:
       - balance
       - currency
       - id
+    CustomerAddressNestedWriteRequest:
+      type: object
+      description: |-
+        The same address, created under `/customers/{id}/addresses`.
+
+        `customer` is gone from the field list, so `StrictMixin` refuses a body that
+        names it; the path is the source.
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        is_billing:
+          type: boolean
+      required:
+      - label
+    CustomerAddressRead:
+      type: object
+      description: |-
+        The named address behind a `neighborhood` foreign key.
+
+        Every one of these keys is nullable — a record can be entered before anyone
+        knows where it is — so the fields are declared nullable too. Without that
+        the contract promises a string on rows that hold nothing, a generated client
+        reads the field as always present, and the screen prints an empty line
+        without anything having failed.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        customer_id:
+          type: string
+          format: uuid
+          readOnly: true
+        label:
+          type: string
+          readOnly: true
+        neighborhood_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+          readOnly: true
+        neighborhood_name:
+          type: string
+          readOnly: true
+          nullable: true
+        district_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        district_name:
+          type: string
+          readOnly: true
+          nullable: true
+        province_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        province_name:
+          type: string
+          readOnly: true
+          nullable: true
+        street:
+          type: string
+          readOnly: true
+        building_number:
+          type: string
+          readOnly: true
+        unit_number:
+          type: string
+          readOnly: true
+        address_note:
+          type: string
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          readOnly: true
+          nullable: true
+        is_billing:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - address_note
+      - building_number
+      - created_at
+      - customer_id
+      - district_id
+      - district_name
+      - id
+      - is_billing
+      - label
+      - latitude
+      - longitude
+      - neighborhood_id
+      - neighborhood_name
+      - province_id
+      - province_name
+      - street
+      - unit_number
+      - updated_at
+    CustomerAddressWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        is_billing:
+          type: boolean
+      required:
+      - customer
+      - label
     CustomerContactNestedWriteRequest:
       type: object
       description: |-
@@ -8555,14 +9005,6 @@ components:
       - full_name
     CustomerRead:
       type: object
-      description: |-
-        The named address behind a `neighborhood` foreign key.
-
-        Every one of these keys is nullable — a record can be entered before anyone
-        knows where it is — so the fields are declared nullable too. Without that
-        the contract promises a string on rows that hold nothing, a generated client
-        reads the field as always present, and the screen prints an empty line
-        without anything having failed.
       properties:
         id:
           type: string
@@ -8588,34 +9030,6 @@ components:
           type: string
           format: email
           readOnly: true
-        neighborhood_id:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-          readOnly: true
-        neighborhood_name:
-          type: string
-          readOnly: true
-          nullable: true
-        district_name:
-          type: string
-          readOnly: true
-          nullable: true
-        province_name:
-          type: string
-          readOnly: true
-          nullable: true
-        street:
-          type: string
-          readOnly: true
-        building_number:
-          type: string
-          readOnly: true
-        unit_number:
-          type: string
-          readOnly: true
         notes:
           type: string
           readOnly: true
@@ -8626,6 +9040,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerContactRead'
+          readOnly: true
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddressRead'
           readOnly: true
         building_count:
           type: integer
@@ -8652,26 +9071,20 @@ components:
           format: date-time
           readOnly: true
       required:
+      - addresses
       - building_count
-      - building_number
       - contacts
       - created_at
-      - district_name
       - elevator_count
       - email
       - id
       - is_active
       - legal_name
-      - neighborhood_id
-      - neighborhood_name
       - notes
       - phone
-      - province_name
-      - street
       - tax_number
       - tax_office
       - type
-      - unit_number
       - updated_at
     CustomerReportRead:
       type: object
@@ -8777,21 +9190,6 @@ components:
             maxLength: 150
           - type: string
             maxLength: 0
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        unit_number:
-          type: string
-          maxLength: 20
         notes:
           type: string
         is_active:
@@ -11624,6 +12022,36 @@ components:
             total_pages:
               type: integer
               example: 14
+    PaginatedCustomerAddressReadList:
+      type: object
+      required:
+      - results
+      - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddressRead'
+        pagination:
+          type: object
+          required:
+          - page
+          - page_size
+          - total
+          - total_pages
+          properties:
+            page:
+              type: integer
+              example: 1
+            page_size:
+              type: integer
+              example: 25
+            total:
+              type: integer
+              example: 342
+            total_pages:
+              type: integer
+              example: 14
     PaginatedCustomerContactReadList:
       type: object
       required:
@@ -12625,6 +13053,50 @@ components:
           format: int64
         notes:
           type: string
+    PatchedCustomerAddressWriteRequest:
+      type: object
+      description: |-
+        Rejects fields the serializer does not declare.
+
+        DRF ignores them, so a mistyped key returns 200 and the value silently
+        never arrives.
+      properties:
+        customer:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        neighborhood:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+          nullable: true
+        street:
+          type: string
+          maxLength: 150
+        building_number:
+          type: string
+          maxLength: 20
+        unit_number:
+          type: string
+          maxLength: 20
+        address_note:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        is_billing:
+          type: boolean
     PatchedCustomerContactWriteRequest:
       type: object
       description: |-
@@ -12694,21 +13166,6 @@ components:
             maxLength: 150
           - type: string
             maxLength: 0
-        neighborhood:
-          type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-        street:
-          type: string
-          maxLength: 150
-        building_number:
-          type: string
-          maxLength: 20
-        unit_number:
-          type: string
-          maxLength: 20
         notes:
           type: string
         is_active:
@@ -15081,6 +15538,7 @@ components:
       - SIGNATURE_CANNOT_BE_DELETED
       - INVOICE_LINES_NEED_PRICE
       - MONTHLY_REPORT_NEEDS_EMAIL
+      - ADDRESS_EMPTY
       - REPORT_NO_RECIPIENT
       - REPORT_FILE_CANNOT_BE_DELETED
       - CATEGORY_NOT_UPLOADABLE
@@ -15152,6 +15610,7 @@ components:
         * `SIGNATURE_CANNOT_BE_DELETED` - A visit's signature is kept for good and cannot be deleted
         * `INVOICE_LINES_NEED_PRICE` - Every line needs a price before the draft can be issued
         * `MONTHLY_REPORT_NEEDS_EMAIL` - A contact without an e-mail address cannot receive the monthly report
+        * `ADDRESS_EMPTY` - An address needs a neighbourhood, a street, a number or a note
         * `REPORT_NO_RECIPIENT` - Nobody on this customer is set to receive the monthly report
         * `REPORT_FILE_CANNOT_BE_DELETED` - A monthly report's file belongs to the report and cannot be deleted
         * `CATEGORY_NOT_UPLOADABLE` - Files of this category are made by the server and cannot be uploaded

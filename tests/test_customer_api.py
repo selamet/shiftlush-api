@@ -11,7 +11,7 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from apps.customers.models import Customer, CustomerContact, CustomerType
+from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
 from apps.users.models import Role, User
 from apps.users.services import issue_tokens, register_company
 from core.context import company_context, system_context
@@ -623,12 +623,13 @@ class TestTypeRules:
         assert response.status_code == 200
 
 
-class TestBillingAddress:
-    """The address the invoice goes to — specification §5.6.
+class TestCustomerAddresses:
+    """The customer's addresses — specification §5.6.
 
-    `CustomerWrite` has always accepted a neighbourhood; reading it back gave an
-    id and nothing else, so no screen could show it and no edit form could open
-    the picker on the right place.
+    The customer used to carry one address in four columns of its own. It now
+    has an address book, read as `addresses` on the customer and written through
+    `/customers/{id}/addresses`; the customer itself no longer takes or returns
+    any address field.
     """
 
     @pytest.fixture
@@ -643,29 +644,50 @@ class TestBillingAddress:
             id=340101, district=district, name="Caferağa", name_normalized="caferaga"
         )
 
-    def test_the_address_comes_back_named(self, firm_a, kadikoy):
-        _, owner, _ = firm_a
-        client = api_for(owner)
-        created = client.post(
-            reverse("customer-list"),
-            corporate(neighborhood=kadikoy.pk, street="Moda Caddesi", building_number="12"),
+    def add_address(self, company, customer, **values) -> CustomerAddress:
+        with company_context(company.id):
+            return CustomerAddress.objects.create(company=company, customer=customer, **values)
+
+    def test_the_customer_read_lists_its_addresses(self, firm_a):
+        company, owner, customer = firm_a
+        self.add_address(company, customer, label="Head office", street="A", is_billing=True)
+
+        body = api_for(owner).get(reverse("customer-detail", args=[customer.id])).json()
+        assert [a["label"] for a in body["addresses"]] == ["Head office"]
+        assert "street" not in body and "neighborhood_id" not in body
+
+    def test_the_customer_write_refuses_address_fields(self, firm_a):
+        _, owner, customer = firm_a
+        response = api_for(owner).patch(
+            reverse("customer-detail", args=[customer.id]), {"street": "x"}, format="json"
         )
-        assert created.status_code == 201
+        assert response.status_code == 400
+        assert [d["field"] for d in response.data["error"]["details"]] == ["street"]
 
-        detail = client.get(reverse("customer-detail", args=[created.data["id"]])).data
-        assert detail["neighborhood_id"] == kadikoy.pk
-        assert detail["neighborhood_name"] == "Caferağa"
-        assert detail["district_name"] == "Kadıköy"
-        assert detail["province_name"] == "İstanbul"
+    def test_the_address_comes_back_named(self, firm_a, kadikoy):
+        company, owner, customer = firm_a
+        self.add_address(
+            company,
+            customer,
+            label="Fatura adresi",
+            neighborhood=kadikoy,
+            street="Moda Caddesi",
+            building_number="12",
+            is_billing=True,
+        )
 
-    def test_a_customer_without_an_address_answers_null(self, firm_a):
+        detail = api_for(owner).get(reverse("customer-detail", args=[customer.pk])).data
+        [address] = detail["addresses"]
+        assert address["neighborhood_id"] == kadikoy.pk
+        assert address["neighborhood_name"] == "Caferağa"
+        assert address["district_name"] == "Kadıköy"
+        assert address["province_name"] == "İstanbul"
+
+    def test_a_customer_without_an_address_answers_an_empty_list(self, firm_a):
         _, owner, customer = firm_a
         detail = api_for(owner).get(reverse("customer-detail", args=[customer.pk])).data
-        # The column is nullable, so this is an ordinary state, not a failure.
-        assert detail["neighborhood_id"] is None
-        assert detail["neighborhood_name"] is None
-        assert detail["district_name"] is None
-        assert detail["province_name"] is None
+        # An address is optional, so this is an ordinary state, not a failure.
+        assert detail["addresses"] == []
 
     def test_a_page_of_addressed_customers_does_not_walk_the_joins(
         self, firm_a, kadikoy, django_assert_max_num_queries
@@ -673,25 +695,30 @@ class TestBillingAddress:
         company, owner, _ = firm_a
         client = api_for(owner)
         for index in range(10):
-            client.post(
+            created = client.post(
                 reverse("customer-list"),
-                corporate(
-                    legal_name=f"Row {index}",
-                    tax_number=tax_number(index),
-                    neighborhood=kadikoy.pk,
-                ),
+                corporate(legal_name=f"Row {index}", tax_number=tax_number(index)),
+            )
+            with company_context(company.id):
+                customer = Customer.objects.get(pk=created.data["id"])
+            self.add_address(
+                company, customer, label="Fatura adresi", neighborhood=kadikoy, is_billing=True
             )
 
         client.get(reverse("customer-list"))  # warm the auth path
-        with django_assert_max_num_queries(6):
+        # One more than before the address book: the addresses' own prefetch.
+        with django_assert_max_num_queries(7):
             client.get(reverse("customer-list"))
 
     def test_the_list_carries_the_names_too(self, firm_a, kadikoy):
-        _, owner, _ = firm_a
+        company, owner, _ = firm_a
         client = api_for(owner)
-        client.post(reverse("customer-list"), corporate(neighborhood=kadikoy.pk))
+        created = client.post(reverse("customer-list"), corporate())
+        with company_context(company.id):
+            customer = Customer.objects.get(pk=created.data["id"])
+        self.add_address(company, customer, label="Fatura adresi", neighborhood=kadikoy)
         rows = client.get(reverse("customer-list"), {"search": "acme"}).data["results"]
-        assert [row["district_name"] for row in rows] == ["Kadıköy"]
+        assert [[a["district_name"] for a in row["addresses"]] for row in rows] == [["Kadıköy"]]
 
 
 class TestBuildingAddressNote:
@@ -704,3 +731,50 @@ class TestBuildingAddressNote:
         )
         assert response.status_code == 201
         assert response.data["address_note"] == ""
+
+
+class TestBuildingAddressIds:
+    """A form fills its province and district pickers from ids, not from names."""
+
+    @pytest.fixture
+    def moda(self, db):
+        from apps.address.models import District, Neighborhood, Province
+
+        province = Province.objects.create(id=34, name="İstanbul", name_normalized="istanbul")
+        district = District.objects.create(
+            id=3401, province=province, name="Kadıköy", name_normalized="kadikoy"
+        )
+        return Neighborhood.objects.create(
+            id=340101, district=district, name="Caferağa", name_normalized="caferaga"
+        )
+
+    def make_building(self, company, customer, **extra):
+        from apps.properties.models import Building, BuildingType
+
+        with company_context(company.id):
+            return Building.objects.create(
+                company=company,
+                customer=customer,
+                name="A Blok",
+                type=BuildingType.RESIDENTIAL,
+                address_note="Test",
+                **extra,
+            )
+
+    def test_a_building_read_carries_the_ids_of_its_district_and_province(self, firm_a, moda):
+        company, owner, customer = firm_a
+        building = self.make_building(company, customer, neighborhood=moda)
+
+        body = api_for(owner).get(reverse("building-detail", args=[building.id])).json()
+
+        assert body["district_id"] == 3401
+        assert body["province_id"] == 34
+
+    def test_a_building_without_a_neighbourhood_has_null_ids(self, firm_a):
+        company, owner, customer = firm_a
+        building = self.make_building(company, customer)
+
+        body = api_for(owner).get(reverse("building-detail", args=[building.id])).json()
+
+        assert body["district_id"] is None
+        assert body["province_id"] is None

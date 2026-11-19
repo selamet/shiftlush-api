@@ -6,8 +6,14 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.customers.models import ContactRole, Customer, CustomerContact, CustomerType
-from apps.customers.services import demote_other_primaries
+from apps.customers.models import (
+    ContactRole,
+    Customer,
+    CustomerAddress,
+    CustomerContact,
+    CustomerType,
+)
+from apps.customers.services import demote_other_billing, demote_other_primaries
 from apps.ledger.balances import customer_accounts
 from apps.ledger.models import Account
 from core.crypto import fingerprint
@@ -142,6 +148,104 @@ class CustomerContactNestedWriteSerializer(CustomerContactWriteSerializer):
         ]
 
 
+class CustomerAddressReadSerializer(AddressReadMixin, serializers.ModelSerializer[CustomerAddress]):
+    class Meta:
+        model = CustomerAddress
+        fields = [
+            "id",
+            "customer_id",
+            "label",
+            "neighborhood_id",
+            "neighborhood_name",
+            "district_id",
+            "district_name",
+            "province_id",
+            "province_name",
+            "street",
+            "building_number",
+            "unit_number",
+            "address_note",
+            "latitude",
+            "longitude",
+            "is_billing",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class CustomerAddressWriteSerializer(StrictMixin, serializers.ModelSerializer[CustomerAddress]):
+    class Meta:
+        model = CustomerAddress
+        fields = [
+            "customer",
+            "label",
+            "neighborhood",
+            "street",
+            "building_number",
+            "unit_number",
+            "address_note",
+            "latitude",
+            "longitude",
+            "is_billing",
+        ]
+
+    #: What makes an address worth saving; a label alone locates nothing.
+    CONTENT_FIELDS = ("neighborhood", "street", "building_number", "unit_number", "address_note")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        if not any(self._effective(attrs, field) for field in self.CONTENT_FIELDS):
+            raise field_error("label", ErrorCode.ADDRESS_EMPTY)
+        return attrs
+
+    def _effective(self, attrs: dict[str, Any], field: str) -> Any:
+        """What the field will hold once this request is applied.
+
+        A PATCH carries only what changed, so judging `attrs` alone would refuse
+        a relabel of an address whose only content is not in the request.
+        """
+        if field in attrs:
+            return attrs[field] or ""
+        return getattr(self.instance, field, "") or ""
+
+    @transaction.atomic
+    def create(self, validated_data: dict[str, Any]) -> CustomerAddress:
+        # Before the insert, as for contacts: the constraint fires on the INSERT.
+        if validated_data.get("is_billing"):
+            demote_other_billing(validated_data["customer"])
+        return super().create(validated_data)
+
+    @transaction.atomic
+    def update(self, instance: CustomerAddress, validated_data: dict[str, Any]) -> CustomerAddress:
+        customer = validated_data.get("customer", instance.customer)
+        is_billing = validated_data.get("is_billing", instance.is_billing)
+        if is_billing and (not instance.is_billing or customer.pk != instance.customer_id):
+            demote_other_billing(customer, keep_pk=instance.pk)
+        return super().update(instance, validated_data)
+
+
+class CustomerAddressNestedWriteSerializer(CustomerAddressWriteSerializer):
+    """The same address, created under `/customers/{id}/addresses`.
+
+    `customer` is gone from the field list, so `StrictMixin` refuses a body that
+    names it; the path is the source.
+    """
+
+    class Meta(CustomerAddressWriteSerializer.Meta):
+        fields = [
+            "label",
+            "neighborhood",
+            "street",
+            "building_number",
+            "unit_number",
+            "address_note",
+            "latitude",
+            "longitude",
+            "is_billing",
+        ]
+
+
 #: Where the viewset prefetches each customer's ledger accounts, balance
 #: annotated, for the roles that may see them.
 LEDGER_ACCOUNT_ROWS = "ledger_account_rows"
@@ -160,8 +264,9 @@ class CustomerAccountSerializer(serializers.Serializer[Any]):
     currency = serializers.CharField(read_only=True)
 
 
-class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Customer]):
+class CustomerReadSerializer(serializers.ModelSerializer[Customer]):
     contacts = CustomerContactReadSerializer(many=True, read_only=True)
+    addresses = CustomerAddressReadSerializer(many=True, read_only=True)
     building_count = serializers.IntegerField(read_only=True, default=0)
     elevator_count = serializers.IntegerField(read_only=True, default=0)
     accounts = serializers.SerializerMethodField(
@@ -215,16 +320,10 @@ class CustomerReadSerializer(AddressReadMixin, serializers.ModelSerializer[Custo
             "tax_number",
             "phone",
             "email",
-            "neighborhood_id",
-            "neighborhood_name",
-            "district_name",
-            "province_name",
-            "street",
-            "building_number",
-            "unit_number",
             "notes",
             "is_active",
             "contacts",
+            "addresses",
             "building_count",
             "elevator_count",
             "accounts",
@@ -250,10 +349,6 @@ class CustomerWriteSerializer(StrictMixin, serializers.ModelSerializer[Customer]
             "national_id",
             "phone",
             "email",
-            "neighborhood",
-            "street",
-            "building_number",
-            "unit_number",
             "notes",
             "is_active",
         ]

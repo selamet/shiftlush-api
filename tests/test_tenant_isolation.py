@@ -42,7 +42,7 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.billing.models import InvoiceDraft, InvoiceLine, InvoiceLineKind
 from apps.companies.models import Company
 from apps.contracts.models import Contract, ContractElevator, PricingType, Scope
-from apps.customers.models import Customer, CustomerContact, CustomerType
+from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
 from apps.elevators.models import Elevator
 from apps.elevators.services import assign_qr_token
 from apps.faults.models import Fault, FaultChannel
@@ -299,6 +299,9 @@ def _build_firm(letter: str, seed: int) -> Firm:
         contact = CustomerContact.objects.create(
             company=company, customer=customer, full_name=f"Contact of {letter}"
         )
+        address = CustomerAddress.objects.create(
+            company=company, customer=customer, label=f"Address of {letter}", street="Main St."
+        )
         estate = Complex.objects.create(
             company=company, customer=customer, name=f"Complex of {letter}"
         )
@@ -471,6 +474,7 @@ def _build_firm(letter: str, seed: int) -> Firm:
         records={
             "customer": customer,
             "customer-contact": contact,
+            "customer-address": address,
             "complex": estate,
             "building": building,
             "elevator": elevator,
@@ -1132,6 +1136,7 @@ class TestEveryModelIsScoped:
             "contracts.ContractElevator",
             "core.IdempotencyKey",
             "customers.Customer",
+            "customers.CustomerAddress",
             "customers.CustomerContact",
             "elevators.Elevator",
             # Over HTTP in the sweep above; the public report in

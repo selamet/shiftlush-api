@@ -418,6 +418,22 @@ Note what this does *not* do: migrations are not reversed. A rollback across a
 migration that dropped or rewrote a column needs a plan of its own, decided
 before the migration ships rather than during the incident.
 
+**Rolling back past the customer address move.** Migration
+`0010_drop_customer_address_columns` removed the four address columns from
+`customer`, so old code against the new schema fails on every customer query.
+Before rolling the code back past this release, reverse the migrations from the
+*new* image, while it is still the one running:
+
+```bash
+docker exec shiftlush-api python manage.py migrate customers 0008
+```
+
+This refills each customer's address columns from its billing address. The
+target is `0008`, not `0007`: `0007` drops the `customer_address` table and with
+it every non-billing address, note and pin. Stopping at `0008` keeps the table,
+so deploying the release again later re-applies the move with the columns taken
+as the truth, including anything the old code edited in the meantime.
+
 **It also lasts only until the next deploy.** `git reset --hard` moves the
 checkout back; it does not move `main`. The deploy script begins with
 `git pull --ff-only`, which fast-forwards straight back to the commit you rolled
