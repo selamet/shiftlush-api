@@ -14,6 +14,10 @@ soft-deleted rows included, which is what has to move. `bulk_create` and
 from django.db import migrations
 from django.utils import timezone
 
+# The only customer columns the move reads or writes. Everything else, the
+# encrypted `national_id` above all, stays unloaded so one undecryptable row
+# cannot abort the migration.
+CUSTOMER_COLUMNS = ("id", "company_id", "is_deleted", "deleted_at")
 ADDRESS_FIELDS = ("neighborhood_id", "street", "building_number", "unit_number")
 BILLING_LABEL = "Fatura adresi"
 
@@ -37,6 +41,21 @@ def _current_billing(address_model):
     billing = (
         address_model.objects.filter(is_billing=True)
         .select_related("customer")
+        .only(
+            "id",
+            "customer_id",
+            "is_billing",
+            "is_deleted",
+            "deleted_at",
+            "updated_at",
+            "neighborhood_id",
+            "street",
+            "building_number",
+            "unit_number",
+            "address_note",
+            "customer__id",
+            "customer__is_deleted",
+        )
         .order_by("customer_id", "is_deleted", "-id")
     )
     for address in billing:
@@ -66,7 +85,7 @@ def forwards(apps, schema_editor):
     current = _current_billing(address_model)
     now = timezone.now()
     created, updated = [], []
-    for customer in customer_model.objects.all().iterator():
+    for customer in customer_model.objects.only(*CUSTOMER_COLUMNS, *ADDRESS_FIELDS).iterator():
         address = current.get(customer.pk)
         if address is None:
             if _has_address(customer):
@@ -120,7 +139,7 @@ def backwards(apps, schema_editor):
     address_model = apps.get_model("customers", "CustomerAddress")
 
     chosen = _current_billing(address_model)
-    customers = customer_model.objects.in_bulk(list(chosen))
+    customers = customer_model.objects.only("id", *ADDRESS_FIELDS).in_bulk(list(chosen))
     for customer_id, address in chosen.items():
         customer = customers[customer_id]
         for field in ADDRESS_FIELDS:
